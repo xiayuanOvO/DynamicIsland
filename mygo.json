@@ -1,0 +1,9 @@
+{
+  "macos": {
+    "entitlements": "macos.entitlements",
+    "infoPlist": {
+      "NSAudioCaptureUsageDescription": "灵动岛读取系统音频的实时电平，用于显示播放波形。",
+      "NSAppleEventsUsageDescription": "灵动岛需要读取 Apple Music 的曲目信息，并在你使用播放控件时控制播放。"
+    }
+  }
+}

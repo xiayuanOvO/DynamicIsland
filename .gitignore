@@ -1,0 +1,5 @@
+/dist/
+/resources/darwin/media-control/
+/resources/darwin/audio-level
+*.exe
+*.test
