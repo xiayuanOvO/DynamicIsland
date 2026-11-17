@@ -46,6 +46,7 @@ type island struct {
 	ignoreHover  bool
 	hoverSince   time.Time
 	leaveSince   time.Time
+	blinkAt      time.Time
 	status       string
 	statusError  bool
 	centerX      int
@@ -61,11 +62,13 @@ func (a *island) start() {
 	mygo.Theme.SetSource(mygo.ThemeLight)
 	area := mygo.Screen.PrimaryDisplay().WorkArea
 	a.centerX, a.top = area.X+area.Width/2, area.Y+14
-	a.width, a.height = compactWidth, compactHeight
+	frame := a.targetFrame()
+	a.width, a.height = int(frame.width), int(frame.height)
+	a.animation = islandAnimation{from: frame, to: frame, started: time.Now()}
 	options := mygo.WindowOptions{
 		Title: "灵动岛", Content: ui.View(a.view),
-		X: a.centerX - compactWidth/2, Y: a.top,
-		Width: compactWidth, Height: compactHeight,
+		X: a.centerX - a.width/2, Y: a.top,
+		Width: a.width, Height: a.height, MinWidth: compactHeight, MinHeight: compactHeight - 4,
 		Frameless: true, Transparent: true, Panel: true, AlwaysOnTop: true,
 		SkipTaskbar: true, DisableResize: true, DisableMaximize: true,
 		DisableMinimize: true, DisableFullScreen: true, CornerRadius: windowRadius,
@@ -129,6 +132,10 @@ func (a *island) createTray() {
 	if err := a.win.SetIcon(icon); err != nil {
 		log.Printf("window icon: %v", err)
 	}
+}
+
+func (a *island) compactIdle() bool {
+	return len(a.files.Items) == 0 && !a.media.track.Playing
 }
 
 func (a *island) panelHeight() int {

@@ -82,3 +82,18 @@ func TestAnimationDragPausePreservesRemainingMotion(t *testing.T) {
 		t.Fatalf("remaining motion did not resume: %+v", frame)
 	}
 }
+
+func TestAnimationSettlesIntoIdleCircle(t *testing.T) {
+	now := time.Unix(1, 0)
+	idle := islandFrame{width: compactHeight, height: compactHeight}
+	var motion islandAnimation
+	motion.retarget(idle, now)
+	frame, _ := motion.sample(now.Add(150 * time.Millisecond))
+	if frame.width < idle.width || frame.width > idle.width+8 {
+		t.Fatalf("still too wide near the end of the transition: %+v", frame)
+	}
+	frame, _ = motion.sample(now.Add(time.Second))
+	if frame != idle {
+		t.Fatalf("animation did not settle into a circle: %+v", frame)
+	}
+}

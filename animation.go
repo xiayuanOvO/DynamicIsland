@@ -37,7 +37,11 @@ func (a *island) targetFrame() islandFrame {
 	if a.expanded {
 		return islandFrame{width: panelWidth, height: float32(a.panelHeight()), open: 1, content: 1}
 	}
-	return islandFrame{width: compactWidth, height: compactHeight}
+	width := float32(compactWidth)
+	if a.compactIdle() {
+		width = compactHeight
+	}
+	return islandFrame{width: width, height: compactHeight}
 }
 
 func (m *islandAnimation) retarget(target islandFrame, now time.Time) {
@@ -93,7 +97,7 @@ func (m *islandAnimation) sample(now time.Time) (islandFrame, islandVelocity) {
 		content = ui.EaseOut(animationPhase(t, 0, 0.65))
 	}
 	return islandFrame{
-		width:   max(compactWidth-10, width),
+		width:   max(compactHeight, width),
 		height:  max(compactHeight-4, height),
 		open:    m.from.open + (m.to.open-m.from.open)*ui.EaseOut(t),
 		content: m.from.content + (m.to.content-m.from.content)*content,
