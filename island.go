@@ -41,6 +41,7 @@ type island struct {
 	media        islandMedia
 	lyrics       lyricOverlay
 	idle         idleInfo
+	face         idleFaceState
 	expanded     bool
 	fullscreen   bool
 	hiddenByUser bool
@@ -48,7 +49,6 @@ type island struct {
 	busy         int
 	choosing     bool
 	leaveSince   time.Time
-	blinkAt      time.Time
 	status       string
 	statusError  bool
 	centerX      int
@@ -212,6 +212,7 @@ func (a *island) hideWindows() {
 		a.lyrics.win.Hide()
 	}
 	a.idle.anchor = mygo.Rectangle{}
+	a.face = idleFaceState{}
 	if a.idle.win != nil {
 		a.idle.win.Hide()
 	}

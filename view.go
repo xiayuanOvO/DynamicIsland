@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"math"
-	"math/rand/v2"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -92,26 +91,8 @@ func (a *island) header(c *ui.Context, open float32) {
 	idleFace := open < 1 && a.compactIdle()
 	track := a.media.track
 	playing := track.Playing && track.Title != ""
-	eyeHeight := float32(13)
-	if idleFace && open == 0 && !a.expanded {
-		const closeTime, openTime = 72 * time.Millisecond, 128 * time.Millisecond
-		now := c.Now()
-		if a.blinkAt.IsZero() || !now.Before(a.blinkAt.Add(closeTime+openTime)) {
-			a.blinkAt = now.Add(6*time.Second + time.Duration(rand.IntN(5000))*time.Millisecond)
-		}
-		elapsed := now.Sub(a.blinkAt)
-		switch {
-		case elapsed < 0:
-			c.After(-elapsed)
-		case elapsed < closeTime:
-			eyeHeight -= 11 * ui.EaseInOut(float32(elapsed)/float32(closeTime))
-			c.AnimationFrame()
-		default:
-			eyeHeight = 2 + 11*ui.EaseInOut(float32(elapsed-closeTime)/float32(openTime))
-			c.AnimationFrame()
-		}
-	} else {
-		a.blinkAt = time.Time{}
+	if !idleFace {
+		a.face = idleFaceState{}
 	}
 	header := ui.Row(c.Key("header")).FillWidth().Height(height).Shrink(0).
 		Padding(0, 22).Gap(8).AlignItems(ui.Center)
@@ -132,15 +113,7 @@ func (a *island) header(c *ui.Context, open float32) {
 	}
 	header.Children(func() {
 		if idleFace {
-			ui.Box(c.Key("idle-face")).Absolute().Left(0).Right(0).Top(0).Height(height).
-				Opacity(1-open).Translate(offset, 0).IgnoreInput(true).Label("空闲表情").
-				Draw(func(p *ui.Painter, r ui.Rect) {
-					centerX, centerY := r.X+r.W/2, r.Y+r.H/2-4
-					for _, offset := range [...]float32{-6.5, 6.5} {
-						eye := ui.Rect{X: centerX + offset - 3.5, Y: centerY - eyeHeight/2, W: 7, H: eyeHeight}
-						p.Stroke(eye, ink.Alpha(0.76), min(3.5, eyeHeight/2), 1.5)
-					}
-				})
+			a.drawIdleFace(c, height, open, offset)
 		} else if open < 1 && playing {
 			const coverSize, timeWidth = 34, 42
 			mediaWidth, waveInset, bandsPerBar := float32(compactMediaWidth-20), float32(51), 4

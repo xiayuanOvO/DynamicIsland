@@ -89,6 +89,7 @@ func TestCompactHeaderMatchesActivity(t *testing.T) {
 
 func TestIdleEyesBlinkAndReturn(t *testing.T) {
 	a := island{files: &shelf.Shelf{}}
+	a.face.moodAt = time.Now().Add(time.Hour)
 	view := ui.NewTester(func(c *ui.Context) {
 		c.Root().Background(ui.Transparent)
 		a.header(c, 0)
@@ -110,7 +111,7 @@ func TestIdleEyesBlinkAndReturn(t *testing.T) {
 	if open < 10 || center >= compactHeight-2 {
 		t.Fatalf("expected open eyes above center: height %d, center %v", open, float64(center)/2)
 	}
-	delay := a.blinkAt.Sub(view.Now())
+	delay := a.face.blinkAt.Sub(view.Now())
 	if delay < 6*time.Second || delay > 11*time.Second {
 		t.Fatalf("unexpected delay before blink: %v", delay)
 	}
@@ -121,7 +122,7 @@ func TestIdleEyesBlinkAndReturn(t *testing.T) {
 	}
 	view.Advance(150 * time.Millisecond)
 	reopened, _ := eyeHeight()
-	delay = a.blinkAt.Sub(view.Now())
+	delay = a.face.blinkAt.Sub(view.Now())
 	if reopened != open || delay < 5900*time.Millisecond || delay > 11*time.Second {
 		t.Fatalf("eyes did not reopen and wait: height %d, delay %v", reopened, delay)
 	}
