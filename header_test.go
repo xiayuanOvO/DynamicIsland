@@ -19,9 +19,10 @@ func TestCompactHeaderMatchesActivity(t *testing.T) {
 		wantFace bool
 	}{
 		{name: "playing", playing: true, wantWave: true},
+		{name: "playing with files", playing: true, files: true, wantWave: true},
 		{name: "idle", wantFace: true},
 		{name: "files", files: true},
-		{name: "expanded", expanded: true},
+		{name: "expanded", playing: true, expanded: true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			a := island{files: &shelf.Shelf{}, expanded: test.expanded}
@@ -29,7 +30,7 @@ func TestCompactHeaderMatchesActivity(t *testing.T) {
 				a.files.Items = []shelf.Item{{Name: "文件"}}
 			}
 			if test.playing {
-				a.media.track = nowplaying.Track{Title: "曲目", Playing: true}
+				a.media.track = nowplaying.Track{Title: "曲目", Playing: true, Position: 83, Duration: 180, Rate: 1}
 			}
 			var open float32
 			if test.expanded {
@@ -39,12 +40,43 @@ func TestCompactHeaderMatchesActivity(t *testing.T) {
 			if !test.expanded && (target.width == target.height) != test.wantFace {
 				t.Fatalf("idle circle has wrong dimensions: %+v", target)
 			}
-			view := ui.NewTester(func(c *ui.Context) { a.header(c, open, open) }, int(target.width), int(target.height))
+			view := ui.NewTester(func(c *ui.Context) {
+				if a.media.track.Sampled.IsZero() {
+					a.media.track.Sampled = c.Now()
+				}
+				a.header(c, open)
+			}, int(target.width), int(target.height))
 			if _, branded := view.Find("灵动岛"); branded {
 				t.Fatal("header still displays the app name")
 			}
-			if _, hasWave := view.Find("播放律动"); hasWave != test.wantWave {
+			for _, label := range []string{"固定展开", "更多操作", "收起"} {
+				if _, present := view.Find(label); present {
+					t.Fatalf("header still displays %s", label)
+				}
+			}
+			wave, hasWave := view.Find("播放律动")
+			if hasWave != test.wantWave {
 				t.Fatalf("wave visible = %v, want %v", hasWave, test.wantWave)
+			}
+			cover, hasCover := view.Find("专辑封面")
+			elapsed, hasElapsed := view.Find("1:23")
+			if hasCover != test.wantWave || hasElapsed != test.wantWave {
+				t.Fatalf("cover visible = %v, elapsed visible = %v, want %v", hasCover, hasElapsed, test.wantWave)
+			}
+			if _, hasCount := view.Find("01"); hasCount != (test.files && !test.playing) {
+				t.Fatalf("file count visible = %v", hasCount)
+			}
+			if test.wantWave {
+				if target.width >= compactWidth || wave.W >= target.width/2 {
+					t.Fatalf("playback capsule or waveform is too wide: %+v, %+v", target, wave)
+				}
+				if cover.X < 8 || wave.X-(cover.X+cover.W) < 8 || elapsed.X-(wave.X+wave.W) < 8 || target.width-(elapsed.X+elapsed.W) < 8 || wave.X+wave.W/2 != target.width/2 {
+					t.Fatalf("expected cover, centered wave, and elapsed time within the capsule: %+v, %+v, %+v", cover, wave, elapsed)
+				}
+				view.Advance(time.Second)
+				if _, updated := view.Find("1:24"); !updated {
+					t.Fatal("elapsed time did not advance")
+				}
 			}
 			if rect, hasFace := view.Find("空闲表情"); hasFace != test.wantFace {
 				t.Fatalf("face visible = %v, want %v", hasFace, test.wantFace)
@@ -59,7 +91,7 @@ func TestIdleEyesBlinkAndReturn(t *testing.T) {
 	a := island{files: &shelf.Shelf{}}
 	view := ui.NewTester(func(c *ui.Context) {
 		c.Root().Background(ui.Transparent)
-		a.header(c, 0, 0)
+		a.header(c, 0)
 	}, compactHeight, compactHeight)
 
 	eyeHeight := func() (int, int) {

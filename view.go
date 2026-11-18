@@ -42,6 +42,7 @@ func (a *island) view(c *ui.Context) {
 	a.updateMedia(c)
 	a.updateWave(c)
 	frame := a.animatedFrame(c)
+	a.updateLyrics(c, frame)
 	w := int(math.Round(float64(frame.width)))
 	h := int(math.Round(float64(frame.height)))
 	if !a.dragging && (w != a.width || h != a.height) {
@@ -49,7 +50,7 @@ func (a *island) view(c *ui.Context) {
 	}
 	root.ContextMenu(a.menu)
 	root.Children(func() {
-		a.header(c, frame.open, frame.content)
+		a.header(c, frame.open)
 		if a.expanded || h > compactHeight+1 {
 			a.body(c, over, frame.content)
 		}
@@ -79,7 +80,7 @@ func (a *island) hover(c *ui.Context, hovered bool) {
 	if a.animation.to.open != 0 || now.Sub(a.animation.started) >= a.animation.duration {
 		a.ignoreHover = false
 	}
-	if !a.expanded || a.pinned || a.dragging || a.media.scrubbing || a.busy > 0 || a.choosing {
+	if !a.expanded || a.dragging || a.media.scrubbing || a.busy > 0 || a.choosing {
 		return
 	}
 	if a.leaveSince.IsZero() {
@@ -94,9 +95,11 @@ func (a *island) hover(c *ui.Context, hovered bool) {
 	}
 }
 
-func (a *island) header(c *ui.Context, open, content float32) {
+func (a *island) header(c *ui.Context, open float32) {
 	height := float32(compactHeight) + 10*open
 	idleFace := open < 1 && a.compactIdle()
+	track := a.media.track
+	playing := track.Playing && track.Title != ""
 	eyeHeight := float32(13)
 	if idleFace && open == 0 && !a.expanded {
 		const closeTime, openTime = 72 * time.Millisecond, 128 * time.Millisecond
@@ -130,34 +133,29 @@ func (a *island) header(c *ui.Context, open, content float32) {
 						p.Stroke(eye, ink.Alpha(0.76), min(3.5, eyeHeight/2), 1.5)
 					}
 				})
-		} else if open < 1 && a.media.track.Playing && a.media.track.Title != "" {
-			ui.Box(c.Key("compact-wave")).Absolute().Left(0).Right(0).Top((height - 24) / 2).Height(24).
-				Opacity(1 - open).IgnoreInput(true).Label("播放律动").
-				Draw(func(p *ui.Painter, r ui.Rect) {
-					width := min(r.W, 140)
-					r.X, r.W = r.X+(r.W-width)/2, width
-					paintMediaBars(p, r, a.media.wave[:], 2, 1)
+		} else if open < 1 && playing {
+			const coverSize, sideWidth, timeWidth = 34, 51, 42
+			c.After(200 * time.Millisecond)
+			ui.Box(c.Key("compact-media")).Absolute().Left(0).Right(0).Top(0).Height(height).
+				Opacity(1 - open).IgnoreInput(true).Center().Children(func() {
+				ui.Box(c).Size(compactMediaWidth-20, height).Shrink(0).Children(func() {
+					a.media.cover(c.Key("compact-cover"), coverSize).
+						Absolute().Left(0).Top((height - coverSize) / 2)
+					ui.Box(c.Key("compact-wave")).Absolute().Left(sideWidth).Right(sideWidth).
+						Top((height - 24) / 2).Height(24).Label("播放律动").
+						Draw(func(p *ui.Painter, r ui.Rect) {
+							paintMediaBars(p, r, a.media.wave[:], 4, 1, a.settings.waveColor(a.media.artworkColor))
+						})
+					ui.Text(c.Key("compact-time"), mediaTime(track.Elapsed(c.Now()))).
+						Absolute().Right(0).Top((height-16)/2).Size(timeWidth, 16).
+						SingleLine().TextAlign(ui.Center).FontSize(11.5).FontWeight(600).TextColor(ink.Alpha(0.72))
 				})
+			})
 		}
 		ui.Box(c.Key("move")).Grow(1).Height(32).DragWindow().
 			Cursor(ui.CursorGrab).Tooltip("移动")
-		if a.expanded || open > 0 {
-			ui.Row(c.Key("header-tools")).Width(94 * open).Height(26).Shrink(0).Gap(8).
-				Clip().Opacity(content).IgnoreInput(!a.expanded || content < 0.80).Children(func() {
-				pin := iconButton(c.Key("pin"), pinIcon, "固定展开")
-				if a.pinned {
-					pin.TextColor(ink).Background(white.Alpha(0.55)).Tooltip("取消固定")
-				}
-				if pin.Clicked() {
-					a.pinned = !a.pinned
-				}
-				iconButton(c.Key("more"), moreIcon, "更多操作").Menu(a.menu)
-				if iconButton(c.Key("collapse"), collapseIcon, "收起").Clicked() {
-					a.setExpanded(false)
-				}
-			})
-		}
-		if len(a.files.Items) > 0 {
+
+		if len(a.files.Items) > 0 && !playing {
 			ui.Text(c.Key("summary"), fmt.Sprintf("%02d", len(a.files.Items))).
 				Width(24 * (1 - open)).MinWidth(0).Opacity(1 - open).Clip().
 				FontSize(10.5).SingleLine().TextColor(muted)
@@ -379,6 +377,10 @@ func (a *island) menu(m *ui.Menu) {
 	}
 	if m.Item("隐藏灵动岛").Chosen() {
 		a.hide()
+	}
+	m.Separator()
+	if m.Item("设置…").Chosen() {
+		a.win.Update(a.openSettings)
 	}
 	if m.Item("退出").Chosen() {
 		mygo.App.Quit()

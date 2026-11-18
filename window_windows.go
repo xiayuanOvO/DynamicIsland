@@ -8,15 +8,21 @@ import (
 )
 
 var (
-	user32             = syscall.NewLazyDLL("user32.dll")
-	gdi32              = syscall.NewLazyDLL("gdi32.dll")
-	getWindowRect      = user32.NewProc("GetWindowRect")
-	getCursorPos       = user32.NewProc("GetCursorPos")
-	getDPIForWindow    = user32.NewProc("GetDpiForWindow")
-	setWindowRgn       = user32.NewProc("SetWindowRgn")
-	createRoundRectRgn = gdi32.NewProc("CreateRoundRectRgn")
-	deleteObject       = gdi32.NewProc("DeleteObject")
-	lastWindowShape    windowShape
+	user32                = syscall.NewLazyDLL("user32.dll")
+	gdi32                 = syscall.NewLazyDLL("gdi32.dll")
+	getForegroundWindow   = user32.NewProc("GetForegroundWindow")
+	getShellWindow        = user32.NewProc("GetShellWindow")
+	isZoomed              = user32.NewProc("IsZoomed")
+	monitorFromWindow     = user32.NewProc("MonitorFromWindow")
+	getMonitorInfo        = user32.NewProc("GetMonitorInfoW")
+	dwmGetWindowAttribute = syscall.NewLazyDLL("dwmapi.dll").NewProc("DwmGetWindowAttribute")
+	getWindowRect         = user32.NewProc("GetWindowRect")
+	getCursorPos          = user32.NewProc("GetCursorPos")
+	getDPIForWindow       = user32.NewProc("GetDpiForWindow")
+	setWindowRgn          = user32.NewProc("SetWindowRgn")
+	createRoundRectRgn    = gdi32.NewProc("CreateRoundRectRgn")
+	deleteObject          = gdi32.NewProc("DeleteObject")
+	lastWindowShape       windowShape
 )
 
 // Resizing moves the window under a stationary pointer without reliably
@@ -73,4 +79,41 @@ func roundWindow(win *mygo.Window, radius int) {
 			lastWindowShape = windowShape{}
 		}
 	})
+}
+
+func foregroundFullscreen() bool {
+	hwnd, _, _ := getForegroundWindow.Call()
+	shell, _, _ := getShellWindow.Call()
+	if hwnd == 0 || hwnd == shell {
+		return false
+	}
+	if maximized, _, _ := isZoomed.Call(hwnd); maximized != 0 {
+		return false
+	}
+	monitor, _, _ := monitorFromWindow.Call(hwnd, 0)
+	if monitor == 0 {
+		return false
+	}
+	type rect struct{ left, top, right, bottom int32 }
+	var info struct {
+		size          uint32
+		monitor, work rect
+		flags         uint32
+	}
+	info.size = uint32(unsafe.Sizeof(info))
+	if ok, _, _ := getMonitorInfo.Call(monitor, uintptr(unsafe.Pointer(&info))); ok == 0 {
+		return false
+	}
+	var window rect
+	const extendedFrameBounds = 9
+	status, _, _ := dwmGetWindowAttribute.Call(hwnd, extendedFrameBounds, uintptr(unsafe.Pointer(&window)), unsafe.Sizeof(window))
+	if int32(status) < 0 {
+		if ok, _, _ := getWindowRect.Call(hwnd, uintptr(unsafe.Pointer(&window))); ok == 0 {
+			return false
+		}
+	}
+	return windowCoversDisplay(
+		mygo.Rectangle{X: int(window.left), Y: int(window.top), Width: int(window.right - window.left), Height: int(window.bottom - window.top)},
+		mygo.Rectangle{X: int(info.monitor.left), Y: int(info.monitor.top), Width: int(info.monitor.right - info.monitor.left), Height: int(info.monitor.bottom - info.monitor.top)},
+	)
 }

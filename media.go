@@ -1,9 +1,11 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"fmt"
+	"image"
 	"time"
 
 	"dynamicisland/internal/audiolevel"
@@ -17,6 +19,7 @@ type islandMedia struct {
 	adapter          string
 	track            nowplaying.Track
 	artwork          ui.ImageSource
+	artworkColor     ui.Color
 	artworkHash      [32]byte
 	artworkLoading   bool
 	refreshAt        time.Time
@@ -61,7 +64,8 @@ func (a *island) requestMedia(command nowplaying.Command) {
 	}
 	m.reading = command.Action == ""
 	m.action = command.Action
-	adapter, oldHash, oldSong, withArtwork := m.adapter, m.artworkHash, m.track, a.expanded
+	adapter, oldHash, oldSong := m.adapter, m.artworkHash, m.track
+	withArtwork := a.expanded || oldSong.Playing || oldSong.Title == "" || command.Action != ""
 	go func() {
 		var controlErr error
 		if command.Action != "" {
@@ -74,8 +78,9 @@ func (a *island) requestMedia(command nowplaying.Command) {
 		cancel()
 		hash := sha256.Sum256(track.Artwork)
 		var cover ui.ImageSource
+		var coverColor ui.Color
 		if len(track.Artwork) > 0 && len(track.Artwork) <= 8<<20 && (hash != oldHash || !oldSong.SameSong(track)) {
-			cover, _ = ui.DecodeImage(track.Artwork)
+			cover, coverColor = decodeArtwork(track.Artwork)
 		}
 		track.Artwork = nil
 		a.win.Update(func() {
@@ -94,22 +99,29 @@ func (a *island) requestMedia(command nowplaying.Command) {
 				trackChanged = !m.track.SameSong(track)
 				if trackChanged {
 					m.scrubbing = false
-					m.artwork, m.artworkHash = nil, [32]byte{}
+					if cover == nil {
+						a.setArtwork(nil, ui.Transparent, [32]byte{})
+					}
 				}
 				m.track = track
 				if cover != nil {
-					m.artwork, m.artworkHash = cover, hash
+					a.setArtwork(cover, coverColor, hash)
 				}
-				if load := track.ArtworkLoader; load != nil && a.expanded && m.artwork == nil && !m.artworkLoading {
+				if track.Playing && !withArtwork && m.artwork == nil {
+					m.refreshAt = now
+				}
+				if load := track.ArtworkLoader; load != nil && (a.expanded || track.Playing) && m.artwork == nil && !m.artworkLoading {
 					m.artworkLoading = true
 					go func() {
 						ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 						defer cancel()
-						cover, _ := ui.DecodeImage(load(ctx))
+						data := load(ctx)
+						cover, color := decodeArtwork(data)
+						hash := sha256.Sum256(data)
 						a.win.Update(func() {
 							m.artworkLoading = false
-							if m.artwork == nil && m.track.SameSong(track) {
-								m.artwork = cover
+							if cover != nil && m.artwork == nil && m.track.SameSong(track) {
+								a.setArtwork(cover, color, hash)
 							}
 						})
 					}()
@@ -126,6 +138,60 @@ func (a *island) requestMedia(command nowplaying.Command) {
 			}
 		})
 	}()
+}
+
+func (a *island) setArtwork(cover ui.ImageSource, color ui.Color, hash [32]byte) {
+	if a.settingsWindow != nil && a.settings.Mode == waveArtwork && a.media.artworkColor != color {
+		a.settingsWindow.Invalidate()
+	}
+	a.media.artwork, a.media.artworkColor, a.media.artworkHash = cover, color, hash
+}
+
+func decodeArtwork(data []byte) (ui.ImageSource, ui.Color) {
+	if len(data) == 0 || len(data) > 8<<20 {
+		return nil, ui.Transparent
+	}
+	cover, _ := ui.DecodeImage(data)
+	if cover == nil {
+		return nil, ui.Transparent
+	}
+	img, _, err := image.Decode(bytes.NewReader(data))
+	if err != nil {
+		return cover, ui.Transparent
+	}
+	return cover, dominantArtworkColor(img)
+}
+
+func dominantArtworkColor(img image.Image) ui.Color {
+	type sample struct{ weight, red, green, blue uint32 }
+	var bins [512]sample
+	var dominant sample
+	bounds := img.Bounds()
+	columns, rows := min(bounds.Dx(), 24), min(bounds.Dy(), 24)
+	for row := range rows {
+		y := bounds.Min.Y + (2*row+1)*bounds.Dy()/(2*rows)
+		for col := range columns {
+			x := bounds.Min.X + (2*col+1)*bounds.Dx()/(2*columns)
+			red, green, blue, alpha := img.At(x, y).RGBA()
+			if alpha < 0x8000 {
+				continue
+			}
+			red, green, blue = red*255/alpha, green*255/alpha, blue*255/alpha
+			weight := 64 + max(red, green, blue) - min(red, green, blue)
+			bin := &bins[(red>>5)*64+(green>>5)*8+(blue>>5)]
+			bin.weight += weight
+			bin.red += red * weight
+			bin.green += green * weight
+			bin.blue += blue * weight
+			if bin.weight > dominant.weight {
+				dominant = *bin
+			}
+		}
+	}
+	if dominant.weight == 0 {
+		return ui.Transparent
+	}
+	return ui.RGB(uint8(dominant.red/dominant.weight), uint8(dominant.green/dominant.weight), uint8(dominant.blue/dominant.weight))
 }
 
 func (a *island) updateWave(c *ui.Context) {
@@ -168,6 +234,17 @@ func (m *islandMedia) stopWave() {
 	m.waveFrameAt = time.Time{}
 }
 
+func (m *islandMedia) cover(c *ui.Context, size float32) ui.Element {
+	return ui.Box(c).Size(size, size).Shrink(0).Radius(size * 0.225).Clip().Label("专辑封面").
+		Background(white.Alpha(0.4)).Center().Children(func() {
+		if m.artwork != nil {
+			ui.Image(c, m.artwork).Fill().Fit(ui.Cover)
+		} else {
+			ui.Icon(c, mediaIcon).Size(size/2, size/2).TextColor(muted)
+		}
+	})
+}
+
 func (a *island) mediaCard(c *ui.Context) {
 	m := &a.media
 	track := m.track
@@ -188,14 +265,7 @@ func (a *island) mediaCard(c *ui.Context) {
 		Gradient(white.Alpha(0.48), white.Alpha(0.19), 155).Border(0.75, white.Alpha(0.65)).
 		InsetShadow(0, 1, 0, 0, white.Alpha(0.46)).Children(func() {
 		ui.Row(c.Key("track")).FillWidth().Height(40).Shrink(0).Gap(8).AlignItems(ui.Center).Children(func() {
-			ui.Box(c.Key("cover")).Size(40, 40).Shrink(0).Radius(9).Clip().
-				Background(white.Alpha(0.4)).Center().Children(func() {
-				if m.artwork != nil {
-					ui.Image(c, m.artwork).Fill().Fit(ui.Cover)
-				} else {
-					ui.Icon(c, mediaIcon).Size(20, 20).TextColor(muted)
-				}
-			})
+			m.cover(c.Key("cover"), 40)
 			ui.Column(c.Key("metadata")).Grow(1).MinWidth(0).Gap(3).Clip().Children(func() {
 				ui.Text(c, track.Title).FillWidth().SingleLine().FontSize(12).FontWeight(600).
 					TextColor(ink).Tooltip(track.Title)
@@ -247,7 +317,7 @@ func (a *island) mediaCard(c *ui.Context) {
 			fraction = float32(position / track.Duration)
 		}
 		wave.FillWidth().Height(24).Shrink(0).Draw(func(p *ui.Painter, r ui.Rect) {
-			paintMediaBars(p, r, m.wave[:], 1, fraction)
+			paintMediaBars(p, r, m.wave[:], 1, fraction, a.settings.waveColor(m.artworkColor))
 		})
 		ui.Row(c.Key("times")).FillWidth().Height(14).Shrink(0).AlignItems(ui.Center).Children(func() {
 			ui.Text(c, mediaTime(position)).FontSize(10).TextColor(muted)
@@ -259,9 +329,13 @@ func (a *island) mediaCard(c *ui.Context) {
 	})
 }
 
-func paintMediaBars(p *ui.Painter, r ui.Rect, levels []float32, bandsPerBar int, fraction float32) {
+func paintMediaBars(p *ui.Painter, r ui.Rect, levels []float32, bandsPerBar int, fraction float32, color ui.Color) {
 	bars := float32(len(levels) / bandsPerBar)
 	step := r.W / bars
+	played, remaining := color.Alpha(0.88), color.Alpha(0.30)
+	if color == accent {
+		remaining = ink.Alpha(0.17)
+	}
 	for i := 0; i < len(levels); i += bandsPerBar {
 		x := float32(i / bandsPerBar)
 		level := levels[i]
@@ -269,9 +343,9 @@ func paintMediaBars(p *ui.Painter, r ui.Rect, levels []float32, bandsPerBar int,
 			level = max(level, band)
 		}
 		height := float32(5) + 17*level
-		fill := ink.Alpha(0.17)
+		fill := remaining
 		if (x+0.5)/bars <= fraction {
-			fill = accent.Alpha(0.88)
+			fill = played
 		}
 		p.Fill(ui.Rect{X: r.X + x*step + 1, Y: r.Y + (r.H-height)/2, W: max(0, step-2), H: height}, fill, 2)
 	}

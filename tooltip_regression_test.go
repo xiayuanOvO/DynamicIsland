@@ -9,11 +9,11 @@ import (
 )
 
 func TestTooltipTextVisibleOnGlass(t *testing.T) {
-	const tip = "更多操作"
+	const tip = "添加文件"
 	view := ui.NewTester(func(c *ui.Context) {
 		c.SetTheme(theme)
 		ui.Box(c.Key("toolbar")).Padding(40).Children(func() {
-			iconButton(c.Key("more"), moreIcon, tip).Label("anchor")
+			iconButton(c.Key("add"), plusIcon, tip).Label("anchor")
 		})
 	}, 240, 160)
 	view.Move(53, 53)

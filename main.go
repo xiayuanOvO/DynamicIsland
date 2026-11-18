@@ -25,6 +25,10 @@ func main() {
 	a := &island{
 		files: files, statePath: statePath, selected: make(map[string]bool),
 	}
+	a.settings, err = loadSettings(a.settingsPath())
+	if err != nil {
+		log.Printf("load settings: %v", err)
+	}
 	if loadErr != nil {
 		log.Printf("load shelf: %v", loadErr)
 		a.status = "列表读取失败"

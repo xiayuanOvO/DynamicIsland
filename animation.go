@@ -40,6 +40,8 @@ func (a *island) targetFrame() islandFrame {
 	width := float32(compactWidth)
 	if a.compactIdle() {
 		width = compactHeight
+	} else if a.media.track.Playing && a.media.track.Title != "" {
+		width = compactMediaWidth
 	}
 	return islandFrame{width: width, height: compactHeight}
 }

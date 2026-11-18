@@ -16,15 +16,16 @@ import (
 )
 
 const (
-	compactWidth  = 244
-	compactHeight = 52
-	panelWidth    = 428
-	windowRadius  = 26
-	hotkey        = "CmdOrCtrl+Alt+Space"
-	cardColumns   = 3
-	cardHeight    = 116
-	cardGap       = 8
-	maxCardRows   = 2
+	compactWidth      = 244
+	compactMediaWidth = 200
+	compactHeight     = 52
+	panelWidth        = 428
+	windowRadius      = 26
+	hotkey            = "CmdOrCtrl+Alt+Space"
+	cardColumns       = 3
+	cardHeight        = 116
+	cardGap           = 8
+	maxCardRows       = 2
 )
 
 type island struct {
@@ -38,8 +39,10 @@ type island struct {
 	previewClock uint64
 	animation    islandAnimation
 	media        islandMedia
+	lyrics       lyricOverlay
 	expanded     bool
-	pinned       bool
+	fullscreen   bool
+	hiddenByUser bool
 	dragging     bool
 	busy         int
 	choosing     bool
@@ -56,6 +59,11 @@ type island struct {
 	pendingSize  mygo.Size
 	width        int
 	height       int
+
+	settings           appSettings
+	settingsWindow     *mygo.Window
+	settingsSaveAt     time.Time
+	settingsSaveFailed bool
 }
 
 func (a *island) start() {
@@ -88,11 +96,15 @@ func (a *island) start() {
 		if !a.resizing {
 			b := a.win.Bounds()
 			a.centerX, a.top = b.X+b.Width/2, b.Y
+			if a.lyrics.text != "" {
+				a.win.Invalidate()
+			}
 		}
 	})
 	roundWindow(a.win, windowRadius)
 	mygo.Screen.OnDisplaysChanged(a.recenter)
 	mygo.App.OnWillQuit(func(*mygo.QuitEvent) {
+		a.saveSettings()
 		a.media.stopWave()
 		close(a.previewJobs)
 		mygo.GlobalShortcut.UnregisterAll()
@@ -105,6 +117,7 @@ func (a *island) start() {
 		a.message("快捷键被占用", true)
 	}
 	a.createTray()
+	a.watchFullscreen()
 }
 
 func (a *island) createTray() {
@@ -116,6 +129,7 @@ func (a *island) createTray() {
 		{Label: "回到屏幕顶部", Click: func(*mygo.MenuItem, *mygo.Window) { a.recenter() }},
 		{Label: "隐藏灵动岛", Click: func(*mygo.MenuItem, *mygo.Window) { a.hide() }},
 		mygo.Separator(),
+		{Label: "设置…", Click: func(*mygo.MenuItem, *mygo.Window) { a.openSettings() }},
 		{Label: "退出", Click: func(*mygo.MenuItem, *mygo.Window) { mygo.App.Quit() }},
 	})
 	icon := trayIcon()
@@ -176,11 +190,24 @@ func (a *island) setExpanded(expanded bool) {
 }
 
 func (a *island) hide() {
+	a.hiddenByUser = true
+	a.hideWindows()
+}
+
+func (a *island) hideWindows() {
+	a.lyrics.text = ""
+	if a.lyrics.win != nil {
+		a.lyrics.win.Hide()
+	}
 	a.media.stopWave()
 	a.win.Hide()
 }
 
 func (a *island) show() {
+	a.hiddenByUser = false
+	if a.fullscreen {
+		return
+	}
 	a.win.Show()
 	a.win.Focus()
 	a.setExpanded(true)
