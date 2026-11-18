@@ -17,21 +17,43 @@ func TestSettingsSavesMusicCardStyle(t *testing.T) {
 		t.Fatalf("expected default music card style: %+v, %v", settings, err)
 	}
 	view := ui.NewTester(a.settingsView, settingsWidth, a.settingsHeight())
+	if cover, found := view.Find("专辑封面"); !found || cover.W != 40 {
+		t.Fatalf("settings should start with the default card preview: %+v", cover)
+	}
 	for _, choice := range []struct {
-		label string
-		style int
+		label      string
+		style      int
+		coverWidth float32
 	}{
-		{"大封面", mediaCardLargeCover},
-		{"默认风格", mediaCardDefault},
+		{"大封面", mediaCardLargeCover, largeMediaCoverSize},
+		{"默认风格", mediaCardDefault, 40},
 	} {
 		if err := view.Click(choice.label); err != nil {
 			t.Fatal(err)
+		}
+		if cover, found := view.Find("专辑封面"); !found || cover.W != choice.coverWidth {
+			t.Fatalf("preview did not immediately switch to %s: %+v", choice.label, cover)
 		}
 		view.Advance(time.Second)
 		saved, err := loadSettings(a.settingsPath())
 		if err != nil || saved.MediaCardStyle != choice.style {
 			t.Fatalf("saved music card after choosing %s: %+v, %v", choice.label, saved, err)
 		}
+	}
+}
+
+func TestMusicCardPreviewIsReadOnly(t *testing.T) {
+	a := island{}
+	a.media.track = nowplaying.Track{Title: "当前曲目", Playing: true, Toggle: true, Next: true, Duration: 240, Seek: true}
+	a.media.reading = true
+	view := ui.NewTester(a.settingsView, settingsWidth, a.settingsHeight())
+	pause, found := view.Find("暂停")
+	if !found {
+		t.Fatal("preview has no playback controls")
+	}
+	view.ClickAt(pause.X+pause.W/2, pause.Y+pause.H/2)
+	if a.media.pending.Action != "" || a.media.scrubbing {
+		t.Fatalf("preview interacted with playback: %+v", a.media.pending)
 	}
 }
 

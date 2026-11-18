@@ -114,6 +114,9 @@ func (a *island) requestMedia(command nowplaying.Command) {
 					}
 				}
 				m.track = track
+				if a.settingsWindow != nil && oldSong.Playing != track.Playing {
+					a.settingsWindow.Invalidate()
+				}
 				if cover != nil {
 					a.setArtwork(cover, coverColor, hash)
 				}
@@ -151,7 +154,7 @@ func (a *island) requestMedia(command nowplaying.Command) {
 }
 
 func (a *island) setArtwork(cover ui.ImageSource, color ui.Color, hash [32]byte) {
-	if a.settingsWindow != nil && a.settings.Mode == waveArtwork && a.media.artworkColor != color {
+	if a.settingsWindow != nil {
 		a.settingsWindow.Invalidate()
 	}
 	a.media.artwork, a.media.artworkColor, a.media.artworkHash = cover, color, hash
@@ -256,19 +259,37 @@ func (m *islandMedia) cover(c *ui.Context, size float32) ui.Element {
 }
 
 func (a *island) mediaCard(c *ui.Context) {
-	m := &a.media
-	track := m.track
-	large := a.settings.MediaCardStyle == mediaCardLargeCover
-	control := func(action nowplaying.Action, position float64) {
-		a.requestMedia(nowplaying.Command{Action: action, Source: track.Source, Position: position})
+	source := a.media.track.Source
+	a.settings.renderMediaCard(c, &a.media, a.expanded, func(action nowplaying.Action, position float64) {
+		a.requestMedia(nowplaying.Command{Action: action, Source: source, Position: position})
+	})
+}
+
+func (a *island) mediaCardPreview(c *ui.Context) {
+	preview := islandMedia{artwork: a.media.artwork, artworkColor: a.media.artworkColor}
+	preview.track = a.media.track
+	if preview.track.Title == "" {
+		preview.track = nowplaying.Track{
+			Title: "示例曲目", Artist: "示例艺人", Position: 63, Duration: 228,
+			Playing: true, Previous: true, Next: true, Toggle: true,
+		}
 	}
+	for i := range preview.wave {
+		preview.wave[i] = [...]float32{0.18, 0.38, 0.52, 0.30, 0.60, 0.46, 0.22}[i%7]
+	}
+	a.settings.renderMediaCard(c, &preview, false, nil)
+}
+
+func (s appSettings) renderMediaCard(c *ui.Context, m *islandMedia, expanded bool, control func(nowplaying.Action, float64)) {
+	track := m.track
+	large := s.MediaCardStyle == mediaCardLargeCover
 	position := track.Elapsed(c.Now())
 	if m.action == nowplaying.Seek {
 		position = m.scrub
 	} else if m.pending.Action == nowplaying.Seek {
 		position = m.pending.Position
 	}
-	if track.Playing && a.expanded {
+	if control != nil && track.Playing && expanded {
 		c.After(200 * time.Millisecond)
 	}
 	metadata := func() {
@@ -290,7 +311,7 @@ func (a *island) mediaCard(c *ui.Context) {
 		})
 	}
 	controls := func() {
-		if iconButton(c.Key("previous"), previousIcon, "上一首").Disabled(!track.Previous || m.action != "").Clicked() {
+		if iconButton(c.Key("previous"), previousIcon, "上一首").Disabled(!track.Previous || m.action != "").Clicked() && control != nil {
 			control(nowplaying.Previous, 0)
 		}
 		icon, label := playIcon, "播放"
@@ -299,21 +320,21 @@ func (a *island) mediaCard(c *ui.Context) {
 		}
 		if iconButton(c.Key("toggle"), icon, label).Size(34, 34).Radius(17).
 			Background(theme.SurfaceHover).TextColor(ink).
-			Disabled(!track.Toggle || m.action != "").Clicked() {
+			Disabled(!track.Toggle || m.action != "").Clicked() && control != nil {
 			control(nowplaying.Toggle, 0)
 		}
-		if iconButton(c.Key("next"), nextIcon, "下一首").Disabled(!track.Next || m.action != "").Clicked() {
+		if iconButton(c.Key("next"), nextIcon, "下一首").Disabled(!track.Next || m.action != "").Clicked() && control != nil {
 			control(nowplaying.Next, 0)
 		}
 	}
 	progress := func() {
 		var wave ui.Element
-		if track.CanSeek() {
+		if control != nil && track.CanSeek() {
 			if !m.scrubbing {
 				m.scrub = position
 			}
 			wave = ui.SliderBase(c.Key("seek"), &m.scrub, 0, track.Duration).
-				Cursor(ui.CursorPointer).Label("播放进度").Disabled(m.action != "" || !a.expanded)
+				Cursor(ui.CursorPointer).Label("播放进度").Disabled(m.action != "" || !expanded)
 			changed := wave.Changed()
 			button, pressed := wave.PressedButton()
 			held := pressed && button == 0
@@ -337,7 +358,7 @@ func (a *island) mediaCard(c *ui.Context) {
 			waveHeight = 14
 		}
 		wave.FillWidth().Height(waveHeight).Shrink(0).Draw(func(p *ui.Painter, r ui.Rect) {
-			color := a.settings.waveColor(m.artworkColor)
+			color := s.waveColor(m.artworkColor)
 			if large {
 				bar := ui.Rect{X: r.X, Y: r.Y + (r.H-4)/2, W: r.W, H: 4}
 				p.Fill(bar, ink.Alpha(0.13), 2)
@@ -355,7 +376,7 @@ func (a *island) mediaCard(c *ui.Context) {
 			}
 		})
 	}
-	card := ui.Column(c.Key("media")).FillWidth().Height(float32(a.settings.cardHeight())).Shrink(0).
+	card := ui.Column(c.Key("media")).FillWidth().Height(float32(s.cardHeight())).Shrink(0).IgnoreInput(control == nil).
 		Padding(10, 12).Gap(5).Radius(16).
 		Gradient(white.Alpha(0.48), white.Alpha(0.19), 155).Border(0.75, white.Alpha(0.65)).
 		InsetShadow(0, 1, 0, 0, white.Alpha(0.46))

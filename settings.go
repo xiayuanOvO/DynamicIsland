@@ -26,6 +26,8 @@ const (
 const (
 	settingsWidth        = 432
 	settingsControlWidth = 236
+	cardPreviewInset     = 8
+	cardPreviewGap       = 12
 )
 
 type appSettings struct {
@@ -110,10 +112,11 @@ func (s appSettings) save(path string) error {
 }
 
 func (a *island) settingsHeight() int {
+	height := 286 + a.settings.cardHeight() + 2*cardPreviewInset + cardPreviewGap
 	if a.settings.Mode == waveCustom {
-		return 620
+		height += 334
 	}
-	return 286
+	return height
 }
 
 func (a *island) openSettings() {
@@ -163,6 +166,11 @@ func (a *island) settingsView(c *ui.Context) {
 				cardStyleChanged = ui.Segmented(c.Key("card-mode"), &a.settings.MediaCardStyle, "默认风格", "大封面").
 					FillEqually().Width(settingsControlWidth).Height(30).FontSize(12).Label("音乐卡片选项").Changed()
 			})
+			ui.Column(c.Key("card-preview-area")).FillWidth().Padding(0, 14, cardPreviewGap).Children(func() {
+				ui.Column(c.Key("card-preview")).FillWidth().Padding(cardPreviewInset).
+					Radius(12).Background(ui.Hex("#e5e8ec")).Label("音乐卡片预览").
+					Children(func() { a.mediaCardPreview(c) })
+			})
 			divider()
 			settingsRow(c.Key("lyric-settings")).Children(func() {
 				ui.Text(c, "显示歌词").Grow(1).FontSize(13).TextColor(ink)
@@ -193,7 +201,7 @@ func (a *island) settingsView(c *ui.Context) {
 				})
 			}
 		})
-		if modeChanged && a.settingsWindow != nil {
+		if (modeChanged || cardStyleChanged) && a.settingsWindow != nil {
 			win := a.settingsWindow
 			win.Update(func() {
 				frame, content := win.Bounds(), win.ContentBounds()
