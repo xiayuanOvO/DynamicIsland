@@ -74,41 +74,15 @@ func (a *island) updateLyrics(c *ui.Context, frame islandFrame, width, height in
 
 	// Window creation and movement happen after the island's frame is built.
 	a.win.Update(func() {
-		if overlay.rows[1] == "" || a.settings.HideLyrics || !a.win.IsVisible() || a.expanded {
-			if overlay.win != nil {
-				overlay.win.Hide()
+		var bounds mygo.Rectangle
+		if overlay.rows[1] != "" && !a.settings.HideLyrics && a.win.IsVisible() && !a.expanded {
+			display := a.dock.display
+			if overlay.side == dockNone {
+				display = mygo.Screen.DisplayMatching(overlay.anchor)
 			}
-			return
+			bounds = lyricBounds(overlay.anchor, display.WorkArea, overlay.side)
 		}
-		display := a.dock.display
-		if overlay.side == dockNone {
-			display = mygo.Screen.DisplayMatching(overlay.anchor)
-		}
-		bounds := lyricBounds(overlay.anchor, display.WorkArea, overlay.side)
-		if bounds.Width <= 0 || bounds.Height <= 0 {
-			if overlay.win != nil {
-				overlay.win.Hide()
-			}
-			return
-		}
-		if overlay.win == nil {
-			overlay.win = mygo.NewWindow(mygo.WindowOptions{
-				Title: "歌词", Parent: a.win, Content: ui.View(overlay.view),
-				X: bounds.X, Y: bounds.Y, Width: bounds.Width, Height: bounds.Height,
-				Hidden: true, Frameless: true, Transparent: true, Panel: true,
-				AlwaysOnTop: true, SkipTaskbar: true, IgnoreMouseEvents: true,
-				DisableResize: true, DisableShadow: true,
-				BackgroundColor: "#00000000",
-			})
-		} else {
-			if overlay.win.Bounds() != bounds {
-				overlay.win.SetBounds(bounds)
-			}
-			overlay.win.Invalidate()
-		}
-		if !overlay.win.IsVisible() {
-			overlay.win.ShowInactive()
-		}
+		a.placeOverlay(&overlay.win, bounds, "歌词", overlay.view)
 	})
 }
 

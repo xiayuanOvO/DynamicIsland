@@ -40,6 +40,7 @@ type island struct {
 	animation    islandAnimation
 	media        islandMedia
 	lyrics       lyricOverlay
+	idle         idleInfo
 	expanded     bool
 	fullscreen   bool
 	hiddenByUser bool
@@ -145,6 +146,10 @@ func (a *island) compactIdle() bool {
 	return len(a.files.Items) == 0 && !a.media.track.Playing
 }
 
+func (a *island) emptyIsland() bool {
+	return a.compactIdle() && a.media.track.Title == ""
+}
+
 func (a *island) panelHeights() (height, gridHeight int) {
 	hasFiles := len(a.files.Items) > 0
 	height = compactHeight + 10 + 20
@@ -160,11 +165,6 @@ func (a *island) panelHeights() (height, gridHeight int) {
 		if hasFiles || a.status != "" {
 			height += 14
 		}
-	} else if !hasFiles {
-		height += 24
-		if a.status != "" {
-			height += 14
-		}
 	}
 	if a.dock.side != dockNone {
 		gridHeight = min(gridHeight, max(0, a.dock.display.WorkArea.Height-height))
@@ -174,6 +174,9 @@ func (a *island) panelHeights() (height, gridHeight int) {
 
 func (a *island) setExpanded(expanded bool) {
 	if a.dragging || a.moving {
+		return
+	}
+	if expanded && a.emptyIsland() && a.status == "" {
 		return
 	}
 	a.expanded = expanded
@@ -206,6 +209,10 @@ func (a *island) hideWindows() {
 	a.lyrics.rows = [3]string{}
 	if a.lyrics.win != nil {
 		a.lyrics.win.Hide()
+	}
+	a.idle.anchor = mygo.Rectangle{}
+	if a.idle.win != nil {
+		a.idle.win.Hide()
 	}
 	a.media.stopWave()
 	a.win.Hide()

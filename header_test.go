@@ -176,7 +176,7 @@ func TestExpandedMediaDoesNotReserveAnEmptyShelf(t *testing.T) {
 	}
 }
 
-func TestIdleClickShowsAddWithoutShelf(t *testing.T) {
+func TestIdleClickKeepsTheBallCollapsed(t *testing.T) {
 	a := island{files: &shelf.Shelf{}}
 	view := ui.NewTester(func(c *ui.Context) {
 		ui.Column(c).Fill().Children(func() {
@@ -187,8 +187,8 @@ func TestIdleClickShowsAddWithoutShelf(t *testing.T) {
 		})
 	}, panelWidth, 180)
 	view.ClickAt(panelWidth/2, compactHeight/2)
-	if _, found := view.Find("添加文件"); !a.expanded || !found {
-		t.Fatal("idle click did not reveal the add action")
+	if _, found := view.Find("添加文件"); a.expanded || found {
+		t.Fatal("idle click opened an empty panel or revealed an add action")
 	}
 	for _, label := range []string{"暂存文件", "文件暂存区"} {
 		if _, found := view.Find(label); found {

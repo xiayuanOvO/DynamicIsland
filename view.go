@@ -44,6 +44,9 @@ func (a *island) view(c *ui.Context) {
 
 	a.updateMedia(c)
 	a.updateWave(c)
+	if a.expanded && a.emptyIsland() && a.status == "" {
+		a.setExpanded(false)
+	}
 	frame := a.animatedFrame(c)
 	w := int(math.Round(float64(frame.width)))
 	h := int(math.Round(float64(frame.height)))
@@ -51,6 +54,7 @@ func (a *island) view(c *ui.Context) {
 		a.resize(w, h)
 	}
 	a.updateLyrics(c, frame, w, h)
+	a.updateIdleInfo(c, frame, w, h)
 	root.ContextMenu(a.menu)
 	root.Children(func() {
 		a.header(c, frame.open)
@@ -114,14 +118,16 @@ func (a *island) header(c *ui.Context, open float32) {
 	if a.expanded {
 		header.DragWindow().Cursor(ui.CursorGrab).Tooltip("移动")
 	} else {
-		header.HandleInput(a.capsuleInput).Cursor(ui.CursorPointer).
-			Focusable().Role(ui.RoleButton).Label("展开灵动岛")
+		header.HandleInput(a.capsuleInput).Cursor(ui.CursorGrab)
 		press := a.press
 		if press != nil && press.released {
 			a.press = nil
 		}
-		if header.Clicked() && (press == nil || (press.released && !press.moved)) {
-			a.setExpanded(true)
+		if !a.emptyIsland() || a.status != "" {
+			header.Cursor(ui.CursorPointer).Focusable().Role(ui.RoleButton).Label("展开灵动岛")
+			if header.Clicked() && (press == nil || (press.released && !press.moved)) {
+				a.setExpanded(true)
+			}
 		}
 	}
 	header.Children(func() {
@@ -184,34 +190,9 @@ func (a *island) body(c *ui.Context, opacity float32) {
 			a.mediaCard(c)
 		}
 		hasFiles := len(a.files.Items) > 0
-		if hasFiles || a.media.track.Title == "" {
-			row := ui.Row(c).Height(24).Shrink(0).Gap(6).AlignItems(ui.Center)
-			if !hasFiles {
-				row.Justify(ui.Center)
-			}
-			row.Children(func() {
-				label := "添加文件"
-				if hasFiles {
-					ui.Text(c, fmt.Sprintf("暂存文件  /  %02d", len(a.files.Items))).FontSize(10.5).TextColor(muted)
-					ui.Box(c).Grow(1)
-					label = "添加"
-				}
-				add := ui.ButtonBase(c.Key("add")).Row().Height(24).Padding(0, 4).Gap(4).
-					AlignItems(ui.Center).TextColor(muted).Label("添加文件").Radius(6).
-					Cursor(ui.CursorPointer).Disabled(a.choosing)
-				if add.Hovered() {
-					add.Background(white.Alpha(0.4)).TextColor(ink)
-				}
-				add.Children(func() {
-					ui.Icon(c, plusIcon).Size(12, 12)
-					ui.Text(c, label).FontSize(10.5)
-				})
-				if add.Clicked() {
-					a.choose(false)
-				}
-			})
-		}
 		if hasFiles {
+			ui.Text(c.Key("files-heading"), fmt.Sprintf("暂存文件  /  %02d", len(a.files.Items))).
+				Height(24).Shrink(0).FontSize(10.5).TextColor(muted)
 			_, gridHeight := a.panelHeights()
 			ui.Scroll(c.Key("files")).Height(float32(gridHeight)).Shrink(0).
 				Children(func() {

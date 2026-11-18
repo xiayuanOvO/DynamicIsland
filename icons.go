@@ -19,7 +19,6 @@ var (
 	imageIcon   = svg(`<rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8" cy="8" r="1.5"/><path d="m3 17 5-5 4 4 4-6 5 7"/>`)
 	archiveIcon = svg(`<rect x="4" y="3" width="16" height="18" rx="2"/><path d="M10 3v3h4v3h-4v3h4v3h-4v3h4"/>`)
 	mediaIcon   = svg(`<rect x="3" y="3" width="18" height="18" rx="4"/><path d="m10 8 6 4-6 4V8Z"/>`)
-	plusIcon    = svg(`<path d="M12 5v14M5 12h14"/>`)
 	closeIcon   = svg(`<path d="m7 7 10 10M7 17 17 7"/>`)
 	sendIcon    = svg(`<path d="M13 4h7v7m0-7L10 14M8 5H4v15h15v-5"/>`)
 	copyIcon    = svg(`<rect x="8" y="8" width="12" height="13" rx="2"/><path d="M16 8V3H3v13h5"/>`)
