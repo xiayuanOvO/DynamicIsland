@@ -13,7 +13,17 @@ import (
 	"github.com/egoist/mygo/ui"
 )
 
-const mediaCardHeight = 110
+const (
+	mediaCardHeight     = 110
+	largeMediaCoverSize = 132
+)
+
+func (s appSettings) cardHeight() int {
+	if s.MediaCardStyle == mediaCardLargeCover {
+		return largeMediaCoverSize + 24
+	}
+	return mediaCardHeight
+}
 
 type islandMedia struct {
 	adapter          string
@@ -235,7 +245,7 @@ func (m *islandMedia) stopWave() {
 }
 
 func (m *islandMedia) cover(c *ui.Context, size float32) ui.Element {
-	return ui.Box(c).Size(size, size).Shrink(0).Radius(size * 0.225).Clip().Label("专辑封面").
+	return ui.Box(c).Size(size, size).Shrink(0).Radius(min(18, size*0.225)).Clip().Label("专辑封面").
 		Background(white.Alpha(0.4)).Center().Children(func() {
 		if m.artwork != nil {
 			ui.Image(c, m.artwork).Fill().Fit(ui.Cover)
@@ -248,6 +258,7 @@ func (m *islandMedia) cover(c *ui.Context, size float32) ui.Element {
 func (a *island) mediaCard(c *ui.Context) {
 	m := &a.media
 	track := m.track
+	large := a.settings.MediaCardStyle == mediaCardLargeCover
 	control := func(action nowplaying.Action, position float64) {
 		a.requestMedia(nowplaying.Command{Action: action, Source: track.Source, Position: position})
 	}
@@ -260,37 +271,42 @@ func (a *island) mediaCard(c *ui.Context) {
 	if track.Playing && a.expanded {
 		c.After(200 * time.Millisecond)
 	}
-	ui.Column(c.Key("media")).FillWidth().Height(mediaCardHeight).Shrink(0).
-		Padding(10, 12).Gap(5).Radius(16).
-		Gradient(white.Alpha(0.48), white.Alpha(0.19), 155).Border(0.75, white.Alpha(0.65)).
-		InsetShadow(0, 1, 0, 0, white.Alpha(0.46)).Children(func() {
-		ui.Row(c.Key("track")).FillWidth().Height(40).Shrink(0).Gap(8).AlignItems(ui.Center).Children(func() {
-			m.cover(c.Key("cover"), 40)
-			ui.Column(c.Key("metadata")).Grow(1).MinWidth(0).Gap(3).Clip().Children(func() {
-				ui.Text(c, track.Title).FillWidth().SingleLine().FontSize(12).FontWeight(600).
-					TextColor(ink).Tooltip(track.Title)
-				if track.Artist != "" {
-					ui.Text(c, track.Artist).FillWidth().SingleLine().FontSize(10.5).
-						TextColor(muted).Tooltip(track.Artist)
-				}
-			})
-			if iconButton(c.Key("previous"), previousIcon, "上一首").Disabled(!track.Previous || m.action != "").Clicked() {
-				control(nowplaying.Previous, 0)
-			}
-			icon, label := playIcon, "播放"
-			if track.Playing {
-				icon, label = pauseIcon, "暂停"
-			}
-			if iconButton(c.Key("toggle"), icon, label).Size(34, 34).Radius(17).
-				Background(theme.SurfaceHover).TextColor(ink).
-				Disabled(!track.Toggle || m.action != "").Clicked() {
-				control(nowplaying.Toggle, 0)
-			}
-			if iconButton(c.Key("next"), nextIcon, "下一首").Disabled(!track.Next || m.action != "").Clicked() {
-				control(nowplaying.Next, 0)
+	metadata := func() {
+		details := ui.Column(c.Key("metadata")).MinWidth(0).Gap(3).Clip()
+		titleSize, artistSize := float32(12), float32(10.5)
+		if large {
+			details.FillWidth()
+			titleSize, artistSize = 16, 12
+		} else {
+			details.Grow(1)
+		}
+		details.Children(func() {
+			ui.Text(c, track.Title).FillWidth().SingleLine().FontSize(titleSize).FontWeight(600).
+				TextColor(ink).Tooltip(track.Title)
+			if track.Artist != "" {
+				ui.Text(c, track.Artist).FillWidth().SingleLine().FontSize(artistSize).
+					TextColor(muted).Tooltip(track.Artist)
 			}
 		})
-
+	}
+	controls := func() {
+		if iconButton(c.Key("previous"), previousIcon, "上一首").Disabled(!track.Previous || m.action != "").Clicked() {
+			control(nowplaying.Previous, 0)
+		}
+		icon, label := playIcon, "播放"
+		if track.Playing {
+			icon, label = pauseIcon, "暂停"
+		}
+		if iconButton(c.Key("toggle"), icon, label).Size(34, 34).Radius(17).
+			Background(theme.SurfaceHover).TextColor(ink).
+			Disabled(!track.Toggle || m.action != "").Clicked() {
+			control(nowplaying.Toggle, 0)
+		}
+		if iconButton(c.Key("next"), nextIcon, "下一首").Disabled(!track.Next || m.action != "").Clicked() {
+			control(nowplaying.Next, 0)
+		}
+	}
+	progress := func() {
 		var wave ui.Element
 		if track.CanSeek() {
 			if !m.scrubbing {
@@ -316,8 +332,20 @@ func (a *island) mediaCard(c *ui.Context) {
 		if track.Duration > 0 {
 			fraction = float32(position / track.Duration)
 		}
-		wave.FillWidth().Height(24).Shrink(0).Draw(func(p *ui.Painter, r ui.Rect) {
-			paintMediaBars(p, r, m.wave[:], 1, fraction, a.settings.waveColor(m.artworkColor))
+		waveHeight := float32(24)
+		if large {
+			waveHeight = 14
+		}
+		wave.FillWidth().Height(waveHeight).Shrink(0).Draw(func(p *ui.Painter, r ui.Rect) {
+			color := a.settings.waveColor(m.artworkColor)
+			if large {
+				bar := ui.Rect{X: r.X, Y: r.Y + (r.H-4)/2, W: r.W, H: 4}
+				p.Fill(bar, ink.Alpha(0.13), 2)
+				bar.W *= min(1, max(0, fraction))
+				p.Fill(bar, color.Alpha(0.88), min(2, bar.W/2))
+			} else {
+				paintMediaBars(p, r, m.wave[:], 1, fraction, color)
+			}
 		})
 		ui.Row(c.Key("times")).FillWidth().Height(14).Shrink(0).AlignItems(ui.Center).Children(func() {
 			ui.Text(c, mediaTime(position)).FontSize(10).TextColor(muted)
@@ -326,6 +354,31 @@ func (a *island) mediaCard(c *ui.Context) {
 				ui.Text(c, mediaTime(track.Duration)).FontSize(10).TextColor(muted)
 			}
 		})
+	}
+	card := ui.Column(c.Key("media")).FillWidth().Height(float32(a.settings.cardHeight())).Shrink(0).
+		Padding(10, 12).Gap(5).Radius(16).
+		Gradient(white.Alpha(0.48), white.Alpha(0.19), 155).Border(0.75, white.Alpha(0.65)).
+		InsetShadow(0, 1, 0, 0, white.Alpha(0.46))
+	if large {
+		card.Row().Padding(12).Gap(14).AlignItems(ui.Center)
+	}
+	card.Children(func() {
+		if large {
+			m.cover(c.Key("cover"), largeMediaCoverSize)
+			ui.Column(c.Key("large-details")).Grow(1).MinWidth(0).Height(largeMediaCoverSize).
+				Gap(8).Justify(ui.Center).Children(func() {
+				metadata()
+				ui.Column(c.Key("progress")).FillWidth().Gap(1).Children(progress)
+				ui.Row(c.Key("controls")).FillWidth().Height(34).Gap(12).Center().Children(controls)
+			})
+		} else {
+			ui.Row(c.Key("track")).FillWidth().Height(40).Shrink(0).Gap(8).AlignItems(ui.Center).Children(func() {
+				m.cover(c.Key("cover"), 40)
+				metadata()
+				controls()
+			})
+			progress()
+		}
 	})
 }
 

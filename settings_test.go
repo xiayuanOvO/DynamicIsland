@@ -11,6 +11,24 @@ import (
 	"github.com/egoist/mygo/ui"
 )
 
+func TestSettingsPlaceControlsBesideTheirLabels(t *testing.T) {
+	a := island{}
+	view := ui.NewTester(a.settingsView, settingsWidth, a.settingsHeight())
+	for _, row := range []struct{ label, control string }{
+		{"天气城市", "自动定位"},
+		{"音乐卡片风格", "大封面"},
+		{"显示歌词", "歌词显示"},
+		{"律动柱颜色", "跟随海报"},
+	} {
+		label, hasLabel := view.Find(row.label)
+		control, hasControl := view.Find(row.control)
+		if !hasLabel || !hasControl || label.X >= control.X ||
+			control.Y+control.H <= label.Y || label.Y+label.H <= control.Y {
+			t.Fatalf("%s label and control should share a row: %+v, %+v", row.label, label, control)
+		}
+	}
+}
+
 func TestSettingsSavesLyricsVisibility(t *testing.T) {
 	dir := t.TempDir()
 	a := island{statePath: filepath.Join(dir, "shelf.json")}
@@ -35,7 +53,7 @@ func TestSettingsWindowSavesWaveColorChoice(t *testing.T) {
 		t.Fatalf("expected default appearance without a settings file: %+v, %v", initial, err)
 	}
 	a := island{statePath: filepath.Join(dir, "shelf.json"), settings: initial}
-	view := ui.NewTester(a.settingsView, settingsWidth, 510)
+	view := ui.NewTester(a.settingsView, settingsWidth, (&island{settings: appSettings{Mode: waveCustom}}).settingsHeight())
 	view.SetLocale("en")
 	custom := initial.Color
 	for _, choice := range []struct {

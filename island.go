@@ -162,7 +162,7 @@ func (a *island) panelHeights() (height, gridHeight int) {
 		height += 20
 	}
 	if a.media.track.Title != "" {
-		height += mediaCardHeight
+		height += a.settings.cardHeight()
 		if hasFiles || a.status != "" {
 			height += 14
 		}

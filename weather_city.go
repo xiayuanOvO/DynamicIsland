@@ -104,14 +104,18 @@ type weatherCitySearch struct {
 func (a *island) weatherSettings(c *ui.Context) bool {
 	search := &a.citySearch
 	selected := a.settings.WeatherCity
-	ui.Row(c.Key("weather-city")).FillWidth().Height(30).Shrink(0).AlignItems(ui.Center).Gap(8).Children(func() {
-		ui.Text(c, "天气城市").Grow(1).FontSize(15).FontWeight(600).TextColor(ink)
+	settingsRow(c.Key("weather-city")).Children(func() {
+		ui.Column(c).Grow(1).MinWidth(0).Gap(1).Children(func() {
+			ui.Text(c, "天气城市").FontSize(13).TextColor(ink)
+			if selected.ID != 0 {
+				ui.Link(c, "Open-Meteo", weatherCityAttribution).FontSize(10).TextColor(muted).SingleLine()
+			}
+		})
 		label := "自动定位"
 		if selected.ID != 0 {
 			label = selected.Name
-			ui.Link(c, "Open-Meteo", weatherCityAttribution).FontSize(10).TextColor(muted).SingleLine()
 		}
-		trigger := ui.Button(c.Key("city-picker"), label).Width(136).Height(28).FontSize(12).Clip()
+		trigger := ui.Button(c.Key("city-picker"), label).Width(settingsControlWidth).Height(30).FontSize(12).Clip()
 		if selected.ID != 0 {
 			trigger.Tooltip(selected.label())
 		}
