@@ -21,8 +21,9 @@ const (
 const settingsWidth = 328
 
 type appSettings struct {
-	Mode  int      `json:"waveColorMode"`
-	Color ui.Color `json:"waveColor"`
+	Mode       int      `json:"waveColorMode"`
+	Color      ui.Color `json:"waveColor"`
+	HideLyrics bool     `json:"hideLyrics,omitempty"`
 }
 
 func (s appSettings) waveColor(artwork ui.Color) ui.Color {
@@ -94,9 +95,9 @@ func (s appSettings) save(path string) error {
 
 func (a *island) settingsHeight() int {
 	if a.settings.Mode == waveCustom {
-		return 496
+		return 536
 	}
-	return 176
+	return 216
 }
 
 func (a *island) openSettings() {
@@ -120,6 +121,15 @@ func (a *island) settingsView(c *ui.Context) {
 	c.SetTheme(theme)
 	c.Root().Background(ui.Hex("#f2f3f5"))
 	ui.Scroll(c.Key("settings")).Fill().Padding(16, 20).Gap(10).Children(func() {
+		lyricsChanged := false
+		ui.Row(c.Key("lyric-settings")).FillWidth().Height(30).Shrink(0).AlignItems(ui.Center).Children(func() {
+			ui.Text(c, "显示歌词").Grow(1).FontSize(15).FontWeight(600).TextColor(ink)
+			shown := !a.settings.HideLyrics
+			if ui.Switch(c.Key("show-lyrics"), &shown).Label("歌词显示").Changed() {
+				a.settings.HideLyrics = !shown
+				lyricsChanged = true
+			}
+		})
 		ui.Text(c, "律动柱颜色").FontSize(15).FontWeight(600).TextColor(ink)
 		modeChanged := ui.Segmented(c, &a.settings.Mode, "默认", "自定义", "跟随海报").
 			FillEqually().Label("律动配色模式").Changed()
@@ -150,7 +160,7 @@ func (a *island) settingsView(c *ui.Context) {
 				win.SetContentBounds(content)
 			})
 		}
-		if modeChanged || colorChanged {
+		if modeChanged || colorChanged || lyricsChanged {
 			a.settingsSaveAt = c.Now().Add(300 * time.Millisecond)
 			if a.win != nil {
 				a.win.Invalidate()

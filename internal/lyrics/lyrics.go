@@ -69,12 +69,27 @@ func Parse(text string) Lines {
 }
 
 func (l Lines) Current(position float64) (text string, next float64) {
+	rows, next := l.Surrounding(position)
+	return rows[1], next
+}
+
+func (l Lines) Surrounding(position float64) (rows [3]string, next float64) {
 	i := sort.Search(len(l), func(i int) bool { return l[i].At > position })
 	if i > 0 {
-		text = l[i-1].Text
+		rows[1] = l[i-1].Text
+		for prev := i - 2; prev >= 0; prev-- {
+			if rows[0] = l[prev].Text; rows[0] != "" {
+				break
+			}
+		}
 	}
 	if i < len(l) {
 		next = l[i].At
+		for _, line := range l[i:] {
+			if rows[2] = line.Text; rows[2] != "" {
+				break
+			}
+		}
 	}
-	return text, next
+	return rows, next
 }

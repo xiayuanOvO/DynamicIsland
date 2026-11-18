@@ -33,6 +33,26 @@ func TestTimedLines(t *testing.T) {
 	}
 }
 
+func TestSurroundingLinesFollowPlayback(t *testing.T) {
+	lines := Parse("[00:01]第一句\n[00:02]\n[00:05]第二句\n[00:08]第三句")
+	for _, test := range []struct {
+		position float64
+		rows     [3]string
+		next     float64
+	}{
+		{1, [3]string{"", "第一句", "第二句"}, 2},
+		{3, [3]string{"第一句", "", "第二句"}, 5},
+		{6, [3]string{"第一句", "第二句", "第三句"}, 8},
+		{9, [3]string{"第二句", "第三句", ""}, 0},
+		{1, [3]string{"", "第一句", "第二句"}, 2},
+	} {
+		rows, next := lines.Surrounding(test.position)
+		if rows != test.rows || next != test.next {
+			t.Fatalf("at %v: got %q, %v, want %q, %v", test.position, rows, next, test.rows, test.next)
+		}
+	}
+}
+
 func TestLocalLyricsTakePriority(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "歌手 - 歌名.lrc"), []byte("[00:00.00]歌词"), 0600); err != nil {

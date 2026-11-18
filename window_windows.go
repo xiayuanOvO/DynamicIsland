@@ -18,12 +18,24 @@ var (
 	dwmGetWindowAttribute = syscall.NewLazyDLL("dwmapi.dll").NewProc("DwmGetWindowAttribute")
 	getWindowRect         = user32.NewProc("GetWindowRect")
 	getCursorPos          = user32.NewProc("GetCursorPos")
+	getAsyncKeyState      = user32.NewProc("GetAsyncKeyState")
+	getSystemMetrics      = user32.NewProc("GetSystemMetrics")
 	getDPIForWindow       = user32.NewProc("GetDpiForWindow")
 	setWindowRgn          = user32.NewProc("SetWindowRgn")
 	createRoundRectRgn    = gdi32.NewProc("CreateRoundRectRgn")
 	deleteObject          = gdi32.NewProc("DeleteObject")
 	lastWindowShape       windowShape
 )
+
+func primaryMouseDown() bool {
+	const leftButton, rightButton, swapButton = 0x01, 0x02, 23
+	button := uintptr(leftButton)
+	if swapped, _, _ := getSystemMetrics.Call(swapButton); swapped != 0 {
+		button = rightButton
+	}
+	state, _, _ := getAsyncKeyState.Call(button)
+	return state&0x8000 != 0
+}
 
 // Resizing moves the window under a stationary pointer without reliably
 // refreshing the UI's cached hover coordinates.

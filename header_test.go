@@ -126,3 +126,73 @@ func TestIdleEyesBlinkAndReturn(t *testing.T) {
 		t.Fatalf("eyes did not reopen and wait: height %d, delay %v", reopened, delay)
 	}
 }
+
+func TestCapsuleExpandsOnClickAndCollapsesAfterLeaving(t *testing.T) {
+	a := island{files: &shelf.Shelf{}, width: compactMediaWidth, height: compactHeight}
+	a.media.track = nowplaying.Track{Title: "测试曲目", Playing: true}
+	view := ui.NewTester(func(c *ui.Context) {
+		root := ui.Box(c).Fill()
+		a.hover(c, root.Hovered())
+		root.Children(func() { a.header(c, 0) })
+	}, compactMediaWidth, compactHeight)
+	view.Move(100, 26)
+	view.Advance(time.Second)
+	if a.expanded {
+		t.Fatal("hover should leave the capsule collapsed")
+	}
+	view.Press(100, 26)
+	view.Move(120, 26)
+	view.Release(120, 26)
+	if a.expanded {
+		t.Fatal("dragging should not expand the capsule")
+	}
+	view.ClickAt(100, 26)
+	if !a.expanded {
+		t.Fatal("click did not expand the capsule")
+	}
+	view.Move(-1, -1)
+	view.Advance(199 * time.Millisecond)
+	if !a.expanded {
+		t.Fatal("panel collapsed before the leave delay")
+	}
+	view.Advance(time.Millisecond)
+	if a.expanded {
+		t.Fatal("panel did not collapse after leaving")
+	}
+}
+
+func TestExpandedMediaDoesNotReserveAnEmptyShelf(t *testing.T) {
+	a := island{files: &shelf.Shelf{}, expanded: true}
+	a.media.track = nowplaying.Track{Title: "测试曲目"}
+	height, _ := a.panelHeights()
+	view := ui.NewTester(func(c *ui.Context) { a.body(c, 1) }, panelWidth, height)
+	for _, label := range []string{"暂存文件", "文件暂存区", "添加文件"} {
+		if _, found := view.Find(label); found {
+			t.Fatalf("empty shelf exposed %s", label)
+		}
+	}
+	if _, found := view.Find("测试曲目"); !found || height >= 250 {
+		t.Fatalf("expected a compact media-only panel, height %d", height)
+	}
+}
+
+func TestIdleClickShowsAddWithoutShelf(t *testing.T) {
+	a := island{files: &shelf.Shelf{}}
+	view := ui.NewTester(func(c *ui.Context) {
+		ui.Column(c).Fill().Children(func() {
+			a.header(c, 0)
+			if a.expanded {
+				a.body(c, 1)
+			}
+		})
+	}, panelWidth, 180)
+	view.ClickAt(panelWidth/2, compactHeight/2)
+	if _, found := view.Find("添加文件"); !a.expanded || !found {
+		t.Fatal("idle click did not reveal the add action")
+	}
+	for _, label := range []string{"暂存文件", "文件暂存区"} {
+		if _, found := view.Find(label); found {
+			t.Fatalf("empty shelf exposed %s", label)
+		}
+	}
+}

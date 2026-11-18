@@ -11,6 +11,22 @@ import (
 	"github.com/egoist/mygo/ui"
 )
 
+func TestSettingsSavesLyricsVisibility(t *testing.T) {
+	dir := t.TempDir()
+	a := island{statePath: filepath.Join(dir, "shelf.json")}
+	view := ui.NewTester(a.settingsView, settingsWidth, a.settingsHeight())
+	for _, hidden := range []bool{true, false} {
+		if err := view.Click("歌词显示"); err != nil {
+			t.Fatal(err)
+		}
+		view.Advance(time.Second)
+		saved, err := loadSettings(a.settingsPath())
+		if err != nil || saved.HideLyrics != hidden {
+			t.Fatalf("saved hideLyrics = %v, want %v (%v)", saved.HideLyrics, hidden, err)
+		}
+	}
+}
+
 func TestSettingsWindowSavesWaveColorChoice(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "settings.json")

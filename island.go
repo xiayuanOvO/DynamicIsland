@@ -46,14 +46,15 @@ type island struct {
 	dragging     bool
 	busy         int
 	choosing     bool
-	ignoreHover  bool
-	hoverSince   time.Time
 	leaveSince   time.Time
 	blinkAt      time.Time
 	status       string
 	statusError  bool
 	centerX      int
 	top          int
+	dock         edgeDock
+	moving       bool
+	press        *capsulePress
 	resizing     bool
 	resizeQueued bool
 	pendingSize  mygo.Size
@@ -92,15 +93,7 @@ func (a *island) start() {
 	a.startPreviews()
 	a.win.SetActiveAppearance(true)
 	a.win.OnResize(func() { roundWindow(a.win, windowRadius) })
-	a.win.OnMove(func() {
-		if !a.resizing {
-			b := a.win.Bounds()
-			a.centerX, a.top = b.X+b.Width/2, b.Y
-			if a.lyrics.text != "" {
-				a.win.Invalidate()
-			}
-		}
-	})
+	a.win.OnMove(a.windowMoved)
 	roundWindow(a.win, windowRadius)
 	mygo.Screen.OnDisplaysChanged(a.recenter)
 	mygo.App.OnWillQuit(func(*mygo.QuitEvent) {
@@ -152,24 +145,35 @@ func (a *island) compactIdle() bool {
 	return len(a.files.Items) == 0 && !a.media.track.Playing
 }
 
-func (a *island) panelHeight() int {
-	height := 314
-	if len(a.files.Items) > 0 {
-		height = 225 + a.fileGridHeight()
+func (a *island) panelHeights() (height, gridHeight int) {
+	hasFiles := len(a.files.Items) > 0
+	height = compactHeight + 10 + 20
+	if hasFiles {
+		height = 225
+		rows := min((len(a.files.Items)+cardColumns-1)/cardColumns, maxCardRows)
+		gridHeight = rows*cardHeight + max(rows-1, 0)*cardGap + 8
+	} else if a.status != "" {
+		height += 20
 	}
 	if a.media.track.Title != "" {
-		height += mediaCardHeight + 14
+		height += mediaCardHeight
+		if hasFiles || a.status != "" {
+			height += 14
+		}
+	} else if !hasFiles {
+		height += 24
+		if a.status != "" {
+			height += 14
+		}
 	}
-	return height
-}
-
-func (a *island) fileGridHeight() int {
-	rows := min((len(a.files.Items)+cardColumns-1)/cardColumns, maxCardRows)
-	return rows*cardHeight + max(rows-1, 0)*cardGap + 8
+	if a.dock.side != dockNone {
+		gridHeight = min(gridHeight, max(0, a.dock.display.WorkArea.Height-height))
+	}
+	return height + gridHeight, gridHeight
 }
 
 func (a *island) setExpanded(expanded bool) {
-	if a.dragging {
+	if a.dragging || a.moving {
 		return
 	}
 	a.expanded = expanded
@@ -182,11 +186,11 @@ func (a *island) setExpanded(expanded bool) {
 	if expanded {
 		// Hovering clears this grace; external opens remain reachable.
 		a.leaveSince = now.Add(800 * time.Millisecond)
-	} else {
-		a.ignoreHover = true
 	}
 	a.animation.retarget(a.targetFrame(), now)
-	a.win.Invalidate()
+	if a.win != nil {
+		a.win.Invalidate()
+	}
 }
 
 func (a *island) hide() {
@@ -195,7 +199,11 @@ func (a *island) hide() {
 }
 
 func (a *island) hideWindows() {
-	a.lyrics.text = ""
+	if a.moving {
+		a.moving = false
+		a.animation.resume(time.Now())
+	}
+	a.lyrics.rows = [3]string{}
 	if a.lyrics.win != nil {
 		a.lyrics.win.Hide()
 	}
@@ -223,6 +231,7 @@ func (a *island) toggle() {
 
 func (a *island) recenter() {
 	area := mygo.Screen.PrimaryDisplay().WorkArea
+	a.dock = edgeDock{}
 	a.centerX, a.top = area.X+area.Width/2, area.Y+14
 	a.resize(a.width, a.height)
 	a.win.Invalidate()
@@ -237,12 +246,13 @@ func (a *island) resize(width, height int) {
 	// Resizing synchronously during a view build re-enters the renderer.
 	a.win.Update(func() {
 		a.resizeQueued = false
+		if a.moving {
+			return
+		}
 		size := a.pendingSize
 		a.resizing = true
 		a.width, a.height = size.Width, size.Height
-		a.win.SetBounds(mygo.Rectangle{
-			X: a.centerX - size.Width/2, Y: a.top, Width: size.Width, Height: size.Height,
-		})
+		a.win.SetBounds(a.windowBounds(size.Width, size.Height))
 		a.resizing = false
 	})
 }

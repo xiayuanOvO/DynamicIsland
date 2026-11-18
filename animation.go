@@ -23,7 +23,7 @@ type islandAnimation struct {
 func (a *island) animatedFrame(c *ui.Context) islandFrame {
 	now := c.Now()
 	m := &a.animation
-	if !a.dragging {
+	if !a.dragging && !a.moving {
 		m.retarget(a.targetFrame(), now)
 	}
 	frame, _ := m.sample(now)
@@ -35,10 +35,11 @@ func (a *island) animatedFrame(c *ui.Context) islandFrame {
 
 func (a *island) targetFrame() islandFrame {
 	if a.expanded {
-		return islandFrame{width: panelWidth, height: float32(a.panelHeight()), open: 1, content: 1}
+		height, _ := a.panelHeights()
+		return islandFrame{width: panelWidth, height: float32(height), open: 1, content: 1}
 	}
 	width := float32(compactWidth)
-	if a.compactIdle() {
+	if a.dock.side != dockNone || a.compactIdle() {
 		width = compactHeight
 	} else if a.media.track.Playing && a.media.track.Title != "" {
 		width = compactMediaWidth

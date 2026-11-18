@@ -14,7 +14,6 @@ func svg(paths string) *ui.SVG {
 }
 
 var (
-	inboxIcon   = svg(`<path d="M4 4h16l2 11v5H2v-5L4 4Z"/><path d="M2 15h6l2 3h4l2-3h6M12 6v7m-3-3 3 3 3-3"/>`)
 	fileIcon    = svg(`<path d="M14 2H5v20h14V7l-5-5Z"/><path d="M14 2v6h5M8 13h8m-8 4h5"/>`)
 	folderIcon  = svg(`<path d="M3 6V4h7l2 3h9v13H3V6Z"/><path d="M3 8h18"/>`)
 	imageIcon   = svg(`<rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8" cy="8" r="1.5"/><path d="m3 17 5-5 4 4 4-6 5 7"/>`)
