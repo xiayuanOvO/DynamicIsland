@@ -21,9 +21,10 @@ const (
 const settingsWidth = 328
 
 type appSettings struct {
-	Mode       int      `json:"waveColorMode"`
-	Color      ui.Color `json:"waveColor"`
-	HideLyrics bool     `json:"hideLyrics,omitempty"`
+	Mode        int         `json:"waveColorMode"`
+	Color       ui.Color    `json:"waveColor"`
+	HideLyrics  bool        `json:"hideLyrics,omitempty"`
+	WeatherCity weatherCity `json:"weatherCity,omitzero"`
 }
 
 func (s appSettings) waveColor(artwork ui.Color) ui.Color {
@@ -57,6 +58,9 @@ func loadSettings(path string) (appSettings, error) {
 	}
 	if settings.Mode < waveDefault || settings.Mode > waveArtwork {
 		return defaults, fmt.Errorf("未知的律动配色模式 %d", settings.Mode)
+	}
+	if !settings.WeatherCity.valid() {
+		settings.WeatherCity = weatherCity{}
 	}
 	return settings, nil
 }
@@ -95,9 +99,9 @@ func (s appSettings) save(path string) error {
 
 func (a *island) settingsHeight() int {
 	if a.settings.Mode == waveCustom {
-		return 536
+		return 576
 	}
-	return 216
+	return 256
 }
 
 func (a *island) openSettings() {
@@ -110,7 +114,10 @@ func (a *island) openSettings() {
 			BackgroundColor: "#f2f3f5",
 		})
 		a.settingsWindow.OnClose(func(*mygo.CloseEvent) { a.saveSettings() })
-		a.settingsWindow.OnClosed(func() { a.settingsWindow = nil })
+		a.settingsWindow.OnClosed(func() {
+			a.settingsWindow = nil
+			a.citySearch = weatherCitySearch{}
+		})
 	} else {
 		a.settingsWindow.Show()
 	}
@@ -121,6 +128,7 @@ func (a *island) settingsView(c *ui.Context) {
 	c.SetTheme(theme)
 	c.Root().Background(ui.Hex("#f2f3f5"))
 	ui.Scroll(c.Key("settings")).Fill().Padding(16, 20).Gap(10).Children(func() {
+		weatherChanged := a.weatherSettings(c)
 		lyricsChanged := false
 		ui.Row(c.Key("lyric-settings")).FillWidth().Height(30).Shrink(0).AlignItems(ui.Center).Children(func() {
 			ui.Text(c, "显示歌词").Grow(1).FontSize(15).FontWeight(600).TextColor(ink)
@@ -160,7 +168,7 @@ func (a *island) settingsView(c *ui.Context) {
 				win.SetContentBounds(content)
 			})
 		}
-		if modeChanged || colorChanged || lyricsChanged {
+		if modeChanged || colorChanged || lyricsChanged || weatherChanged {
 			a.settingsSaveAt = c.Now().Add(300 * time.Millisecond)
 			if a.win != nil {
 				a.win.Invalidate()

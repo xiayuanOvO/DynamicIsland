@@ -63,6 +63,7 @@ type island struct {
 	height       int
 
 	settings           appSettings
+	citySearch         weatherCitySearch
 	settingsWindow     *mygo.Window
 	settingsSaveAt     time.Time
 	settingsSaveFailed bool

@@ -16,7 +16,9 @@ import (
 
 const (
 	idleInfoWidth       = 148
-	idleWeatherEndpoint = "https://wttr.in/?format=%25C%7C%25t&lang=zh-cn&m"
+	idleWeatherBase     = "https://wttr.in/"
+	idleWeatherQuery    = "?format=%25C%7C%25t&lang=zh-cn&m"
+	idleWeatherEndpoint = idleWeatherBase + idleWeatherQuery
 )
 
 type idleInfo struct {
@@ -44,13 +46,17 @@ func (a *island) updateIdleInfo(c *ui.Context, frame islandFrame, width, height 
 				c.After(delay)
 			} else {
 				info.reading = true
+				city := a.settings.WeatherCity
 				go func() {
 					ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 					defer cancel()
-					weather, err := fetchIdleWeather(ctx, idleWeatherEndpoint)
+					weather, err := fetchIdleWeather(ctx, city.weatherEndpoint())
 					a.win.Update(func() {
-						now := time.Now()
 						info.reading = false
+						if city != a.settings.WeatherCity {
+							return
+						}
+						now := time.Now()
 						info.refreshAt = now.Add(5 * time.Minute)
 						if err == nil {
 							info.weather, info.weatherUntil = weather, now.Add(2*time.Hour)

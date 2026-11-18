@@ -4,7 +4,7 @@
 
 默认浮在屏幕顶部中央。无暂存文件且媒体未播放时，收起为带表情的浅灰磨砂圆球，有活动时显示为胶囊。材质使用低遮盖率的珠光色、细微颗粒和柔和边缘高光，保留背景色彩。单击展开，鼠标移开约 200 毫秒后收起。按住收起的灵动岛或展开面板顶部可拖动位置。macOS 和 Windows 的前台应用全屏时，灵动岛与歌词自动隐藏，退出全屏后恢复。
 
-没有暂存文件且媒体未播放时，小球旁显示系统本地时间及当前天气。天气按网络 IP 估算位置查询，无法获取时继续显示时间。[天气数据由 wttr.in 提供](https://github.com/chubin/wttr.in)
+没有暂存文件且媒体未播放时，小球旁显示系统本地时间及当前天气。天气默认按网络 IP 估算位置；可在「设置 → 天气城市」搜索并选择城市，或恢复自动定位。搜索结果以行政区区分同名城市，天气无法获取时继续显示时间。 [天气数据由 wttr.in 提供](https://github.com/chubin/wttr.in) · [城市搜索由 Open-Meteo 提供](https://open-meteo.com/en/docs/geocoding-api) · [城市数据来自 GeoNames](https://www.geonames.org/) · [城市数据许可 CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)
 
 ## 运行和构建
 
