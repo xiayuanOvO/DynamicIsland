@@ -12,7 +12,10 @@ import (
 	"github.com/egoist/mygo/ui"
 )
 
-const lyricTransition = 240 * time.Millisecond
+const (
+	lyricTransition    = 240 * time.Millisecond
+	lyricOverlayHeight = 120
+)
 
 type lyricOverlay struct {
 	win       *mygo.Window
@@ -102,7 +105,7 @@ func (a *island) updateLyrics(c *ui.Context, frame islandFrame, width, height in
 
 func lyricBounds(island, area mygo.Rectangle, side dockSide) mygo.Rectangle {
 	const gap = 10
-	width, height := min(436, area.Width), min(94, area.Height)
+	width, height := min(436, area.Width), min(lyricOverlayHeight, area.Height)
 	x, y := island.X+(island.Width-width)/2, island.Y+island.Height+gap
 	switch side {
 	case dockLeft:
@@ -143,24 +146,53 @@ func (o *lyricOverlay) view(c *ui.Context) {
 		}
 	}
 
-	const rowSpacing = 28
-	_, height := c.Size()
+	const (
+		inset           = 10
+		rowSpacing      = 28
+		adjacentHeight  = 22
+		currentHeight   = 30
+		extraLineHeight = 26
+		currentSize     = 21
+		currentWeight   = 700
+	)
+	width, height := c.Size()
 	lines := [4]string{o.outgoing, o.rows[0], o.rows[1], o.rows[2]}
 	opacity := [4]float32{1 - progress, 1, 1, progress}
 	highlight := [4]float32{0, 1 - progress, progress, 0}
+	activeHeight := [4]float32{adjacentHeight, currentHeight, currentHeight, adjacentHeight}
+	for i := 1; i <= 2; i++ {
+		if lines[i] == "" || highlight[i] == 0 {
+			continue
+		}
+		textWidth, _ := c.MeasureText(0, ui.Span{Text: lines[i], Size: currentSize, Weight: currentWeight})
+		if textWidth > max(1, width-2*inset) {
+			activeHeight[i] += extraLineHeight
+		}
+	}
+	beforeSpacing := rowSpacing + (activeHeight[1]-currentHeight)/2
+	afterSpacing := rowSpacing + (activeHeight[2]-currentHeight)/2
+	// Move between the two layouts while reserving space for a wrapped current line.
+	before := [4]float32{-beforeSpacing, 0, beforeSpacing, beforeSpacing + rowSpacing}
+	after := [4]float32{-afterSpacing - rowSpacing, -afterSpacing, 0, afterSpacing}
 	ui.Box(c.Key("lyrics")).Fill().Clip().Children(func() {
 		for i, line := range lines {
 			if line == "" || opacity[i] == 0 {
 				continue
 			}
 			emphasis := highlight[i]
-			rowHeight := 22 + 8*emphasis
-			center := height/2 + (float32(i-2)+1-progress)*rowSpacing
-			ui.Text(c.Key(i), line).Absolute().Left(10).Right(10).Top(center-rowHeight/2).Height(rowHeight).
-				SingleLine().Ellipsis("…").TextAlign(align).Opacity(opacity[i]).
-				FontSize(14+7*emphasis).FontWeight(500+int(200*emphasis)).
+			rowHeight := adjacentHeight + (activeHeight[i]-adjacentHeight)*emphasis
+			center := height/2 + before[i]*(1-progress) + after[i]*progress
+			text := ui.Text(c.Key(i), line).Absolute().Left(inset).Right(inset).Top(center-rowHeight/2).
+				TextAlign(align).Opacity(opacity[i]).
+				FontSize(14+(currentSize-14)*emphasis).FontWeight(500+int((currentWeight-500)*emphasis)).
 				TextColor(white.Alpha(0.58+0.42*emphasis)).
 				TextShadow(0, 1, 4+2*emphasis, ink.Alpha(0.9+0.05*emphasis))
+			// While scrolling, open the second line once there is room for it to render whole.
+			if activeHeight[i] > currentHeight && emphasis >= 0.6 {
+				text.MaxLines(2).FixedLineHeight(min(extraLineHeight, rowHeight/2))
+			} else {
+				text.SingleLine()
+			}
 		}
 	})
 }
