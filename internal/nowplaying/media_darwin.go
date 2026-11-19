@@ -33,7 +33,11 @@ const musicScriptSource = "applescript:com.apple.Music"
 
 func Read(ctx context.Context, adapter string, withArtwork bool) (Track, error) {
 	track, hasTimeline, err := readSystemMedia(ctx, adapter, withArtwork)
-	if track.Title != "" && track.Playing && (track.Source != "com.apple.Music" || hasTimeline) {
+	isMusic := track.Source == "com.apple.Music"
+	if track.Title != "" && track.Playing && (!isMusic || hasTimeline) {
+		if isMusic && len(track.Artwork) == 0 {
+			track.ArtworkLoader = musicArtworkLoader("", track)
+		}
 		return track, nil
 	}
 
@@ -45,27 +49,31 @@ func Read(ctx context.Context, adapter string, withArtwork bool) (Track, error) 
 			music.Sampled = time.Now()
 			music.Rate = 1
 			music.Previous, music.Next, music.Toggle, music.Seek = true, true, true, true
-			if track.Source == "com.apple.Music" && track.Title == music.Title && track.Artist == music.Artist {
+			if isMusic && track.Title == music.Title && track.Artist == music.Artist {
 				music.Artwork = track.Artwork
 			}
 			if music.ID != "" {
-				id := music.ID
-				music.ArtworkLoader = func(ctx context.Context) []byte {
-					cmd := exec.CommandContext(ctx, "/usr/bin/osascript", "-s", "s", "-", id)
-					cmd.Stdin = strings.NewReader(musicArtworkScript)
-					data, err := cmd.Output()
-					raw, ok := strings.CutPrefix(strings.TrimSpace(string(data)), "«data ")
-					if err != nil || !ok || len(raw) <= 6 || len(raw) > (16<<20)+6 || !strings.HasSuffix(raw, "»") {
-						return nil
-					}
-					artwork, _ := hex.DecodeString(raw[4 : len(raw)-len("»")])
-					return artwork
-				}
+				music.ArtworkLoader = musicArtworkLoader(music.ID, music)
 			}
 			return music, nil
 		}
 	}
 	return track, err
+}
+
+func musicArtworkLoader(persistentID string, track Track) func(context.Context) []byte {
+	args := []string{"-s", "s", "-", persistentID, track.Title, track.Artist, track.Album}
+	return func(ctx context.Context) []byte {
+		cmd := exec.CommandContext(ctx, "/usr/bin/osascript", args...)
+		cmd.Stdin = strings.NewReader(musicArtworkScript)
+		data, err := cmd.Output()
+		raw, ok := strings.CutPrefix(strings.TrimSpace(string(data)), "«data ")
+		if err != nil || !ok || len(raw) <= 6 || len(raw) > (16<<20)+6 || !strings.HasSuffix(raw, "»") {
+			return nil
+		}
+		artwork, _ := hex.DecodeString(raw[4 : len(raw)-len("»")])
+		return artwork
+	}
 }
 
 func readSystemMedia(ctx context.Context, adapter string, withArtwork bool) (Track, bool, error) {
