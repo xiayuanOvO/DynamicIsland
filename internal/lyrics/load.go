@@ -81,9 +81,6 @@ func search(ctx context.Context, client *http.Client, endpoint string, song Song
 }
 
 func matchScore(song Song, title string, artists []string, album string, duration float64) float64 {
-	if !strings.EqualFold(strings.TrimSpace(title), song.Title) {
-		return math.Inf(1)
-	}
 	var difference float64
 	if song.Duration > 0 && duration > 0 {
 		difference = math.Abs(duration - song.Duration)
@@ -92,6 +89,7 @@ func matchScore(song Song, title string, artists []string, album string, duratio
 		}
 	}
 	sameAlbum := song.Album != "" && strings.EqualFold(strings.TrimSpace(album), song.Album)
+	sameRelease := sameAlbum && song.Duration > 0 && duration > 0 && difference <= 2
 	artistScore := math.Inf(1)
 	for _, artist := range artists {
 		if strings.EqualFold(strings.TrimSpace(artist), song.Artist) {
@@ -99,7 +97,18 @@ func matchScore(song Song, title string, artists []string, album string, duratio
 			break
 		}
 	}
-	if artistScore != 0 && sameAlbum && song.Duration > 0 && duration > 0 && difference <= 2 {
+	if !strings.EqualFold(strings.TrimSpace(title), song.Title) {
+		if artistScore != 0 || !sameRelease {
+			return math.Inf(1)
+		}
+		playing, playingLanguage := comparableTitle(song.Title)
+		candidate, candidateLanguage := comparableTitle(title)
+		if !strings.EqualFold(playing, candidate) || (playingLanguage != "" && candidateLanguage != "" && playingLanguage != candidateLanguage) {
+			return math.Inf(1)
+		}
+		return 12 + difference // Prefer an exact title when both versions match.
+	}
+	if artistScore != 0 && sameRelease {
 		// Providers can credit an alternative name on the identical release.
 		artistScore = 8
 	}
@@ -107,6 +116,23 @@ func matchScore(song Song, title string, artists []string, album string, duratio
 		artistScore++
 	}
 	return artistScore + difference
+}
+
+var titleSpelling = strings.NewReplacer("妳", "你", "（", "(", "）", ")")
+
+func comparableTitle(title string) (base, language string) {
+	title = titleSpelling.Replace(strings.TrimSpace(title))
+	if end, ok := strings.CutSuffix(title, ")"); ok {
+		if i := strings.LastIndexByte(end, '('); i > 0 {
+			switch strings.ToLower(strings.TrimSpace(end[i+1:])) {
+			case "国", "國", "国语", "國語", "国语版", "國語版", "普通话", "普通話", "mandarin", "mandarin version":
+				return strings.TrimSpace(end[:i]), "mandarin"
+			case "粤", "粵", "粤语", "粵語", "粤语版", "粵語版", "cantonese", "cantonese version":
+				return strings.TrimSpace(end[:i]), "cantonese"
+			}
+		}
+	}
+	return title, ""
 }
 
 func fetchJSON(ctx context.Context, client *http.Client, address, referer string, body []byte, out any) bool {

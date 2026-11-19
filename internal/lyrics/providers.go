@@ -146,12 +146,12 @@ func searchKugou(ctx context.Context, client *http.Client, song Song) Lines {
 		return nil
 	}
 
-	var hash string
+	var hash, trackAlbum string
 	var albumAudioID int64
 	best := math.Inf(1)
 	for _, track := range result.Data.Info {
 		if score := matchScore(song, track.SongName, []string{track.SingerName}, track.AlbumName, track.Duration); track.Hash != "" && score < best {
-			hash, albumAudioID, best = track.Hash, track.AlbumAudioID, score
+			hash, trackAlbum, albumAudioID, best = track.Hash, track.AlbumName, track.AlbumAudioID, score
 		}
 	}
 	if hash == "" {
@@ -176,7 +176,7 @@ func searchKugou(ctx context.Context, client *http.Client, song Song) Lines {
 	var id, accessKey string
 	best = math.Inf(1)
 	for _, candidate := range matches.Candidates {
-		if score := matchScore(song, candidate.Song, []string{candidate.Singer}, "", candidate.Duration/1000); candidate.ID != "" && candidate.AccessKey != "" && score < best {
+		if score := matchScore(song, candidate.Song, []string{candidate.Singer}, trackAlbum, candidate.Duration/1000); candidate.ID != "" && candidate.AccessKey != "" && score < best {
 			id, accessKey, best = candidate.ID, candidate.AccessKey, score
 		}
 	}
