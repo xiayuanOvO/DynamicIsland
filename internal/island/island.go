@@ -11,6 +11,7 @@ import (
 	"dynamicisland/internal/nowplaying"
 	"dynamicisland/internal/shelf"
 	"github.com/egoist/mygo"
+	"github.com/egoist/mygo/plugins/updater"
 	"github.com/egoist/mygo/transfer"
 	"github.com/egoist/mygo/ui"
 )
@@ -135,6 +136,7 @@ func (a *island) createTray() {
 		{Label: "隐藏灵动岛", Click: func(*mygo.MenuItem, *mygo.Window) { a.hide() }},
 		mygo.Separator(),
 		{Label: "设置…", Click: func(*mygo.MenuItem, *mygo.Window) { a.openSettings() }},
+		updater.MenuItem(),
 		{Label: "退出", Click: func(*mygo.MenuItem, *mygo.Window) { mygo.App.Quit() }},
 	})
 	icon := trayIcon()

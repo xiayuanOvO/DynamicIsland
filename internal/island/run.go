@@ -9,14 +9,19 @@ import (
 	"dynamicisland/internal/lyrics"
 	"dynamicisland/internal/shelf"
 	"github.com/egoist/mygo"
+	"github.com/egoist/mygo/plugins/updater"
+	updaterui "github.com/egoist/mygo/plugins/updater/native"
 )
 
 func Run() {
 	mygo.App.SetName("DynamicIsland")
-	mygo.App.SetVersion("0.1.0")
+	if mygo.App.Version() == "" {
+		mygo.App.SetVersion("0.1.0")
+	}
 	if !mygo.App.RequestSingleInstanceLock() {
 		return
 	}
+	mygo.Use(updaterui.New(updater.Options{Language: "zh-Hans"}))
 
 	config, err := os.UserConfigDir()
 	if err != nil {

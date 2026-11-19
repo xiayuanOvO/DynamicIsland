@@ -1,0 +1,110 @@
+name: Build release
+
+on:
+  push:
+    tags: ['v[0-9]+.[0-9]+.[0-9]+']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+
+env:
+  UPDATE_REPOSITORY: ${{ vars.UPDATE_REPOSITORY }}
+
+jobs:
+  build:
+    name: Build ${{ matrix.target }}
+    strategy:
+      matrix:
+        include:
+          - { runner: macos-15, platform: darwin/universal, target: darwin-universal }
+          - { runner: windows-2025, platform: windows/amd64, target: windows-amd64 }
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7
+        with:
+          go-version-file: go.mod
+      - run: go test ./...
+      - run: go vet ./...
+      - name: Build and sign update assets
+        shell: bash
+        env:
+          UPDATE_PUBLIC_KEY: ${{ vars.UPDATE_PUBLIC_KEY }}
+          MYGO_UPDATER_PRIVATE_KEY: ${{ secrets.MYGO_UPDATER_PRIVATE_KEY }}
+          PLATFORM: ${{ matrix.platform }}
+          TARGET: ${{ matrix.target }}
+        run: |
+          if [[ ! "$GITHUB_REF_NAME" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+            echo 'Release tags must use vMAJOR.MINOR.PATCH.' >&2
+            exit 1
+          fi
+          if [[ ! "$UPDATE_REPOSITORY" =~ ^[a-zA-Z0-9-]+/[a-zA-Z0-9_.-]+$ ]]; then
+            echo 'Set UPDATE_REPOSITORY to the public release repository (owner/name).' >&2
+            exit 1
+          fi
+          if [[ -z "$UPDATE_PUBLIC_KEY" || -z "$MYGO_UPDATER_PRIVATE_KEY" ]]; then
+            echo 'Set the UPDATE_PUBLIC_KEY variable and MYGO_UPDATER_PRIVATE_KEY secret.' >&2
+            exit 1
+          fi
+
+          version="${GITHUB_REF_NAME#v}"
+          jq --arg version "$version" --arg repo "$UPDATE_REPOSITORY" --arg key "$UPDATE_PUBLIC_KEY" \
+            '.version = $version | .updates = {github: $repo, publicKey: $key, deltas: 0}' \
+            mygo.json > release-config.json
+          mv release-config.json mygo.json
+
+          if [[ "$PLATFORM" == darwin/universal ]]; then
+            ./scripts/build-macos.sh
+            installer="dynamicisland-$version.dmg"
+          else
+            go tool mygo build -platform "$PLATFORM"
+            installer="dynamicisland-setup-$version-amd64.exe"
+          fi
+
+          mkdir release
+          cp "dist/$TARGET/$installer" "dist/$TARGET/dynamicisland-$version-$TARGET.tar.gz" \
+            "dist/$TARGET/update-$TARGET.json" release/
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: ${{ matrix.target }}
+          path: release/
+          if-no-files-found: error
+
+  draft:
+    name: Upload release draft
+    needs: build
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          path: release
+          merge-multiple: true
+      - name: Upload to the public release repository
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.UPDATE_RELEASE_TOKEN }}
+        run: |
+          if [[ -z "$GH_TOKEN" ]]; then
+            echo 'Set the UPDATE_RELEASE_TOKEN secret for the public release repository.' >&2
+            exit 1
+          fi
+          visibility=$(gh api "repos/$UPDATE_REPOSITORY" --jq .visibility)
+          if [[ "$visibility" != public ]]; then
+            echo 'The release repository must be public so installed apps can check for updates.' >&2
+            exit 1
+          fi
+          if is_draft=$(gh release view "$GITHUB_REF_NAME" --repo "$UPDATE_REPOSITORY" --json isDraft --jq .isDraft 2>/dev/null); then
+            if [[ "$is_draft" != true ]]; then
+              echo 'This release has already been published. Use a new tag.' >&2
+              exit 1
+            fi
+            gh release upload "$GITHUB_REF_NAME" release/* --repo "$UPDATE_REPOSITORY" --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" release/* --repo "$UPDATE_REPOSITORY" \
+              --draft --title "$GITHUB_REF_NAME" --notes ''
+          fi

@@ -1,4 +1,6 @@
 {
+  "name": "DynamicIsland",
+  "slug": "dynamicisland",
   "macos": {
     "entitlements": "native/macos/macos.entitlements",
     "infoPlist": {
