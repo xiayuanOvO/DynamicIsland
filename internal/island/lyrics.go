@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+	"unicode/utf16"
 
 	"dynamicisland/internal/lyrics"
 	"github.com/egoist/mygo"
@@ -15,19 +16,23 @@ import (
 const (
 	lyricTransition    = 240 * time.Millisecond
 	lyricOverlayHeight = 120
+	lyricScrollDelay   = 500 * time.Millisecond
+	lyricScrollSpeed   = 72 // DIPs per second
 )
 
 type lyricOverlay struct {
-	win       *mygo.Window
-	cache     map[lyrics.Song]lyrics.Lines
-	loading   bool
-	song      lyrics.Song
-	index     int
-	rows      [3]string
-	outgoing  string
-	shiftedAt time.Time
-	anchor    mygo.Rectangle
-	side      dockSide
+	win           *mygo.Window
+	cache         map[lyrics.Song]lyrics.Lines
+	loading       bool
+	song          lyrics.Song
+	index         int
+	rows          [3]string
+	outgoing      string
+	currentSince  time.Time
+	previousSince time.Time
+	shiftedAt     time.Time
+	anchor        mygo.Rectangle
+	side          dockSide
 }
 
 func (a *island) updateLyrics(c *ui.Context, frame islandFrame, width, height int) {
@@ -80,9 +85,11 @@ func (a *island) updateLyrics(c *ui.Context, frame islandFrame, width, height in
 		if song == overlay.song && index == overlay.index+1 && overlay.rows[1] != "" && rows[1] != "" &&
 			now.Sub(overlay.shiftedAt) >= lyricTransition {
 			overlay.outgoing, overlay.shiftedAt = overlay.rows[0], now
+			overlay.previousSince = overlay.currentSince
 		} else {
 			overlay.outgoing, overlay.shiftedAt = "", time.Time{}
 		}
+		overlay.currentSince = now
 		overlay.song, overlay.index, overlay.rows = song, index, rows
 	} else if anchor == overlay.anchor && side == overlay.side {
 		return
@@ -138,8 +145,10 @@ func (o *lyricOverlay) view(c *ui.Context) {
 		align = ui.End
 	}
 	progress := float32(1)
-	if !o.shiftedAt.IsZero() && !c.Preferences().ReduceMotion {
-		elapsed := c.Now().Sub(o.shiftedAt)
+	now := c.Now()
+	reduceMotion := c.Preferences().ReduceMotion
+	if !o.shiftedAt.IsZero() && !reduceMotion {
+		elapsed := now.Sub(o.shiftedAt)
 		if elapsed < lyricTransition {
 			progress = ui.EaseOut(max(0, float32(elapsed)/float32(lyricTransition)))
 			c.AnimationFrame()
@@ -156,6 +165,7 @@ func (o *lyricOverlay) view(c *ui.Context) {
 		currentWeight   = 700
 	)
 	width, height := c.Size()
+	textWidth := max(1, width-2*inset)
 	lines := [4]string{o.outgoing, o.rows[0], o.rows[1], o.rows[2]}
 	opacity := [4]float32{1 - progress, 1, 1, progress}
 	highlight := [4]float32{0, 1 - progress, progress, 0}
@@ -164,8 +174,8 @@ func (o *lyricOverlay) view(c *ui.Context) {
 		if lines[i] == "" || highlight[i] == 0 {
 			continue
 		}
-		textWidth, _ := c.MeasureText(0, ui.Span{Text: lines[i], Size: currentSize, Weight: currentWeight})
-		if textWidth > max(1, width-2*inset) {
+		lineWidth, _ := c.MeasureText(0, ui.Span{Text: lines[i], Size: currentSize, Weight: currentWeight})
+		if lineWidth > textWidth {
 			activeHeight[i] += extraLineHeight
 		}
 	}
@@ -174,7 +184,9 @@ func (o *lyricOverlay) view(c *ui.Context) {
 	// Move between the two layouts while reserving space for a wrapped current line.
 	before := [4]float32{-beforeSpacing, 0, beforeSpacing, beforeSpacing + rowSpacing}
 	after := [4]float32{-afterSpacing - rowSpacing, -afterSpacing, 0, afterSpacing}
-	ui.Box(c.Key("lyrics")).Fill().Clip().Children(func() {
+	root := ui.Box(c.Key("lyrics")).Fill().Clip()
+	marquee := ui.Local(root, "marquee", func() lyricMarquee { return lyricMarquee{} })
+	root.Children(func() {
 		for i, line := range lines {
 			if line == "" || opacity[i] == 0 {
 				continue
@@ -182,17 +194,83 @@ func (o *lyricOverlay) view(c *ui.Context) {
 			emphasis := highlight[i]
 			rowHeight := adjacentHeight + (activeHeight[i]-adjacentHeight)*emphasis
 			center := height/2 + before[i]*(1-progress) + after[i]*progress
-			text := ui.Text(c.Key(i), line).Absolute().Left(inset).Right(inset).Top(center-rowHeight/2).
-				TextAlign(align).Opacity(opacity[i]).
-				FontSize(14+(currentSize-14)*emphasis).FontWeight(500+int((currentWeight-500)*emphasis)).
-				TextColor(white.Alpha(0.58+0.42*emphasis)).
-				TextShadow(0, 1, 4+2*emphasis, ink.Alpha(0.9+0.05*emphasis))
-			// While scrolling, open the second line once there is room for it to render whole.
-			if activeHeight[i] > currentHeight && emphasis >= 0.6 {
-				text.MaxLines(2).FixedLineHeight(min(extraLineHeight, rowHeight/2))
+			wrapped := activeHeight[i] > currentHeight && emphasis >= 0.6
+			size, weight := 14+(currentSize-14)*emphasis, 500+int((currentWeight-500)*emphasis)
+			top, lineHeight := center-rowHeight/2, min(extraLineHeight, rowHeight/2)
+			style := func(e ui.Element) ui.Element {
+				return e.Absolute().Left(inset).Right(inset).Top(top).
+					TextAlign(align).Opacity(opacity[i]).FontSize(size).FontWeight(weight).
+					TextColor(white.Alpha(0.58+0.42*emphasis)).
+					TextShadow(0, 1, 4+2*emphasis, ink.Alpha(0.9+0.05*emphasis))
+			}
+			if wrapped && !reduceMotion {
+				font := ui.Font{Family: theme.Font, Size: currentSize, Weight: currentWeight, Lang: c.Locale()}
+				marquee.split(line, textWidth, font, c.Direction())
+				if marquee.tail != "" {
+					at, since := now, o.currentSince
+					if i == 1 {
+						at, since = o.shiftedAt, o.previousSince
+					}
+					tailWidth, _ := c.MeasureText(0, ui.Span{Text: marquee.tail, Size: size, Weight: weight})
+					overflow := max(0, tailWidth-textWidth)
+					var distance float32
+					if overflow > 0 && !since.IsZero() {
+						elapsed := at.Sub(since) - lyricScrollDelay
+						distance = min(overflow, float32(max(0, elapsed).Seconds())*lyricScrollSpeed)
+						if i == 2 && elapsed < 0 {
+							c.After(-elapsed)
+						} else if i == 2 && distance < overflow {
+							c.AnimationFrame()
+						}
+					}
+					x := -distance
+					if marquee.rtl {
+						x = distance - overflow
+					}
+					style(ui.Box(c.Key(i))).Height(2 * lineHeight).ClipX().Role(ui.RoleText).Label(line).Children(func() {
+						ui.Text(c, marquee.first).FillWidth().NoWrap().FixedLineHeight(lineHeight).AccessHidden(true)
+						ui.Text(c, marquee.tail).Absolute().Left(x).Top(lineHeight).Width(max(textWidth, tailWidth)).
+							NoWrap().FixedLineHeight(lineHeight).AccessHidden(true)
+					})
+					continue
+				}
+			}
+			text := style(ui.Text(c.Key(i), line))
+			if wrapped {
+				text.MaxLines(2).FixedLineHeight(lineHeight)
 			} else {
 				text.SingleLine()
 			}
 		}
 	})
+}
+
+type lyricMarquee struct {
+	line, first, tail string
+	width             float32
+	font              ui.Font
+	direction         ui.Direction
+	rtl               bool
+}
+
+func (m *lyricMarquee) split(line string, width float32, font ui.Font, direction ui.Direction) {
+	if m.line == line && m.width == width && m.font == font && m.direction == direction {
+		return
+	}
+	*m = lyricMarquee{line: line, width: width, font: font, direction: direction}
+	layout := ui.ShapeRichTextWith([]ui.Span{{Text: line}}, font, ui.TextShape{Width: width, Direction: direction})
+	lines := layout.Lines()
+	if len(lines) <= 2 {
+		return
+	}
+	// MyGo's line offsets are UTF-16. Split at the start of the second shaped line.
+	offset := lines[1].Start
+	for i, r := range line {
+		if offset == 0 {
+			m.first, m.tail = strings.TrimSpace(line[:i]), strings.TrimSpace(line[i:])
+			m.rtl = lines[1].RTL
+			return
+		}
+		offset -= utf16.RuneLen(r)
+	}
 }

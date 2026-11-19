@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/egoist/mygo/ui"
 )
@@ -61,6 +62,67 @@ func TestLyricOverlayWrapsOnlyCurrentLine(t *testing.T) {
 			checkHeight(bounds(test.from), false)
 			checkHeight(bounds(test.to), test.toWraps)
 			checkHeight(bounds(o.rows[2]), false)
+		})
+	}
+}
+
+func TestLyricOverlayScrollsOverflowingSecondLine(t *testing.T) {
+	twoLines := "天亮以前路灯把影子拉得很长，等第一班车穿过安静的街道"
+	overflow := strings.Repeat("🎶远处有风，海面正在泛起微光。", 5) + "此刻天亮"
+	tests := []struct {
+		name, line   string
+		reduceMotion bool
+		scrolls      bool
+	}{
+		{"fits on two lines", twoLines, false, false},
+		{"overflows two lines", overflow, false, true},
+		{"reduced motion", overflow, true, false},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			o := lyricOverlay{rows: [3]string{"风从海上吹来", test.line, "列车到了"}, side: dockRight}
+			view := ui.NewTesterWith(o.view, 436, lyricOverlayHeight, ui.TesterOptions{
+				Preferences: ui.Preferences{ReduceMotion: test.reduceMotion},
+			})
+			o.currentSince = view.Now()
+			view.Frame()
+			before := view.Image()
+			view.Advance(lyricScrollDelay / 2)
+			view.Frame()
+			if !bytes.Equal(before.Pix, view.Image().Pix) {
+				t.Fatal("lyrics moved during the initial reading pause")
+			}
+
+			view.Advance(time.Second)
+			view.Frame()
+			moving := view.Image()
+			if changed := !bytes.Equal(before.Pix, moving.Pix); changed != test.scrolls {
+				t.Fatalf("horizontal scrolling = %v, want %v", changed, test.scrolls)
+			}
+			if !test.scrolls {
+				return
+			}
+			firstLine := (lyricOverlayHeight/2 - 8) * before.Stride
+			if !bytes.Equal(before.Pix[:firstLine], moving.Pix[:firstLine]) {
+				t.Fatal("the first line moved with the second")
+			}
+
+			view.Advance(time.Minute)
+			view.Frame()
+			end := view.Image()
+			view.Advance(time.Second)
+			view.Frame()
+			if !bytes.Equal(end.Pix, view.Image().Pix) {
+				t.Fatal("scrolling should stop at the end of the lyric")
+			}
+
+			o.outgoing, o.previousSince, o.shiftedAt = o.rows[0], o.currentSince, view.Now()
+			o.currentSince = view.Now()
+			o.rows = [3]string{test.line, o.rows[2], "天边逐渐亮起来"}
+			view.Frame()
+			if !bytes.Equal(end.Pix, view.Image().Pix) {
+				t.Fatal("the previous lyric should keep its horizontal position when the upward transition starts")
+			}
 		})
 	}
 }
