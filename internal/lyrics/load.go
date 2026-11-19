@@ -46,6 +46,7 @@ func loadOnline(ctx context.Context, client *http.Client, song Song) Lines {
 		},
 		searchNetEase,
 		searchQQ,
+		searchKugou,
 	} {
 		attempt, cancel := context.WithTimeout(ctx, 3*time.Second)
 		lines := source(attempt, client, song)

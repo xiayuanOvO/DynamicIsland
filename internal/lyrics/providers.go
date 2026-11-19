@@ -125,3 +125,79 @@ func searchQQ(ctx context.Context, client *http.Client, song Song) Lines {
 	}
 	return Parse(html.UnescapeString(string(text)))
 }
+
+func searchKugou(ctx context.Context, client *http.Client, song Song) Lines {
+	params := url.Values{
+		"keyword": {song.Title + " " + song.Artist}, "format": {"json"},
+		"page": {"1"}, "pagesize": {"10"}, "showtype": {"1"},
+	}
+	var result struct {
+		Status int
+		Data   struct {
+			Info []struct {
+				Hash, SongName, SingerName string
+				AlbumName                  string `json:"album_name"`
+				AlbumAudioID               int64  `json:"album_audio_id"`
+				Duration                   float64
+			}
+		}
+	}
+	if !fetchJSON(ctx, client, "https://mobiles.kugou.com/api/v3/search/song?"+params.Encode(), "", nil, &result) || result.Status != 1 {
+		return nil
+	}
+
+	var hash string
+	var albumAudioID int64
+	best := math.Inf(1)
+	for _, track := range result.Data.Info {
+		if score := matchScore(song, track.SongName, []string{track.SingerName}, track.AlbumName, track.Duration); track.Hash != "" && score < best {
+			hash, albumAudioID, best = track.Hash, track.AlbumAudioID, score
+		}
+	}
+	if hash == "" {
+		return nil
+	}
+
+	params = url.Values{"ver": {"1"}, "man": {"yes"}, "client": {"mobi"}, "hash": {hash}}
+	if albumAudioID > 0 {
+		params.Set("album_audio_id", strconv.FormatInt(albumAudioID, 10))
+	}
+	var matches struct {
+		Status     int
+		Candidates []struct {
+			ID, AccessKey, Song, Singer string
+			Duration                    float64
+		}
+	}
+	if !fetchJSON(ctx, client, "https://krcs.kugou.com/search?"+params.Encode(), "", nil, &matches) || matches.Status != 200 {
+		return nil
+	}
+
+	var id, accessKey string
+	best = math.Inf(1)
+	for _, candidate := range matches.Candidates {
+		if score := matchScore(song, candidate.Song, []string{candidate.Singer}, "", candidate.Duration/1000); candidate.ID != "" && candidate.AccessKey != "" && score < best {
+			id, accessKey, best = candidate.ID, candidate.AccessKey, score
+		}
+	}
+	if id == "" {
+		return nil
+	}
+
+	params = url.Values{
+		"id": {id}, "accesskey": {accessKey}, "fmt": {"lrc"},
+		"charset": {"utf8"}, "client": {"pc"}, "ver": {"1"},
+	}
+	var lyrics struct {
+		Status  int
+		Content string
+	}
+	if !fetchJSON(ctx, client, "https://lyrics.kugou.com/download?"+params.Encode(), "", nil, &lyrics) || lyrics.Status != 200 {
+		return nil
+	}
+	data, err := base64.StdEncoding.DecodeString(lyrics.Content)
+	if err != nil {
+		return nil
+	}
+	return Parse(string(data))
+}

@@ -45,9 +45,7 @@ func (a *island) updateLyrics(c *ui.Context, frame islandFrame, width, height in
 			overlay.loading = true
 			folder := filepath.Join(filepath.Dir(a.statePath), "lyrics")
 			go func() {
-				ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-				defer cancel()
-				lines := lyrics.Load(ctx, folder, song)
+				lines := lyrics.Load(context.Background(), folder, song)
 				a.win.Update(func() {
 					if overlay.cache == nil || len(overlay.cache) >= 32 {
 						overlay.cache = make(map[lyrics.Song]lyrics.Lines)
