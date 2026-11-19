@@ -116,7 +116,7 @@ func saveJSON(path string, value any) error {
 }
 
 func (a *island) settingsHeight() int {
-	height := 286 + a.settings.cardHeight() + 2*cardPreviewInset + cardPreviewGap
+	height := 333 + a.settings.cardHeight() + 2*cardPreviewInset + cardPreviewGap
 	if a.settings.Mode == waveCustom {
 		height += 334
 	}
@@ -124,6 +124,7 @@ func (a *island) settingsHeight() int {
 }
 
 func (a *island) openSettings() {
+	a.refreshLyricCacheSize()
 	if a.settingsWindow == nil {
 		area := mygo.Screen.PrimaryDisplay().WorkArea
 		a.settingsWindow = mygo.NewWindow(mygo.WindowOptions{
@@ -141,6 +142,13 @@ func (a *island) openSettings() {
 		a.settingsWindow.Show()
 	}
 	a.settingsWindow.Focus()
+}
+
+func (a *island) refreshLyricCacheSize() {
+	a.lyrics.cacheBytes, a.lyrics.cacheSizeErr = a.lyrics.diskCache.Size()
+	if a.settingsWindow != nil {
+		a.settingsWindow.Invalidate()
+	}
 }
 
 func settingsGroup(c *ui.Context, label string, children func()) {
@@ -182,6 +190,40 @@ func (a *island) settingsView(c *ui.Context) {
 				if ui.Switch(c.Key("show-lyrics"), &shown).Label("歌词显示").Changed() {
 					a.settings.HideLyrics = !shown
 					lyricsChanged = true
+				}
+			})
+			divider()
+			settingsRow(c.Key("lyric-cache")).Children(func() {
+				lyrics := &a.lyrics
+				ui.Column(c).Grow(1).MinWidth(0).Gap(1).Children(func() {
+					ui.Text(c, "歌词缓存").FontSize(13).TextColor(ink)
+					if lyrics.cacheClearErr != nil {
+						ui.Text(c, "清理失败，可重试").FontSize(11).TextColor(ui.Hex("#a63b43"))
+					}
+				})
+				const bytesPerMB = 1_000_000
+				size := fmt.Sprintf("%.2f MB", float64(lyrics.cacheBytes)/bytesPerMB)
+				if lyrics.cacheSizeErr != nil {
+					size = "无法读取大小"
+				} else if lyrics.cacheBytes > 0 && lyrics.cacheBytes < bytesPerMB/100 {
+					size = "< 0.01 MB"
+				}
+				ui.Text(c, size).FontSize(12).TextColor(muted)
+				if ui.Button(c.Key("clear-lyric-cache"), "清理缓存").Height(40).FontSize(12).
+					Disabled(lyrics.cacheBytes == 0 && lyrics.cacheSizeErr == nil && lyrics.cacheClearErr == nil).Clicked() {
+					lyrics.cacheVersion++
+					active := lyrics.cache[lyrics.song]
+					clear(lyrics.cache)
+					if len(active) > 0 {
+						lyrics.cache[lyrics.song] = active
+					}
+					lyrics.cacheClearErr = lyrics.diskCache.Clear()
+					a.refreshLyricCacheSize()
+					if lyrics.cacheClearErr != nil {
+						c.Announce("歌词缓存清理失败，可重试")
+					} else {
+						c.Announce("歌词缓存已清理")
+					}
 				}
 			})
 			divider()

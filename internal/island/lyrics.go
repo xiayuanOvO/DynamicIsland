@@ -2,6 +2,7 @@ package island
 
 import (
 	"context"
+	"log"
 	"math"
 	"path/filepath"
 	"strings"
@@ -24,6 +25,11 @@ const (
 type lyricOverlay struct {
 	win            *mygo.Window
 	cache          map[lyrics.Song]lyrics.Lines
+	diskCache      lyrics.Cache
+	cacheVersion   uint64
+	cacheBytes     int64
+	cacheSizeErr   error
+	cacheClearErr  error
 	loading        bool
 	song           lyrics.Song
 	index          int
@@ -57,16 +63,27 @@ func (a *island) updateLyrics(c *ui.Context, frame islandFrame, width, height in
 		if !cached && !overlay.loading {
 			overlay.loading = true
 			folder := filepath.Join(filepath.Dir(a.statePath), "lyrics")
+			version := overlay.cacheVersion
 			go func() {
-				ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-				defer cancel()
-				lines := lyrics.Load(ctx, folder, song)
+				lines, downloaded := overlay.diskCache.Load(context.Background(), folder, song)
 				a.win.Update(func() {
+					overlay.loading = false
+					if version != overlay.cacheVersion {
+						// An in-flight lookup can finish for playback without filling a cleared cache.
+						if overlay.song != song {
+							return
+						}
+					} else if downloaded {
+						if err := overlay.diskCache.Save(song, lines); err != nil {
+							log.Printf("cache lyrics: %v", err)
+						} else if a.settingsWindow != nil {
+							a.refreshLyricCacheSize()
+						}
+					}
 					if overlay.cache == nil || len(overlay.cache) >= 32 {
 						overlay.cache = make(map[lyrics.Song]lyrics.Lines)
 					}
 					overlay.cache[song] = lines
-					overlay.loading = false
 				})
 			}()
 		}

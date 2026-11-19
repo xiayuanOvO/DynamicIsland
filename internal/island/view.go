@@ -109,7 +109,7 @@ func (a *island) header(c *ui.Context, open float32) {
 	header := ui.Row(c.Key("header")).FillWidth().Height(height).Shrink(0).
 		Padding(0, 22).Gap(8).AlignItems(ui.Center)
 	if a.expanded {
-		header.DragWindow().Cursor(ui.CursorGrab).Tooltip("移动")
+		header.DragWindow().Cursor(ui.CursorGrab)
 	} else {
 		header.HandleInput(a.capsuleInput).Cursor(ui.CursorGrab)
 		press := a.press

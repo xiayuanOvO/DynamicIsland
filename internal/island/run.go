@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"dynamicisland/internal/lyrics"
 	"dynamicisland/internal/shelf"
 	"github.com/egoist/mygo"
 )
@@ -26,6 +27,7 @@ func Run() {
 	a := &island{
 		files: files, statePath: statePath, selected: make(map[string]bool),
 	}
+	a.lyrics.diskCache = lyrics.NewCache(filepath.Dir(statePath))
 	a.loadTodos()
 	a.settings, err = loadSettings(a.settingsPath())
 	if err != nil {
