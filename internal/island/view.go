@@ -2,7 +2,6 @@ package island
 
 import (
 	"fmt"
-	"math"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -22,9 +21,26 @@ var fileDrop = transfer.DropOptions{
 func (a *island) view(c *ui.Context) {
 	c.SetTheme(theme)
 	c.Root().Background(ui.Transparent)
-	root := ui.Column(c.Key("island")).Fill().MinWidth(0).MinHeight(0).Radius(windowRadius).Clip()
+	frame := a.shownFrame
+	w, h := int(frame.width), int(frame.height)
+	root := ui.Column(c.Key("island")).MinWidth(0).MinHeight(0).Radius(windowRadius).Clip()
+	hovered := false
+	if a.canvas.restore != nil {
+		width, height := c.Size()
+		if int(width) == a.canvas.bounds.Width && int(height) == a.canvas.bounds.Height {
+			a.canvas.warming = false
+		}
+		bounds := a.windowBounds(w, h)
+		region := a.canvas.contentRect(bounds)
+		root.Absolute().Left(float32(region.X)).Top(float32(region.Y)).Size(float32(w), float32(h))
+		point := mygo.Screen.CursorScreenPoint()
+		hovered = point.X >= bounds.X && point.X < bounds.X+w && point.Y >= bounds.Y && point.Y < bounds.Y+h
+	} else {
+		root.Fill()
+		hovered = pointerOverWindow(a.win, root.Hovered())
+	}
 	_, over := ui.DataDragOver(root, fileDrop)
-	glassSurface(root, c.Vibrancy(), over)
+	glassSurface(root, c.Vibrancy(), over, a.canvas.restore != nil)
 	if drop, ok := ui.DropData(root, fileDrop); ok {
 		paths, err := drop.Data.Files()
 		if err != nil || len(paths) == 0 {
@@ -38,19 +54,14 @@ func (a *island) view(c *ui.Context) {
 	}
 	a.finishMove(c)
 	if !a.moving {
-		a.hover(c, pointerOverWindow(a.win, root.Hovered()) || over)
+		a.hover(c, hovered || over)
 	}
 
 	a.updateMedia(c)
 	a.updateWave(c)
-	if a.expanded && a.emptyIsland() && a.status == "" {
-		a.setExpanded(false)
-	}
-	frame := a.animatedFrame(c)
-	w := int(math.Round(float64(frame.width)))
-	h := int(math.Round(float64(frame.height)))
-	if !a.dragging && !a.moving && (w != a.width || h != a.height) {
-		a.resize(w, h)
+	if !a.dragging && !a.moving {
+		a.animation.retarget(a.targetFrame(), c.Now())
+		a.scheduleWindowFrame(time.Now().Add(windowFrameInterval))
 	}
 	a.updateLyrics(c, frame, w, h)
 	a.updateIdleInfo(c, frame, w, h)
@@ -58,7 +69,7 @@ func (a *island) view(c *ui.Context) {
 	root.Children(func() {
 		a.header(c, frame.open)
 		if a.expanded || h > compactHeight+1 {
-			a.body(c, frame.content)
+			a.body(c, frame)
 		}
 	})
 	a.shortcuts(c)
@@ -69,7 +80,7 @@ func (a *island) hover(c *ui.Context, hovered bool) {
 		a.leaveSince = time.Time{}
 		return
 	}
-	if !a.expanded || a.dragging || a.media.scrubbing || a.busy > 0 || a.choosing {
+	if !a.expanded || a.dragging || a.media.scrubbing || a.busy > 0 || a.choosing || a.todos.draft != nil {
 		return
 	}
 	now := c.Now()
@@ -85,10 +96,11 @@ func (a *island) hover(c *ui.Context, hovered bool) {
 }
 
 func (a *island) header(c *ui.Context, open float32) {
-	height := float32(compactHeight) + 10*open
+	height := compactHeight + (panelHeaderHeight-compactHeight)*open
 	docked := a.dock.side != dockNone
 	offset := -float32(a.dock.side) * (dockTuck / 2.0) * (1 - open)
-	idleFace := open < 1 && a.compactIdle()
+	compactAlpha := 1 - animationPhase(open, 0, 0.6)
+	idleFace := compactAlpha > 0 && a.compactIdle()
 	track := a.media.track
 	playing := track.Playing && track.Title != ""
 	if !idleFace {
@@ -104,17 +116,15 @@ func (a *island) header(c *ui.Context, open float32) {
 		if press != nil && press.released {
 			a.press = nil
 		}
-		if !a.emptyIsland() || a.status != "" {
-			header.Cursor(ui.CursorPointer).Focusable().Role(ui.RoleButton).Label("展开灵动岛")
-			if header.Clicked() && (press == nil || (press.released && !press.moved)) {
-				a.setExpanded(true)
-			}
+		header.Cursor(ui.CursorPointer).Focusable().Role(ui.RoleButton).Label("展开灵动岛")
+		if header.Clicked() && (press == nil || (press.released && !press.moved)) {
+			a.setExpanded(true)
 		}
 	}
 	header.Children(func() {
 		if idleFace {
-			a.drawIdleFace(c, height, open, offset)
-		} else if open < 1 && playing {
+			a.drawIdleFace(c, compactHeight, 1-compactAlpha, offset)
+		} else if compactAlpha > 0 && playing {
 			const coverSize, timeWidth = 34, 42
 			mediaWidth, waveInset, bandsPerBar := float32(compactMediaWidth-20), float32(51), 4
 			if docked {
@@ -122,70 +132,110 @@ func (a *island) header(c *ui.Context, open float32) {
 			} else {
 				c.After(200 * time.Millisecond)
 			}
-			ui.Box(c.Key("compact-media")).Absolute().Left(0).Right(0).Top(0).Height(height).
-				Opacity(1-open).Translate(offset, 0).IgnoreInput(true).Center().Children(func() {
-				ui.Box(c).Size(mediaWidth, height).Shrink(0).Children(func() {
+			ui.Box(c.Key("compact-media")).Absolute().Left(0).Right(0).Top(0).Height(compactHeight).
+				Opacity(compactAlpha).Translate(offset, 0).IgnoreInput(true).Center().Children(func() {
+				ui.Box(c).Size(mediaWidth, compactHeight).Shrink(0).Children(func() {
 					ui.Box(c.Key("compact-wave")).Absolute().Left(waveInset).Right(waveInset).
-						Top((height - 24) / 2).Height(24).Label("播放律动").
+						Top((compactHeight - 24) / 2).Height(24).Label("播放律动").
 						Draw(func(p *ui.Painter, r ui.Rect) {
 							paintMediaBars(p, r, a.media.wave[:], bandsPerBar, 1, a.settings.waveColor(a.media.artworkColor))
 						})
 					if !docked {
 						a.media.cover(c.Key("compact-cover"), coverSize).
-							Absolute().Left(0).Top((height - coverSize) / 2)
+							Absolute().Left(0).Top((compactHeight - coverSize) / 2)
 						ui.Text(c.Key("compact-time"), mediaTime(track.Elapsed(c.Now()))).
-							Absolute().Right(0).Top((height-16)/2).Size(timeWidth, 16).
+							Absolute().Right(0).Top((compactHeight-16)/2).Size(timeWidth, 16).
 							SingleLine().TextAlign(ui.Center).FontSize(11.5).FontWeight(600).TextColor(ink.Alpha(0.72))
 					}
 				})
 			})
 		}
-		ui.Box(c.Key("move")).Grow(1)
-
-		if len(a.files.Items) > 0 && !playing {
-			summary := ui.Text(c.Key("summary"), fmt.Sprintf("%02d", len(a.files.Items))).
-				MinWidth(0).Opacity(1 - open).Clip().
-				FontSize(10.5).SingleLine().TextColor(muted)
-			if docked {
-				summary.Absolute().Left(0).Right(0).Top((height-14)/2).Height(14).
-					TextAlign(ui.Center).Translate(offset, 0).IgnoreInput(true)
-			} else {
-				summary.Width(24 * (1 - open))
+		if compactAlpha > 0 && !playing {
+			item := a.todos.next()
+			fileCount := len(a.files.Items)
+			if fileCount == 0 && item == nil {
+				return
 			}
+			width := float32(compactWidth)
+			if docked {
+				width = compactHeight
+			}
+			ui.Box(c.Key("compact-summary")).Absolute().Top(0).Left(0).Right(0).Height(compactHeight).
+				Opacity(compactAlpha).Translate(offset, 0).IgnoreInput(true).Center().Children(func() {
+				row := ui.Row(c).Size(width, compactHeight).Shrink(0).Gap(8).AlignItems(ui.Center)
+				if docked {
+					row.Justify(ui.Center)
+				} else {
+					row.Padding(0, 22)
+				}
+				row.Children(func() {
+					if item != nil && (!docked || fileCount == 0) {
+						ui.Icon(c, todoIcon).Size(16, 16).Shrink(0).TextColor(accent)
+					}
+					if !docked {
+						if item != nil {
+							ui.Text(c, item.Title).Grow(1).MinWidth(0).SingleLine().Ellipsis("…").FontSize(12).TextColor(ink)
+						} else {
+							ui.Box(c).Grow(1)
+						}
+					}
+					if fileCount > 0 {
+						summary := ui.Text(c.Key("summary"), fmt.Sprintf("%02d", fileCount)).FontSize(10.5).SingleLine().TextColor(muted)
+						if !docked {
+							summary.Width(24).Shrink(0)
+						}
+					}
+				})
+			})
 		}
 	})
 }
 
-func (a *island) body(c *ui.Context, opacity float32) {
-	ui.Column(c.Key("body")).Width(panelWidth-2).Shrink(0).Padding(0, 22, 20).Gap(14).
-		Opacity(opacity).Translate(0, 10*(1-opacity)).IgnoreInput(!a.expanded || opacity < 0.80).Children(func() {
-		if a.media.track.Title != "" {
-			a.mediaCard(c)
+func (a *island) body(c *ui.Context, frame islandFrame) {
+	opacity := frame.content
+	body := ui.Column(c.Key("body")).Width(panelWidth-2).Shrink(0).Padding(0, 22, 20).
+		Opacity(opacity).Translate(0, 10*(1-opacity)).IgnoreInput(!a.expanded || opacity < 0.80)
+	var target float32
+	if a.todos.open {
+		target = 1
+	}
+	progress := body.Animate("todo-expansion", target, islandResizeDuration)
+	body.Children(func() {
+		if progress < 1 && a.media.track.Title != "" {
+			ui.Column(c.Key("overview-media")).FillWidth().Shrink(0).
+				Height(float32(a.settings.cardHeight()+14) * (1 - progress)).Clip().
+				Opacity(1 - progress).IgnoreInput(a.todos.open).Children(func() { a.mediaCard(c) })
 		}
-		hasFiles := len(a.files.Items) > 0
-		if hasFiles {
-			ui.Text(c.Key("files-heading"), fmt.Sprintf("暂存文件  /  %02d", len(a.files.Items))).
-				Height(24).Shrink(0).FontSize(10.5).TextColor(muted)
-			_, gridHeight := a.panelHeights()
-			ui.Scroll(c.Key("files")).Height(float32(gridHeight)).Shrink(0).
-				Children(func() {
-					ui.Grid(c.Key("file-cards")).FillWidth().Columns(cardColumns).Gap(cardGap).Padding(4).Children(func() {
-						for _, item := range slices.Clone(a.files.Items) {
-							a.fileCard(c, item)
-						}
-					})
-				})
-			ui.Box(c.Key("divider")).FillWidth().Height(1).Shrink(0).
-				Gradient(ink.Alpha(0.055), white.Alpha(0.5), 90)
-			a.actions(c)
-		}
-		if hasFiles || a.status != "" {
-			color := muted
-			if a.statusError {
-				color = ui.Hex("#a65b50")
-			}
-			ui.Text(c.Key("status"), a.status).Height(20).Shrink(0).FontSize(10).SingleLine().TextColor(color).
-				Tooltip(a.status)
+		a.todoCard(c, progress, frame)
+		if progress < 1 && (len(a.files.Items) > 0 || a.status != "") {
+			ui.Column(c.Key("overview-files")).FillWidth().Shrink(0).Margin(14, 0, 0).Gap(14).
+				Opacity(1 - progress).IgnoreInput(a.todos.open).Children(func() {
+				hasFiles := len(a.files.Items) > 0
+				if hasFiles {
+					ui.Text(c.Key("files-heading"), fmt.Sprintf("暂存文件  /  %02d", len(a.files.Items))).
+						Height(24).Shrink(0).FontSize(10.5).TextColor(muted)
+					_, gridHeight := a.panelHeights()
+					ui.Scroll(c.Key("files")).Height(float32(gridHeight)).Shrink(0).
+						Children(func() {
+							ui.Grid(c.Key("file-cards")).FillWidth().Columns(cardColumns).Gap(cardGap).Padding(4).Children(func() {
+								for _, item := range slices.Clone(a.files.Items) {
+									a.fileCard(c, item)
+								}
+							})
+						})
+					ui.Box(c.Key("divider")).FillWidth().Height(1).Shrink(0).
+						Gradient(ink.Alpha(0.055), white.Alpha(0.5), 90)
+					a.actions(c)
+				}
+				if hasFiles || a.status != "" {
+					color := muted
+					if a.statusError {
+						color = ui.Hex("#a65b50")
+					}
+					ui.Text(c.Key("status"), a.status).Height(20).Shrink(0).FontSize(10).SingleLine().TextColor(color).
+						Tooltip(a.status)
+				}
+			})
 		}
 	})
 }
@@ -314,6 +364,9 @@ func (a *island) actions(c *ui.Context) {
 }
 
 func (a *island) menu(m *ui.Menu) {
+	if m.Item("待办事项…").Chosen() {
+		a.win.Update(a.openTodos)
+	}
 	if m.Item("添加文件…").Disabled(a.choosing).Chosen() {
 		a.choose(false)
 	}
@@ -349,6 +402,16 @@ func (a *island) menu(m *ui.Menu) {
 }
 
 func (a *island) shortcuts(c *ui.Context) {
+	if a.expanded && a.todos.open {
+		if c.Shortcut(0, ui.KeyEscape) {
+			if a.todos.draft != nil {
+				a.todos.closeEditor()
+			} else {
+				a.todos.open = false
+			}
+		}
+		return
+	}
 	if c.Shortcut(0, ui.KeyEscape) {
 		a.setExpanded(false)
 	}

@@ -21,6 +21,7 @@ func (a *island) placeOverlay(window **mygo.Window, bounds mygo.Rectangle, title
 			AlwaysOnTop: true, SkipTaskbar: true, IgnoreMouseEvents: true,
 			DisableResize: true, DisableShadow: true, BackgroundColor: "#00000000",
 		})
+		configureFloatingWindow(win)
 		*window = win
 	} else {
 		if win.Bounds() != bounds {

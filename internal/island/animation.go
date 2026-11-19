@@ -4,39 +4,112 @@ import (
 	"math"
 	"time"
 
-	"github.com/egoist/mygo/ui"
+	"github.com/egoist/mygo"
+)
+
+const (
+	islandResizeDuration = 440 * time.Millisecond
+	windowFrameInterval  = time.Second / 60
 )
 
 type islandFrame struct {
-	width, height, open, content float32
+	width, height, open, content, editor, schedule float32
 }
 
-type islandVelocity struct{ width, height float32 }
+func (f islandFrame) aligned() islandFrame {
+	// The native window uses integral bounds. Keep both sides of the
+	// centered capsule the same distance from its anchor as it resizes.
+	f.width = 2 * float32(math.Round(float64(f.width)/2))
+	f.height = float32(math.Round(float64(f.height)))
+	return f
+}
+
+// Keep the native drawing surface at one size while the visible island
+// and its backdrop animate inside it.
+type transitionCanvas struct {
+	bounds  mygo.Rectangle
+	warming bool
+	reshape func(mygo.Rectangle, int)
+	restore func()
+}
+
+func (c transitionCanvas) contains(r mygo.Rectangle) bool {
+	return r.X >= c.bounds.X && r.Y >= c.bounds.Y &&
+		r.X+r.Width <= c.bounds.X+c.bounds.Width && r.Y+r.Height <= c.bounds.Y+c.bounds.Height
+}
+
+func (c transitionCanvas) contentRect(r mygo.Rectangle) mygo.Rectangle {
+	r.X -= c.bounds.X
+	r.Y -= c.bounds.Y
+	return r
+}
+
+type islandVelocity struct{ width, height, open, editor, schedule float32 }
 
 type islandAnimation struct {
 	from, to          islandFrame
 	velocity          islandVelocity
 	started, pausedAt time.Time
+	lastTick          time.Time
 	duration          time.Duration
 }
 
-func (a *island) animatedFrame(c *ui.Context) islandFrame {
-	now := c.Now()
-	m := &a.animation
-	if !a.dragging && !a.moving {
-		m.retarget(a.targetFrame(), now)
+func (a *island) scheduleWindowFrame(deadline time.Time) {
+	if a.windowFramePending || a.dragging || a.moving || a.animation.to == a.shownFrame {
+		return
 	}
-	frame, _ := m.sample(now)
-	if m.pausedAt.IsZero() && now.Sub(m.started) < m.duration {
-		c.AnimationFrame()
+	a.windowFramePending = true
+	if a.wakeWindowDisplayLink != nil {
+		a.wakeWindowDisplayLink()
+		return
 	}
-	return frame
+	// Apply bounds before requesting a paint. Resizing from a paint queues
+	// a second pass at a different size and can stretch the previous frame.
+	time.AfterFunc(time.Until(deadline), func() {
+		mygo.RunOnMain(func() {
+			active := a.advanceWindowFrame(time.Now())
+			a.windowFramePending = false
+			if active {
+				now := time.Now()
+				delay := windowFrameInterval - max(0, now.Sub(deadline))%windowFrameInterval
+				a.scheduleWindowFrame(now.Add(delay))
+			}
+		})
+	})
+}
+
+func (a *island) advanceWindowFrame(now time.Time) bool {
+	if a.dragging || a.moving || !a.win.IsVisible() {
+		return false
+	}
+	if a.canvas.warming {
+		a.animation.started, a.animation.lastTick = now, now
+		return true
+	}
+	frame := a.animation.advance(now)
+	frame = frame.aligned()
+	if frame != a.shownFrame {
+		a.applyWindowFrame(frame, true)
+		a.win.Invalidate()
+	}
+	return a.shownFrame != a.animation.to
 }
 
 func (a *island) targetFrame() islandFrame {
 	if a.expanded {
 		height, _ := a.panelHeights()
-		return islandFrame{width: panelWidth, height: float32(height), open: 1, content: 1}
+		frame := islandFrame{width: panelWidth, height: float32(height), open: 1, content: 1}
+		if a.todos.draft != nil {
+			frame.editor = 1
+		}
+		draft := a.todos.draft
+		if draft == nil {
+			draft = a.todos.leaving
+		}
+		if draft != nil && draft.scheduled {
+			frame.schedule = 1
+		}
+		return frame
 	}
 	width := float32(compactWidth)
 	if a.dock.side != dockNone || a.compactIdle() {
@@ -57,14 +130,22 @@ func (m *islandAnimation) retarget(target islandFrame, now time.Time) {
 	}
 	frame, velocity := m.sample(now)
 	m.from, m.to, m.velocity, m.started = frame, target, velocity, now
-	switch {
-	case target.open == frame.open:
-		m.duration = 300 * time.Millisecond
-	case target.open > frame.open:
-		m.duration = 360 * time.Millisecond
-	default:
-		m.duration = 280 * time.Millisecond
+	m.lastTick = now
+	m.duration = islandResizeDuration
+	if target.open != frame.open {
+		m.duration = 610 * time.Millisecond
 	}
+}
+
+func (m *islandAnimation) advance(now time.Time) islandFrame {
+	// If the main thread misses a refresh, continue from the last visible
+	// position instead of moving multiple frames' distance in a single step.
+	if !m.lastTick.IsZero() {
+		m.started = m.started.Add(max(0, now.Sub(m.lastTick)-windowFrameInterval))
+	}
+	m.lastTick = now
+	frame, _ := m.sample(now)
+	return frame
 }
 
 func (m *islandAnimation) sample(now time.Time) (islandFrame, islandVelocity) {
@@ -78,45 +159,35 @@ func (m *islandAnimation) sample(now time.Time) (islandFrame, islandVelocity) {
 	if elapsed >= m.duration {
 		return m.to, islandVelocity{}
 	}
-	widthFrequency, heightFrequency := 36.0, 36.0
-	widthDamping, heightDamping := 0.86, 0.86
-	revealDuration := 160 * time.Millisecond
-	if m.to.open > m.from.open {
-		widthFrequency, heightFrequency = 32, 34
-		widthDamping, heightDamping = 0.74, 0.82
-		revealDuration = 180 * time.Millisecond
-	} else if m.to.open < m.from.open {
-		widthFrequency, heightFrequency = 40, 44
-		widthDamping, heightDamping = 0.80, 0.88
-		revealDuration = 140 * time.Millisecond
+	frequency := 19.0
+	if m.to.open != m.from.open {
+		frequency = 14
 	}
-	width, vx := springSample(m.from.width, m.velocity.width, m.to.width, elapsed.Seconds(), widthFrequency, widthDamping)
-	height, vy := springSample(m.from.height, m.velocity.height, m.to.height, elapsed.Seconds(), heightFrequency, heightDamping)
-	t := min(float32(1), float32(elapsed)/float32(revealDuration))
-	content := ui.EaseOut(t)
-	if m.to.open > m.from.open {
-		content = ui.EaseOut(animationPhase(t, 0.06, 0.90))
-	} else if m.to.open < m.from.open {
-		content = ui.EaseOut(animationPhase(t, 0, 0.65))
-	}
+	seconds := elapsed.Seconds()
+	width, vx := springSample(m.from.width, m.velocity.width, m.to.width, seconds, frequency)
+	height, vy := springSample(m.from.height, m.velocity.height, m.to.height, seconds, frequency)
+	editor, ve := springSample(m.from.editor, m.velocity.editor, m.to.editor, seconds, frequency)
+	schedule, vs := springSample(m.from.schedule, m.velocity.schedule, m.to.schedule, seconds, frequency)
+	open, vo := springSample(m.from.open, m.velocity.open, m.to.open, seconds, frequency)
+	content := animationPhase(open, 0.20, 0.85)
 	return islandFrame{
-		width:   max(compactHeight, width),
-		height:  max(compactHeight-4, height),
-		open:    m.from.open + (m.to.open-m.from.open)*ui.EaseOut(t),
-		content: m.from.content + (m.to.content-m.from.content)*content,
-	}, islandVelocity{width: vx, height: vy}
+		width:    max(compactHeight, width),
+		height:   max(compactHeight-4, height),
+		open:     min(1, max(0, open)),
+		content:  content,
+		editor:   editor,
+		schedule: schedule,
+	}, islandVelocity{width: vx, height: vy, open: vo, editor: ve, schedule: vs}
 }
 
-// Solve a damped spring analytically so interrupted transitions retain
-// their velocity and follow the same path at any frame rate.
-func springSample(from, velocity, target float32, seconds, frequency, damping float64) (float32, float32) {
+// A critically damped spring eases into the target and preserves velocity
+// when the target changes mid-animation.
+func springSample(from, velocity, target float32, seconds, frequency float64) (float32, float32) {
 	x, v := float64(from-target), float64(velocity)
-	decayRate := damping * frequency
-	oscillation := frequency * math.Sqrt(1-damping*damping)
-	sin, cos := math.Sincos(oscillation * seconds)
-	decay := math.Exp(-decayRate * seconds)
-	position := (x*cos + (v+decayRate*x)/oscillation*sin) * decay
-	speed := (v*cos - (frequency*frequency*x+decayRate*v)/oscillation*sin) * decay
+	slope := v + frequency*x
+	decay := math.Exp(-frequency * seconds)
+	position := (x + slope*seconds) * decay
+	speed := (v - frequency*slope*seconds) * decay
 	return target + float32(position), float32(speed)
 }
 
@@ -134,5 +205,6 @@ func (m *islandAnimation) resume(now time.Time) {
 	if !m.pausedAt.IsZero() {
 		m.started = m.started.Add(now.Sub(m.pausedAt))
 		m.pausedAt = time.Time{}
+		m.lastTick = now
 	}
 }

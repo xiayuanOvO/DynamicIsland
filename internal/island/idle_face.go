@@ -81,7 +81,7 @@ func (a *island) drawIdleFace(c *ui.Context, height, open, offset float32) {
 			}
 			if face.mood == moodLooking && a.win != nil {
 				cursor := mygo.Screen.CursorScreenPoint()
-				ball := a.windowBounds(a.width, a.height)
+				ball := a.windowBounds(int(a.shownFrame.width), int(a.shownFrame.height))
 				face.lookAt(now, ui.Point{
 					X: float32(cursor.X-ball.X-ball.Width/2) - offset,
 					Y: float32(cursor.Y - ball.Y - ball.Height/2 + 4),

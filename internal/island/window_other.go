@@ -2,8 +2,21 @@
 
 package island
 
-import "github.com/egoist/mygo"
+import (
+	"runtime"
 
-func roundWindow(*mygo.Window, int) {}
+	"github.com/egoist/mygo"
+)
 
-func pointerOverWindow(_ *mygo.Window, fallback bool) bool { return fallback }
+func configureWindowGlass(*mygo.Window, int) {}
+func configureFloatingWindow(*mygo.Window)   {}
+
+// On macOS the window can resize beneath a stationary pointer.
+func pointerOverWindow(win *mygo.Window, fallback bool) bool {
+	if runtime.GOOS != "darwin" {
+		return fallback
+	}
+	point, bounds := mygo.Screen.CursorScreenPoint(), win.Bounds()
+	return point.X >= bounds.X && point.X < bounds.X+bounds.Width &&
+		point.Y >= bounds.Y && point.Y < bounds.Y+bounds.Height
+}

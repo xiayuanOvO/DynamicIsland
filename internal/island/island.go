@@ -19,6 +19,7 @@ const (
 	compactWidth      = 244
 	compactMediaWidth = 200
 	compactHeight     = 52
+	panelHeaderHeight = 22
 	panelWidth        = 428
 	windowRadius      = 26
 	hotkey            = "CmdOrCtrl+Alt+Space"
@@ -29,39 +30,41 @@ const (
 )
 
 type island struct {
-	win          *mygo.Window
-	tray         *mygo.Tray
-	files        *shelf.Shelf
-	statePath    string
-	selected     map[string]bool
-	previews     map[string]*filePreview
-	previewJobs  chan previewJob
-	previewClock uint64
-	animation    islandAnimation
-	media        islandMedia
-	lyrics       lyricOverlay
-	idle         idleInfo
-	face         idleFaceState
-	expanded     bool
-	fullscreen   bool
-	hiddenByUser bool
-	dragging     bool
-	busy         int
-	choosing     bool
-	leaveSince   time.Time
-	status       string
-	statusError  bool
-	centerX      int
-	top          int
-	dock         edgeDock
-	moving       bool
-	press        *capsulePress
-	resizing     bool
-	resizeQueued bool
-	pendingSize  mygo.Size
-	width        int
-	height       int
+	win                   *mygo.Window
+	tray                  *mygo.Tray
+	files                 *shelf.Shelf
+	statePath             string
+	selected              map[string]bool
+	previews              map[string]*filePreview
+	previewJobs           chan previewJob
+	previewClock          uint64
+	animation             islandAnimation
+	media                 islandMedia
+	lyrics                lyricOverlay
+	idle                  idleInfo
+	face                  idleFaceState
+	expanded              bool
+	fullscreen            bool
+	hiddenByUser          bool
+	dragging              bool
+	busy                  int
+	choosing              bool
+	leaveSince            time.Time
+	status                string
+	statusError           bool
+	centerX               int
+	top                   int
+	dock                  edgeDock
+	moving                bool
+	press                 *capsulePress
+	resizing              bool
+	windowFramePending    bool
+	wakeWindowDisplayLink func()
+	shownFrame            islandFrame
 
+	canvas transitionCanvas
+
+	todos              todoComponent
 	settings           appSettings
 	citySearch         weatherCitySearch
 	settingsWindow     *mygo.Window
@@ -74,29 +77,34 @@ func (a *island) start() {
 	area := mygo.Screen.PrimaryDisplay().WorkArea
 	a.centerX, a.top = area.X+area.Width/2, area.Y+14
 	frame := a.targetFrame()
-	a.width, a.height = int(frame.width), int(frame.height)
+	a.shownFrame = frame
 	a.animation = islandAnimation{from: frame, to: frame, started: time.Now()}
 	options := mygo.WindowOptions{
 		Title: "灵动岛", Content: ui.View(a.view),
-		X: a.centerX - a.width/2, Y: a.top,
-		Width: a.width, Height: a.height, MinWidth: compactHeight, MinHeight: compactHeight - 4,
+		X: a.centerX - int(frame.width)/2, Y: a.top,
+		Width: int(frame.width), Height: int(frame.height), MinWidth: compactHeight, MinHeight: compactHeight - 4,
 		Frameless: true, Transparent: true, Panel: true, AlwaysOnTop: true,
 		SkipTaskbar: true, DisableResize: true, DisableMaximize: true,
 		DisableMinimize: true, DisableFullScreen: true, CornerRadius: windowRadius,
 		BackgroundColor: "#00000000", Vibrancy: mygo.VibrancyGlass,
 	}
 	if runtime.GOOS == "windows" {
-		// DWM composes the Acrylic backdrop at its own window bounds.
+		// Windows clips its backdrop brush to the island inside the HWND.
 		options.Vibrancy = mygo.VibrancyNone
 		options.DisableShadow = true
+		options.Hidden = true
 	}
 	a.win = mygo.NewWindow(options)
+	configureFloatingWindow(a.win)
+	a.wakeWindowDisplayLink = startWindowDisplayLink(a)
 	a.media.adapter = nowplaying.Adapter()
 	a.startPreviews()
 	a.win.SetActiveAppearance(true)
-	a.win.OnResize(func() { roundWindow(a.win, windowRadius) })
+	configureWindowGlass(a.win, windowRadius)
+	if options.Hidden {
+		a.win.Show()
+	}
 	a.win.OnMove(a.windowMoved)
-	roundWindow(a.win, windowRadius)
 	mygo.Screen.OnDisplaysChanged(a.recenter)
 	mygo.App.OnWillQuit(func(*mygo.QuitEvent) {
 		a.saveSettings()
@@ -112,12 +120,14 @@ func (a *island) start() {
 		a.message("快捷键被占用", true)
 	}
 	a.createTray()
+	a.watchTodoReminders()
 	a.watchFullscreen()
 }
 
 func (a *island) createTray() {
 	menu := mygo.NewMenu([]*mygo.MenuItem{
 		{Label: "显示灵动岛", Click: func(*mygo.MenuItem, *mygo.Window) { a.show() }},
+		{Label: "待办事项…", Click: func(*mygo.MenuItem, *mygo.Window) { a.openTodos() }},
 		{Label: "添加文件…", Click: func(*mygo.MenuItem, *mygo.Window) { a.show(); a.choose(false) }},
 		{Label: "添加文件夹…", Click: func(*mygo.MenuItem, *mygo.Window) { a.show(); a.choose(true) }},
 		mygo.Separator(),
@@ -144,18 +154,14 @@ func (a *island) createTray() {
 }
 
 func (a *island) compactIdle() bool {
-	return len(a.files.Items) == 0 && !a.media.track.Playing
-}
-
-func (a *island) emptyIsland() bool {
-	return a.compactIdle() && a.media.track.Title == ""
+	return len(a.files.Items) == 0 && !a.media.track.Playing && a.todos.next() == nil
 }
 
 func (a *island) panelHeights() (height, gridHeight int) {
 	hasFiles := len(a.files.Items) > 0
-	height = compactHeight + 10 + 20
+	height = panelHeaderHeight + 20
 	if hasFiles {
-		height = 225
+		height += 143
 		rows := min((len(a.files.Items)+cardColumns-1)/cardColumns, maxCardRows)
 		gridHeight = rows*cardHeight + max(rows-1, 0)*cardGap + 8
 	} else if a.status != "" {
@@ -167,8 +173,15 @@ func (a *island) panelHeights() (height, gridHeight int) {
 			height += 14
 		}
 	}
+	height += a.todos.previewHeight()
+	if hasFiles || a.status != "" || a.media.track.Title != "" {
+		height += 14
+	}
 	if a.dock.side != dockNone {
 		gridHeight = min(gridHeight, max(0, a.dock.display.WorkArea.Height-height))
+	}
+	if a.todos.open {
+		return panelHeaderHeight + 20 + a.todos.detailHeight(), gridHeight
 	}
 	return height + gridHeight, gridHeight
 }
@@ -177,10 +190,11 @@ func (a *island) setExpanded(expanded bool) {
 	if a.dragging || a.moving {
 		return
 	}
-	if expanded && a.emptyIsland() && a.status == "" {
-		return
-	}
 	a.expanded = expanded
+	if !expanded {
+		a.todos.open = false
+		a.todos.draft, a.todos.leaving = nil, nil
+	}
 	a.media.scrubbing = false
 	if expanded {
 		a.media.refreshAt = time.Time{}
@@ -242,28 +256,64 @@ func (a *island) recenter() {
 	area := mygo.Screen.PrimaryDisplay().WorkArea
 	a.dock = edgeDock{}
 	a.centerX, a.top = area.X+area.Width/2, area.Y+14
-	a.resize(a.width, a.height)
+	a.applyWindowFrame(a.shownFrame, false)
 	a.win.Invalidate()
 }
 
-func (a *island) resize(width, height int) {
-	a.pendingSize = mygo.Size{Width: width, Height: height}
-	if a.resizeQueued {
-		return
-	}
-	a.resizeQueued = true
-	// Resizing synchronously during a view build re-enters the renderer.
-	a.win.Update(func() {
-		a.resizeQueued = false
-		if a.moving {
-			return
+func (a *island) applyWindowFrame(frame islandFrame, animated bool) {
+	previous := a.shownFrame
+	a.shownFrame = frame
+	bounds := a.windowBounds(int(frame.width), int(frame.height))
+	nativeBounds := bounds
+	usingCanvas := false
+	if animated && frame != a.animation.to && a.dock.side == dockNone {
+		starting := a.canvas.restore == nil
+		if starting && a.animation.from.open != a.animation.to.open {
+			a.canvas = startTransitionCanvas(a.win)
+			if a.canvas.restore != nil && a.animation.to.open == 1 {
+				// Grow the backing surface once, while the mask still shows
+				// only the part of the panel reached by the animation.
+				target := a.windowBounds(int(a.animation.to.width), int(a.animation.to.height))
+				if a.canvas.bounds != target && previous.open == 0 {
+					// Paint the compact capsule at the new backing size before
+					// the visible opening starts.
+					a.canvas.warming = true
+					a.shownFrame = previous
+					bounds = a.windowBounds(int(previous.width), int(previous.height))
+					nativeBounds = bounds
+					a.animation.started = a.animation.lastTick
+				}
+				a.canvas.bounds = target
+			}
 		}
-		size := a.pendingSize
+		if a.canvas.restore != nil && a.canvas.contains(bounds) {
+			usingCanvas = true
+			nativeBounds = a.canvas.bounds
+			if starting || frame.width != previous.width || frame.height != previous.height {
+				region := a.canvas.contentRect(bounds)
+				a.canvas.reshape(region, nativeBounds.Height)
+				a.win.SetInputRegion([]mygo.Rectangle{region})
+			}
+		}
+	}
+	var restore func()
+	if !usingCanvas {
+		restore = a.canvas.restore
+		a.canvas = transitionCanvas{}
+	}
+	if a.win.Bounds() != nativeBounds {
 		a.resizing = true
-		a.width, a.height = size.Width, size.Height
-		a.win.SetBounds(a.windowBounds(size.Width, size.Height))
+		if animated {
+			setAnimatedWindowBounds(a.win, nativeBounds)
+		} else {
+			a.win.SetBounds(nativeBounds)
+		}
 		a.resizing = false
-	})
+	}
+	if restore != nil {
+		restore()
+		a.win.SetInputRegion(nil)
+	}
 }
 
 func (a *island) message(message string, failed bool) {

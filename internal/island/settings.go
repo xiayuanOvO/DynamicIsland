@@ -96,7 +96,11 @@ func (a *island) saveSettings() {
 }
 
 func (s appSettings) save(path string) error {
-	data, err := json.Marshal(s)
+	return saveJSON(path, s)
+}
+
+func saveJSON(path string, value any) error {
+	data, err := json.Marshal(value)
 	if err != nil {
 		return err
 	}

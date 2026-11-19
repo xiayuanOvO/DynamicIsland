@@ -106,6 +106,9 @@ func (a *island) windowMoved() {
 	}
 	a.dock = edgeDock{}
 	a.centerX, a.top = bounds.X+bounds.Width/2, bounds.Y
+	if a.canvas.restore != nil {
+		a.canvas.bounds = bounds
+	}
 	if !a.moving && (runtime.GOOS == "darwin" || runtime.GOOS == "windows") {
 		a.moving = true
 		a.animation.pause(time.Now())
@@ -129,6 +132,6 @@ func (a *island) finishMove(c *ui.Context) {
 	if side := dockSideFor(bounds, display.Bounds); side != dockNone {
 		a.dock = edgeDock{side: side, display: display}
 		a.setExpanded(false)
-		a.resize(a.width, a.height)
+		a.win.Update(func() { a.applyWindowFrame(a.shownFrame, false) })
 	}
 }

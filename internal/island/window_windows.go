@@ -10,12 +10,17 @@ import (
 var (
 	user32                = syscall.NewLazyDLL("user32.dll")
 	gdi32                 = syscall.NewLazyDLL("gdi32.dll")
+	getWindowLong         = user32.NewProc("GetWindowLongW")
+	setWindowLong         = user32.NewProc("SetWindowLongW")
+	setWindowPos          = user32.NewProc("SetWindowPos")
 	getForegroundWindow   = user32.NewProc("GetForegroundWindow")
 	getShellWindow        = user32.NewProc("GetShellWindow")
 	isZoomed              = user32.NewProc("IsZoomed")
 	monitorFromWindow     = user32.NewProc("MonitorFromWindow")
 	getMonitorInfo        = user32.NewProc("GetMonitorInfoW")
-	dwmGetWindowAttribute = syscall.NewLazyDLL("dwmapi.dll").NewProc("DwmGetWindowAttribute")
+	dwmapi                = syscall.NewLazyDLL("dwmapi.dll")
+	dwmGetWindowAttribute = dwmapi.NewProc("DwmGetWindowAttribute")
+	dwmSetWindowAttribute = dwmapi.NewProc("DwmSetWindowAttribute")
 	getWindowRect         = user32.NewProc("GetWindowRect")
 	getCursorPos          = user32.NewProc("GetCursorPos")
 	getAsyncKeyState      = user32.NewProc("GetAsyncKeyState")
@@ -24,8 +29,41 @@ var (
 	setWindowRgn          = user32.NewProc("SetWindowRgn")
 	createRoundRectRgn    = gdi32.NewProc("CreateRoundRectRgn")
 	deleteObject          = gdi32.NewProc("DeleteObject")
-	lastWindowShape       windowShape
 )
+
+func configureFloatingWindow(win *mygo.Window) {
+	hwnd := win.NativeHandle()
+	// MyGo's frameless panels keep WS_CAPTION. Give these desktop overlays
+	// a popup frame while preserving their ownership and input styles.
+	const (
+		gwlStyle        = ^uintptr(15) // GWL_STYLE (-16)
+		wsCaption       = 0x00c00000
+		wsPopup         = 0x80000000
+		swpFrameChanged = 0x0020
+		swpNoSize       = 0x0001
+		swpNoMove       = 0x0002
+		swpNoZOrder     = 0x0004
+		swpNoActivate   = 0x0010
+	)
+	style, _, _ := getWindowLong.Call(hwnd, gwlStyle)
+	if style != 0 {
+		setWindowLong.Call(hwnd, gwlStyle, style&^wsCaption|wsPopup)
+		setWindowPos.Call(hwnd, 0, 0, 0, 0, 0, swpFrameChanged|swpNoSize|swpNoMove|swpNoZOrder|swpNoActivate)
+	}
+
+	// SetVibrancy explicitly clears both the extended frame and the
+	// whole-window backdrop. The island installs its clipped brush separately.
+	win.SetVibrancy(mygo.VibrancyNone)
+	const dwmwaNCRenderingPolicy, dwmwaWindowCornerPreference, dwmwaBorderColor = 2, 33, 34
+	disabled := int32(1) // DWMNCRP_DISABLED
+	dwmSetWindowAttribute.Call(hwnd, dwmwaNCRenderingPolicy, uintptr(unsafe.Pointer(&disabled)), unsafe.Sizeof(disabled))
+	// MyGo requests DWMWCP_ROUND for every panel, even a shadowless text
+	// overlay. Opt out of the system's rounded outline and drop shadow.
+	noCorners := int32(1) // DWMWCP_DONOTROUND
+	dwmSetWindowAttribute.Call(hwnd, dwmwaWindowCornerPreference, uintptr(unsafe.Pointer(&noCorners)), unsafe.Sizeof(noCorners))
+	none := uint32(0xfffffffe) // DWMWA_COLOR_NONE
+	dwmSetWindowAttribute.Call(hwnd, dwmwaBorderColor, uintptr(unsafe.Pointer(&none)), unsafe.Sizeof(none))
+}
 
 func primaryMouseDown() bool {
 	const leftButton, rightButton, swapButton = 0x01, 0x02, 23
@@ -51,15 +89,10 @@ func pointerOverWindow(win *mygo.Window, fallback bool) bool {
 	return point.x >= rect.left && point.x < rect.right && point.y >= rect.top && point.y < rect.bottom
 }
 
-type windowShape struct {
-	hwnd          uintptr
-	width, height int32
-	diameter      uintptr
-}
-
-// Shape the native window to match the drawn capsule, including its hit area.
-func roundWindow(win *mygo.Window, radius int) {
-	mygo.RunOnMain(func() {
+func configureWindowGlass(win *mygo.Window, radius int) {
+	resizeBackdrop := startWindowBackdrop(win)
+	var lastWindowShape [3]int32
+	update := func() {
 		hwnd := win.NativeHandle()
 		if hwnd == 0 {
 			return
@@ -73,12 +106,18 @@ func roundWindow(win *mygo.Window, radius int) {
 			dpi = 96
 		}
 		diameter := uintptr(radius*2) * dpi / 96
-		shape := windowShape{hwnd, rect.right - rect.left, rect.bottom - rect.top, diameter}
+		shape := [3]int32{rect.right - rect.left, rect.bottom - rect.top, int32(diameter)}
 		if shape == lastWindowShape {
 			return
 		}
-		region, _, _ := createRoundRectRgn.Call(0, 0,
-			uintptr(rect.right-rect.left+1), uintptr(rect.bottom-rect.top+1), diameter, diameter)
+		if resizeBackdrop != nil {
+			resizeBackdrop(float32(shape[0]), float32(shape[1]), float32(radius)*float32(dpi)/96)
+		}
+		// Leave two device pixels around the antialiased curve. The GDI
+		// region handles corner hit testing, not the visible silhouette.
+		const outset = 2
+		region, _, _ := createRoundRectRgn.Call(^uintptr(outset-1), ^uintptr(outset-1),
+			uintptr(rect.right-rect.left+1+outset), uintptr(rect.bottom-rect.top+1+outset), diameter+2*outset, diameter+2*outset)
 		if region == 0 {
 			return
 		}
@@ -88,9 +127,11 @@ func roundWindow(win *mygo.Window, radius int) {
 		// On success Windows owns the region; on failure we must release it.
 		if ok, _, _ := setWindowRgn.Call(hwnd, region, 1); ok == 0 {
 			deleteObject.Call(region)
-			lastWindowShape = windowShape{}
+			lastWindowShape = [3]int32{}
 		}
-	})
+	}
+	win.OnResize(func() { mygo.RunOnMain(update) })
+	update()
 }
 
 func foregroundFullscreen() bool {

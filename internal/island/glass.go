@@ -3,6 +3,7 @@ package island
 import (
 	"image"
 	"image/color"
+	"runtime"
 
 	"github.com/egoist/mygo/ui"
 )
@@ -33,25 +34,34 @@ func islandTheme() *ui.Theme {
 	return t
 }
 
-func glassSurface(element ui.Element, vibrant, over bool) {
+func glassSurface(element ui.Element, vibrant, over, movingGlass bool) {
 	if vibrant {
 		// The system blurs the desktop. A light wash preserves its colors.
 		element.Gradient(white.Alpha(0.20), white.Alpha(0.07), 155)
+	} else if runtime.GOOS == "windows" {
+		element.Gradient(ui.Hex("#eceef1").Alpha(0.84), ui.Hex("#bfc4cb").Alpha(0.78), 155)
 	} else {
 		element.Gradient(ui.Hex("#f2f3f5"), ui.Hex("#e7e9ed"), 155)
+	}
+	// Keep the same content inset when the native glass draws the rim.
+	element.Draw(paintFrost).BorderWidth(0.75)
+	if movingGlass && !over {
+		// The native glass rim follows the mask. A rim in the last Metal
+		// frame can sit a refresh behind it and look like a second outline.
+		return
 	}
 	edge := white.Alpha(0.76)
 	if over {
 		edge = ui.RGB(207, 222, 242)
 	}
-	element.Border(0.75, edge).BorderLinearGradient(ui.LinearGradient{
+	element.BorderColor(edge).BorderLinearGradient(ui.LinearGradient{
 		Angle: 155, Stops: []ui.GradientStop{
 			{Color: edge, At: 0},
 			{Color: white.Alpha(0.24), At: 0.48},
 			{Color: white.Alpha(0.54), At: 1},
 		},
 	}).InsetShadow(0, 1, 1, 0, white.Alpha(0.48)).
-		InsetShadow(0, -1, 2, 0, ink.Alpha(0.035)).Draw(paintFrost)
+		InsetShadow(0, -1, 2, 0, ink.Alpha(0.035))
 }
 
 func paintFrost(p *ui.Painter, r ui.Rect) {

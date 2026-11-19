@@ -4,6 +4,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"dynamicisland/internal/shelf"
 	"github.com/egoist/mygo"
@@ -25,6 +26,7 @@ func Run() {
 	a := &island{
 		files: files, statePath: statePath, selected: make(map[string]bool),
 	}
+	a.loadTodos()
 	a.settings, err = loadSettings(a.settingsPath())
 	if err != nil {
 		log.Printf("load settings: %v", err)
@@ -37,6 +39,11 @@ func Run() {
 		a.status = "已跳过失效文件"
 	}
 
+	mygo.App.OnNotificationClick(func(id string) {
+		if strings.HasPrefix(id, "todo-") {
+			mygo.App.WhenReady(a.openTodos)
+		}
+	})
 	mygo.App.OnSecondInstance(func(args []string, workingDir string) {
 		mygo.App.WhenReady(func() {
 			a.show()
