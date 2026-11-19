@@ -37,16 +37,13 @@ go build -trimpath -ldflags "-H=windowsgui -s -w" -o dist/DynamicIsland.exe .
 
 ### 一次性配置
 
-1. 建立一个独立的公开发布仓库，用 README 初始化默认分支。源码仓库可保持私有。
-2. 在源码仓库运行 `go tool mygo keygen`。将 `mygo-update.key` 保存在仓库外并备份，所有后续版本使用同一套签名密钥。
-3. 在源码仓库的 **Settings → Secrets and variables → Actions** 添加以下配置。
+1. 在项目目录运行 `go tool mygo keygen`。将 `mygo-update.key` 保存在仓库外并备份，所有后续版本使用同一套签名密钥。
+2. 在 GitHub 仓库的 **Settings → Secrets and variables → Actions** 添加以下配置。
 
 | 类型 | 名称 | 值 |
 | --- | --- | --- |
-| Variable | `UPDATE_REPOSITORY` | 公开发布仓库的 `owner/repo` |
 | Variable | `UPDATE_PUBLIC_KEY` | `mygo-update.pub` 的内容 |
 | Secret | `MYGO_UPDATER_PRIVATE_KEY` | `mygo-update.key` 的内容 |
-| Secret | `UPDATE_RELEASE_TOKEN` | 只授予公开发布仓库 `Contents: Read and write` 权限的 fine-grained GitHub token |
 
 ### 发布新版本
 
@@ -57,7 +54,7 @@ git tag v0.2.0
 git push origin v0.2.0
 ```
 
-标签决定应用版本号。GitHub Actions 会构建 Windows x64 安装程序、macOS 通用版磁盘映像，以及两个平台的更新包和清单。两个平台都构建成功后，到公开仓库的 Releases 打开草稿，确认产物齐全并发布为最新正式版。应用会跳过草稿和预发布版本。若要在应用内展示更新说明，可在打标签前把对应版本的 `## 0.2.0` 章节写入 `CHANGELOG.md`。
+标签决定应用版本号。GitHub Actions 会构建 Windows x64 安装程序、macOS 通用版磁盘映像，以及两个平台的更新包和清单。两个平台都构建成功后，到本仓库的 Releases 打开草稿，确认产物齐全并发布为最新正式版。应用会跳过草稿和预发布版本。若要在应用内展示更新说明，可在打标签前把对应版本的 `## 0.2.0` 章节写入 `CHANGELOG.md`。
 
 应用需要对安装位置有写入权限。现有构建流程使用 macOS 临时签名，初次分发的磁盘映像未经 Apple 公证，Windows 安装程序也没有 Authenticode 签名。更新包使用独立的 MyGo 签名。
 
