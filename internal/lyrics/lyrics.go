@@ -69,11 +69,13 @@ func Parse(text string) Lines {
 }
 
 func (l Lines) Current(position float64) (text string, next float64) {
-	rows, next := l.Surrounding(position)
+	rows, _, next := l.Surrounding(position)
 	return rows[1], next
 }
 
-func (l Lines) Surrounding(position float64) (rows [3]string, next float64) {
+// Surrounding returns the adjacent text, the active line's index (-1 before
+// the first line), and the timestamp of the next line.
+func (l Lines) Surrounding(position float64) (rows [3]string, index int, next float64) {
 	i := sort.Search(len(l), func(i int) bool { return l[i].At > position })
 	if i > 0 {
 		rows[1] = l[i-1].Text
@@ -91,5 +93,5 @@ func (l Lines) Surrounding(position float64) (rows [3]string, next float64) {
 			}
 		}
 	}
-	return rows, next
+	return rows, i - 1, next
 }
