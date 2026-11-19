@@ -17,32 +17,37 @@ const (
 	lyricTransition    = 240 * time.Millisecond
 	lyricOverlayHeight = 120
 	lyricScrollDelay   = 500 * time.Millisecond
-	lyricScrollSpeed   = 72 // DIPs per second
+	lyricScrollHold    = 250 * time.Millisecond
+	lyricScrollMaxRate = 280 // DIPs per second
 )
 
 type lyricOverlay struct {
-	win           *mygo.Window
-	cache         map[lyrics.Song]lyrics.Lines
-	loading       bool
-	song          lyrics.Song
-	index         int
-	rows          [3]string
-	outgoing      string
-	currentSince  time.Time
-	previousSince time.Time
-	shiftedAt     time.Time
-	anchor        mygo.Rectangle
-	side          dockSide
+	win            *mygo.Window
+	cache          map[lyrics.Song]lyrics.Lines
+	loading        bool
+	song           lyrics.Song
+	index          int
+	rows           [3]string
+	outgoing       string
+	currentSince   time.Time
+	lineEndsAt     time.Time
+	scroll         lyricScroll
+	previousOffset float32
+	shiftedAt      time.Time
+	anchor         mygo.Rectangle
+	side           dockSide
 }
 
 func (a *island) updateLyrics(c *ui.Context, frame islandFrame, width, height int) {
 	overlay := &a.lyrics
 	track := a.media.track
+	now := c.Now()
 	var song lyrics.Song
 	index := -1
 	var rows [3]string
 	var anchor mygo.Rectangle
 	var side dockSide
+	var lineEndsAt time.Time
 	if !a.settings.HideLyrics && a.win.IsVisible() && track.Playing && track.Title != "" && track.Duration > 0 {
 		song = lyrics.Song{
 			Title: strings.TrimSpace(track.Title), Artist: strings.TrimSpace(track.Artist),
@@ -66,7 +71,7 @@ func (a *island) updateLyrics(c *ui.Context, frame islandFrame, width, height in
 			}()
 		}
 		if !a.expanded && frame.open == 0 && track.Rate > 0 {
-			position := track.Elapsed(c.Now())
+			position := track.Elapsed(now)
 			var next float64
 			rows, index, next = lines.Surrounding(position)
 			if next > position && next <= track.Duration {
@@ -74,27 +79,33 @@ func (a *island) updateLyrics(c *ui.Context, frame islandFrame, width, height in
 				c.After(max(time.Millisecond, time.Duration(delay*float64(time.Second))))
 			}
 			if rows[1] != "" {
+				end := track.Duration
+				if next > position {
+					end = min(next, end)
+				}
+				// Anchor to the player sample so repainting alone does not change the deadline.
+				lineEndsAt = track.Sampled.Add(time.Duration((end - track.Position) / track.Rate * float64(time.Second)))
 				anchor = a.windowBounds(width, height)
 				side = a.dock.side
 			}
 		}
 	}
 	if song != overlay.song || index != overlay.index || rows != overlay.rows {
-		now := c.Now()
 		// Start from settled rows when advancing to the next visible line of the same song.
 		if song == overlay.song && index == overlay.index+1 && overlay.rows[1] != "" && rows[1] != "" &&
 			now.Sub(overlay.shiftedAt) >= lyricTransition {
 			overlay.outgoing, overlay.shiftedAt = overlay.rows[0], now
-			overlay.previousSince = overlay.currentSince
+			overlay.previousOffset = overlay.scroll.offset(now)
 		} else {
 			overlay.outgoing, overlay.shiftedAt = "", time.Time{}
 		}
 		overlay.currentSince = now
+		overlay.scroll = lyricScroll{}
 		overlay.song, overlay.index, overlay.rows = song, index, rows
-	} else if anchor == overlay.anchor && side == overlay.side {
+	} else if anchor == overlay.anchor && side == overlay.side && lineEndsAt.Equal(overlay.lineEndsAt) {
 		return
 	}
-	overlay.anchor, overlay.side = anchor, side
+	overlay.anchor, overlay.side, overlay.lineEndsAt = anchor, side, lineEndsAt
 
 	// Window creation and movement happen after the island's frame is built.
 	a.win.Update(func() {
@@ -207,20 +218,20 @@ func (o *lyricOverlay) view(c *ui.Context) {
 				font := ui.Font{Family: theme.Font, Size: currentSize, Weight: currentWeight, Lang: c.Locale()}
 				marquee.split(line, textWidth, font, c.Direction())
 				if marquee.tail != "" {
-					at, since := now, o.currentSince
-					if i == 1 {
-						at, since = o.shiftedAt, o.previousSince
-					}
 					tailWidth, _ := c.MeasureText(0, ui.Span{Text: marquee.tail, Size: size, Weight: weight})
 					overflow := max(0, tailWidth-textWidth)
 					var distance float32
-					if overflow > 0 && !since.IsZero() {
-						elapsed := at.Sub(since) - lyricScrollDelay
-						distance = min(overflow, float32(max(0, elapsed).Seconds())*lyricScrollSpeed)
-						if i == 2 && elapsed < 0 {
-							c.After(-elapsed)
-						} else if i == 2 && distance < overflow {
-							c.AnimationFrame()
+					if i == 1 {
+						distance = min(overflow, o.previousOffset)
+					} else if !o.lineEndsAt.IsZero() {
+						o.scroll.retarget(now, o.currentSince, o.lineEndsAt, overflow)
+						distance = o.scroll.offset(now)
+						if distance < overflow {
+							if delay := o.scroll.start.Sub(now); delay > 0 {
+								c.After(delay)
+							} else {
+								c.AnimationFrame()
+							}
 						}
 					}
 					x := -distance
@@ -243,6 +254,40 @@ func (o *lyricOverlay) view(c *ui.Context) {
 			}
 		}
 	})
+}
+
+type lyricScroll struct {
+	start, finish, deadline time.Time
+	from, overflow          float32
+}
+
+func (s lyricScroll) offset(now time.Time) float32 {
+	if s.finish.IsZero() || !now.After(s.start) {
+		return s.from
+	}
+	if !now.Before(s.finish) {
+		return s.overflow
+	}
+	progress := float32(now.Sub(s.start)) / float32(s.finish.Sub(s.start))
+	return s.from + (s.overflow-s.from)*progress
+}
+
+func (s *lyricScroll) retarget(now, shownAt, deadline time.Time, overflow float32) {
+	if deadline.Equal(s.deadline) && overflow == s.overflow {
+		return
+	}
+	from := min(overflow, s.offset(now))
+	fastest := time.Duration(float64(overflow-from) / lyricScrollMaxRate * float64(time.Second))
+	// Shorten both reading pauses when there is little time at the maximum speed.
+	spare := max(0, deadline.Sub(now)-fastest)
+	var delay time.Duration
+	if from == 0 {
+		delay = min(spare/2, max(0, shownAt.Add(lyricScrollDelay).Sub(now)))
+	}
+	hold := min(lyricScrollHold, spare-delay)
+	start := now.Add(delay)
+	finish := start.Add(fastest + spare - delay - hold)
+	*s = lyricScroll{start: start, finish: finish, deadline: deadline, from: from, overflow: overflow}
 }
 
 type lyricMarquee struct {

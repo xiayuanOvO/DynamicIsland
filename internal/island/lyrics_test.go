@@ -85,6 +85,7 @@ func TestLyricOverlayScrollsOverflowingSecondLine(t *testing.T) {
 				Preferences: ui.Preferences{ReduceMotion: test.reduceMotion},
 			})
 			o.currentSince = view.Now()
+			o.lineEndsAt = view.Now().Add(8 * time.Second)
 			view.Frame()
 			before := view.Image()
 			view.Advance(lyricScrollDelay / 2)
@@ -107,22 +108,67 @@ func TestLyricOverlayScrollsOverflowingSecondLine(t *testing.T) {
 				t.Fatal("the first line moved with the second")
 			}
 
-			view.Advance(time.Minute)
+			view.Advance(o.lineEndsAt.Sub(view.Now()) - lyricScrollHold/2)
 			view.Frame()
 			end := view.Image()
-			view.Advance(time.Second)
+			view.Advance(lyricScrollHold / 4)
 			view.Frame()
 			if !bytes.Equal(end.Pix, view.Image().Pix) {
-				t.Fatal("scrolling should stop at the end of the lyric")
+				t.Fatal("scrolling should already be stopped before the next lyric")
 			}
 
-			o.outgoing, o.previousSince, o.shiftedAt = o.rows[0], o.currentSince, view.Now()
+			o.outgoing, o.previousOffset, o.shiftedAt = o.rows[0], o.scroll.offset(view.Now()), view.Now()
 			o.currentSince = view.Now()
+			o.lineEndsAt = view.Now().Add(4 * time.Second)
+			o.scroll = lyricScroll{}
 			o.rows = [3]string{test.line, o.rows[2], "天边逐渐亮起来"}
 			view.Frame()
 			if !bytes.Equal(end.Pix, view.Image().Pix) {
 				t.Fatal("the previous lyric should keep its horizontal position when the upward transition starts")
 			}
 		})
+	}
+}
+
+func TestLyricScrollAdjustsToPlaybackDeadline(t *testing.T) {
+	now := time.Unix(1000, 0)
+	const overflow = 420
+	longEnd, shortEnd := now.Add(8*time.Second), now.Add(3*time.Second)
+	var normal, faster lyricScroll
+	normal.retarget(now, now, longEnd, overflow)
+	faster.retarget(now, now, shortEnd, overflow)
+	sample := now.Add(time.Second)
+	if normal.offset(sample) <= 0 || faster.offset(sample) <= normal.offset(sample) {
+		t.Fatal("a shorter line duration should produce faster scrolling")
+	}
+	for _, scroll := range []lyricScroll{normal, faster} {
+		if scroll.offset(scroll.deadline.Add(-lyricScrollHold)) != overflow {
+			t.Fatal("the full tail should be visible before the deadline")
+		}
+	}
+
+	distance := normal.offset(sample)
+	normal.retarget(sample, now, shortEnd, overflow)
+	if normal.offset(sample) != distance || normal.offset(shortEnd) != overflow {
+		t.Fatal("an earlier deadline should speed up scrolling from the current position")
+	}
+	nextSample := sample.Add(time.Second)
+	distance = normal.offset(nextSample)
+	normal.retarget(nextSample, now, longEnd, overflow)
+	if normal.offset(nextSample) != distance || normal.finish.Before(longEnd.Add(-lyricScrollHold)) {
+		t.Fatal("a later deadline should slow scrolling from the current position")
+	}
+
+	var tight lyricScroll
+	tightEnd := now.Add(1600 * time.Millisecond)
+	tight.retarget(now, now, tightEnd, overflow)
+	if tight.start.Sub(now) >= lyricScrollDelay || !tight.finish.Before(tightEnd) || tight.offset(tightEnd) != overflow {
+		t.Fatal("shorter reading pauses should let the tail appear before a tight deadline")
+	}
+
+	var veryShort lyricScroll
+	veryShort.retarget(now, now, now.Add(time.Second), overflow)
+	if veryShort.start != now || veryShort.offset(now.Add(time.Second)) != lyricScrollMaxRate {
+		t.Fatal("when time is tight, scrolling should start immediately at the maximum speed")
 	}
 }
