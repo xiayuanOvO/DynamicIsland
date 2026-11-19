@@ -17,12 +17,12 @@ go mod download
 go run .
 ```
 
-开发时可运行 `go tool mygo dev`，修改 Go 代码后自动重新构建并启动。在 macOS 上首次开发前运行 `./build-macos.sh --prepare-media`，开发版与发布版会打包同一份媒体适配器。
+开发时可运行 `go tool mygo dev`，修改 Go 代码后自动重新构建并启动。在 macOS 上首次开发前运行 `./scripts/build-macos.sh --prepare-media`，开发版与发布版会打包同一份媒体适配器。
 
 构建无控制台窗口的 Windows 程序：
 
 ```powershell
-.\build.ps1
+.\scripts\build.ps1
 ```
 
 输出：`dist\DynamicIsland.exe`。也可以直接执行：
@@ -36,7 +36,7 @@ go build -trimpath -ldflags "-H=windowsgui -s -w" -o dist/DynamicIsland.exe .
 系统有当前媒体时，展开面板会在暂存区上方显示封面、曲名、艺人、播放进度和可用的播放控件。点击或拖动进度条可跳转，具体支持取决于播放器。媒体播放时，收起的胶囊也显示频谱。柱高跟随系统音频，左侧低频，右侧高频。macOS 14.2 及以上首次使用需要允许系统音频录制，只在内存中计算频谱，不保存音频。
 
 - Windows 11 通过系统媒体会话读取和控制播放，使用系统自带的 Windows PowerShell。
-- macOS 发布版内置媒体工具，用户打开应用即可使用。用 `./build-macos.sh` 在装有 Go、Xcode 命令行工具和 CMake 的 Mac 上构建通用版，产物位于 `dist/`。直接用 `go run .` 启动时没有随包媒体工具。
+- macOS 发布版内置媒体工具，用户打开应用即可使用。用 `./scripts/build-macos.sh` 在装有 Go、Xcode 命令行工具和 CMake 的 Mac 上构建通用版，产物位于 `dist/`。直接用 `go run .` 启动时没有随包媒体工具。
 
 在托盘或灵动岛右键菜单打开「设置」，可为律动柱选择默认蓝灰色、自定义颜色或跟随海报。设置自动保存到与 `shelf.json` 同级的 `settings.json`。
 
@@ -74,13 +74,18 @@ go build -trimpath -ldflags "-H=windowsgui -s -w" -o dist/DynamicIsland.exe .
 
 macOS 将上述 `Ctrl` 换为 `Command`。隐藏、回到屏幕顶部和退出操作均可通过托盘或灵动岛右键菜单完成。
 
+## 目录结构
+
+- `main.go` 是程序入口，`mygo.json` 是 MyGo 的构建配置。
+- `internal/island/` 管理灵动岛界面、窗口、设置和应用状态。
+- `internal/shelf/` 和 `internal/preview/` 分别管理文件暂存和预览。
+- `internal/nowplaying/`、`internal/audiolevel/` 和 `internal/lyrics/` 分别处理系统媒体、音频频谱和同步歌词。
+- `native/macos/` 保存 macOS 音频采集工具源码和签名权限配置。
+- `scripts/` 保存构建脚本，`resources/darwin/` 和 `dist/` 分别存放准备好的媒体工具和构建产物。
+
 ## 开发检查
 
 ```powershell
-go test ./internal/shelf
-go test ./internal/preview
 go vet ./...
 go build ./...
 ```
-
-测试覆盖文件引用、去重、持久化、原文件保留，以及图像缩放、透明度和 Windows 文件缩略图/图标读取，不启动窗口。
