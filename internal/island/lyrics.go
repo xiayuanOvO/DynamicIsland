@@ -12,24 +12,31 @@ import (
 	"github.com/egoist/mygo/ui"
 )
 
+const lyricTransition = 240 * time.Millisecond
+
 type lyricOverlay struct {
-	win          *mygo.Window
-	cache        map[lyrics.Song]lyrics.Lines
-	loading      bool
-	rows         [3]string
-	currentSince time.Time
-	anchor       mygo.Rectangle
-	side         dockSide
+	win       *mygo.Window
+	cache     map[lyrics.Song]lyrics.Lines
+	loading   bool
+	song      lyrics.Song
+	index     int
+	rows      [3]string
+	outgoing  string
+	shiftedAt time.Time
+	anchor    mygo.Rectangle
+	side      dockSide
 }
 
 func (a *island) updateLyrics(c *ui.Context, frame islandFrame, width, height int) {
 	overlay := &a.lyrics
 	track := a.media.track
+	var song lyrics.Song
+	index := -1
 	var rows [3]string
 	var anchor mygo.Rectangle
 	var side dockSide
 	if !a.settings.HideLyrics && a.win.IsVisible() && track.Playing && track.Title != "" && track.Duration > 0 {
-		song := lyrics.Song{
+		song = lyrics.Song{
 			Title: strings.TrimSpace(track.Title), Artist: strings.TrimSpace(track.Artist),
 			Album: strings.TrimSpace(track.Album), Duration: math.Round(track.Duration),
 		}
@@ -53,7 +60,7 @@ func (a *island) updateLyrics(c *ui.Context, frame islandFrame, width, height in
 		if !a.expanded && frame.open == 0 && track.Rate > 0 {
 			position := track.Elapsed(c.Now())
 			var next float64
-			rows, next = lines.Surrounding(position)
+			rows, index, next = lines.Surrounding(position)
 			if next > position && next <= track.Duration {
 				delay := (next - position) / track.Rate
 				c.After(max(time.Millisecond, time.Duration(delay*float64(time.Second))))
@@ -64,13 +71,20 @@ func (a *island) updateLyrics(c *ui.Context, frame islandFrame, width, height in
 			}
 		}
 	}
-	if rows == overlay.rows && anchor == overlay.anchor && side == overlay.side {
+	if song != overlay.song || index != overlay.index || rows != overlay.rows {
+		now := c.Now()
+		// Start from settled rows when advancing to the next visible line of the same song.
+		if song == overlay.song && index == overlay.index+1 && overlay.rows[1] != "" && rows[1] != "" &&
+			now.Sub(overlay.shiftedAt) >= lyricTransition {
+			overlay.outgoing, overlay.shiftedAt = overlay.rows[0], now
+		} else {
+			overlay.outgoing, overlay.shiftedAt = "", time.Time{}
+		}
+		overlay.song, overlay.index, overlay.rows = song, index, rows
+	} else if anchor == overlay.anchor && side == overlay.side {
 		return
 	}
-	if rows[1] != overlay.rows[1] {
-		overlay.currentSince = c.Now()
-	}
-	overlay.rows, overlay.anchor, overlay.side = rows, anchor, side
+	overlay.anchor, overlay.side = anchor, side
 
 	// Window creation and movement happen after the island's frame is built.
 	a.win.Update(func() {
@@ -120,22 +134,33 @@ func (o *lyricOverlay) view(c *ui.Context) {
 	} else if o.side == dockRight {
 		align = ui.End
 	}
-	const transition = 200 * time.Millisecond
-	mix := ui.EaseOut(min(1, max(0, float32(c.Now().Sub(o.currentSince))/float32(transition))))
-	if mix < 1 {
-		c.AnimationFrame()
+	progress := float32(1)
+	if !o.shiftedAt.IsZero() && !c.Preferences().ReduceMotion {
+		elapsed := c.Now().Sub(o.shiftedAt)
+		if elapsed < lyricTransition {
+			progress = ui.EaseOut(max(0, float32(elapsed)/float32(lyricTransition)))
+			c.AnimationFrame()
+		}
 	}
-	ui.Column(c.Key("lyrics")).Fill().Padding(3, 10).Gap(2).Justify(ui.Center).Children(func() {
-		for index, line := range o.rows {
-			row := ui.Text(c.Key(index), line).FillWidth().SingleLine().Ellipsis("…").
-				TextAlign(align).Shrink(0)
-			if index == 1 {
-				row.Height(30).FontSize(21).FontWeight(700).TextColor(white).
-					TextShadow(0, 1, 6, ink.Alpha(0.95)).Opacity(0.72+0.28*mix).Translate(0, 4*(1-mix))
-			} else {
-				row.Height(22).FontSize(14).FontWeight(500).TextColor(white.Alpha(0.58)).
-					TextShadow(0, 1, 4, ink.Alpha(0.9))
+
+	const rowSpacing = 28
+	_, height := c.Size()
+	lines := [4]string{o.outgoing, o.rows[0], o.rows[1], o.rows[2]}
+	opacity := [4]float32{1 - progress, 1, 1, progress}
+	highlight := [4]float32{0, 1 - progress, progress, 0}
+	ui.Box(c.Key("lyrics")).Fill().Clip().Children(func() {
+		for i, line := range lines {
+			if line == "" || opacity[i] == 0 {
+				continue
 			}
+			emphasis := highlight[i]
+			rowHeight := 22 + 8*emphasis
+			center := height/2 + (float32(i-2)+1-progress)*rowSpacing
+			ui.Text(c.Key(i), line).Absolute().Left(10).Right(10).Top(center-rowHeight/2).Height(rowHeight).
+				SingleLine().Ellipsis("…").TextAlign(align).Opacity(opacity[i]).
+				FontSize(14+7*emphasis).FontWeight(500+int(200*emphasis)).
+				TextColor(white.Alpha(0.58+0.42*emphasis)).
+				TextShadow(0, 1, 4+2*emphasis, ink.Alpha(0.9+0.05*emphasis))
 		}
 	})
 }
