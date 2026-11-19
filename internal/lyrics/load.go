@@ -19,7 +19,8 @@ type Song struct {
 	Duration             float64
 }
 
-func Load(ctx context.Context, folder string, song Song) Lines {
+// Load returns the lyrics and reports whether they came from an online source.
+func (c Cache) Load(ctx context.Context, folder string, song Song) (lines Lines, downloaded bool) {
 	if folder != "" {
 		name := strings.NewReplacer("/", "_", "\\", "_", ":", "_", "*", "_", "?", "_", "\"", "_", "<", "_", ">", "_", "|", "_").
 			Replace(song.Artist + " - " + song.Title)
@@ -28,15 +29,22 @@ func Load(ctx context.Context, folder string, song Song) Lines {
 			file.Close()
 			if err == nil {
 				if lines := Parse(string(data)); len(lines) > 0 {
-					return lines
+					return lines, false
 				}
 			}
 		}
 	}
-	if song.Artist == "" || ctx.Err() != nil {
-		return nil
+	if data, err := os.ReadFile(c.path(song)); err == nil {
+		var cached Lines
+		if json.Unmarshal(data, &cached) == nil && len(cached) > 0 {
+			return cached, false
+		}
 	}
-	return loadOnline(ctx, http.DefaultClient, song)
+	if song.Artist == "" || ctx.Err() != nil {
+		return nil, false
+	}
+	lines = loadOnline(ctx, http.DefaultClient, song)
+	return lines, len(lines) > 0
 }
 
 func loadOnline(ctx context.Context, client *http.Client, song Song) Lines {
