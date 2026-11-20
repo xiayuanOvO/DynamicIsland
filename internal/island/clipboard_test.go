@@ -305,6 +305,13 @@ func TestClipboardSearchAndKeyboardPaste(t *testing.T) {
 	if !view.Focused("搜索剪贴板历史") {
 		t.Fatal("opening history should focus search")
 	}
+	back, hasBack := view.Find("返回岛面板")
+	search, hasSearch := view.Find("搜索剪贴板历史")
+	clear, hasClear := view.Find("清空历史")
+	if slices.Contains(view.Texts(), "剪贴板历史") || !hasBack || !hasSearch || !hasClear ||
+		back.X+back.W > search.X || search.X+search.W > clear.X || back.Y != clear.Y {
+		t.Fatalf("search and actions should share one toolbar without a separate title: back=%+v search=%+v clear=%+v", back, search, clear)
+	}
 	view.Type("ALPHA 中文")
 	_, excluded := view.Find("复制 无关记录")
 	if excluded || !view.HasText("Alpha 第一条中文") || !view.HasText("ALPHA…") {
@@ -367,7 +374,8 @@ func TestClipboardKeyboardSelectionScrollsIntoView(t *testing.T) {
 		view.Key(0, ui.KeyDown)
 	}
 	row, found := view.Find("复制 记录 11")
-	if a.clipboard.selected != a.clipboard.Entries[11].key() || !found || row.Y < 88 || row.Y+row.H > clipboardPanelHeight {
+	search, _ := view.Find("搜索剪贴板历史")
+	if a.clipboard.selected != a.clipboard.Entries[11].key() || !found || row.Y < search.Y+search.H || row.Y+row.H > clipboardPanelHeight {
 		t.Fatalf("keyboard selection should scroll into the visible list: found=%t, row=%+v", found, row)
 	}
 }

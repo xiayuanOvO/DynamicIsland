@@ -13,7 +13,9 @@ import (
 	"github.com/egoist/mygo/ui"
 )
 
-const clipboardPanelHeight = 328
+const clipboardPanelHeight = 284
+
+var clearClipboardIcon = svg(`<path d="M4 6h16M4 12h9M4 18h9m3-5 5 5m0-5-5 5"/>`)
 
 func (a *island) openClipboard(fromShortcut bool) {
 	if !a.clipboard.Recording {
@@ -110,16 +112,19 @@ func (a *island) clipboardView(c *ui.Context, interactive bool, write func(trans
 	history := &a.clipboard
 	ui.Themed(c.Key("clipboard-history"), todoTheme).FillWidth().Height(clipboardPanelHeight).
 		Shrink(0).Gap(8).Background(ui.Transparent).Children(func() {
-		ui.Row(c).FillWidth().Height(40).Shrink(0).Gap(8).AlignItems(ui.Center).Children(func() {
-			if iconButton(c.Key("back"), backIcon, "返回岛面板").Size(40, 40).Clicked() {
-				history.open, history.confirmClear = false, false
-			}
-			ui.Text(c, "剪贴板历史").Grow(1).FontSize(18).FontWeight(650).TextColor(ink)
-			if !history.confirmClear && len(history.Entries) > 0 &&
-				ui.Button(c.Key("clear"), "清空历史").Height(40).Clicked() {
-				history.confirmClear = true
-			}
-		})
+		var search ui.Element
+		if !history.confirmClear {
+			ui.Row(c.Key("toolbar")).FillWidth().Height(40).Shrink(0).Gap(6).AlignItems(ui.Center).Children(func() {
+				if iconButton(c.Key("back"), backIcon, "返回岛面板").Size(40, 40).Clicked() {
+					history.open, history.confirmClear = false, false
+				}
+				search = ui.SearchField(c.Key("search"), &history.query).Grow(1).MinWidth(0).Height(36).
+					Label("搜索剪贴板历史").Placeholder("搜索记录")
+				if len(history.Entries) > 0 && iconButton(c.Key("clear"), clearClipboardIcon, "清空历史").Size(40, 40).Clicked() {
+					history.confirmClear = true
+				}
+			})
+		}
 		if history.confirmClear {
 			ui.Column(c.Key("confirm-clear")).FillWidth().Grow(1).Justify(ui.Center).AlignItems(ui.Center).Gap(10).Children(func() {
 				ui.Text(c, "清空所有剪贴板历史？").FontSize(13).TextColor(ink)
@@ -138,8 +143,6 @@ func (a *island) clipboardView(c *ui.Context, interactive bool, write func(trans
 				})
 			})
 		} else {
-			search := ui.SearchField(c.Key("search"), &history.query).FillWidth().Height(40).Shrink(0).
-				Label("搜索剪贴板历史").Placeholder("搜索剪贴板历史")
 			reveal := history.focusSearch && interactive
 			if reveal {
 				search.Focus()
@@ -188,7 +191,7 @@ func (a *island) clipboardView(c *ui.Context, interactive bool, write func(trans
 				if interactive && history.pendingPaste == nil && (search.Submitted() || c.Shortcut(0, ui.KeyEnter)) {
 					history.pendingPaste = &entry
 				}
-				ui.Scroll(c.Key("entries")).FillWidth().Grow(1).MinHeight(0).Gap(4).Children(func() {
+				ui.Scroll(c.Key("entries")).FillWidth().Grow(1).MinHeight(0).Gap(3).Children(func() {
 					entries := history.Entries
 					for position, index := range results {
 						entry := entries[index]
@@ -227,43 +230,51 @@ func (a *island) clipboardRow(c *ui.Context, index int, entry clipboardEntry, se
 		count++
 	}
 	dimensions := ""
-	rowHeight := float32(44)
+	const rowHeight = 50
 	if entry.Image != nil {
-		rowHeight = 56
 		if text == "" {
 			text = "图片"
 		}
 		dimensions = fmt.Sprintf("%d × %d", entry.Image.Width, entry.Image.Height)
 	}
 	var copy ui.Element
-	ui.Row(c.Key(entry.key())).FillWidth().Height(rowHeight).Shrink(0).Gap(4).AlignItems(ui.Center).Children(func() {
+	row := ui.Row(c.Key(entry.key())).FillWidth().Height(rowHeight).Shrink(0).Gap(2).AlignItems(ui.Center).Radius(10)
+	hovered := row.Hovered()
+	if selected {
+		row.Background(accent.Alpha(0.15))
+	} else if hovered {
+		row.Background(white.Alpha(0.32))
+	}
+	row.Children(func() {
+		if selected {
+			ui.Box(c.Key("selection")).Absolute().Left(3).Top(13).Bottom(13).Width(2).
+				Radius(1).Background(accent).IgnoreInput(true)
+		}
 		label := text
 		if dimensions != "" {
 			label += " " + dimensions
 		}
-		copy = ui.ButtonBase(c.Key("copy")).Row().Grow(1).MinWidth(0).Height(rowHeight).Padding(0, 8).
+		copy = ui.ButtonBase(c.Key("copy")).Row().Grow(1).MinWidth(0).Height(rowHeight).Padding(0, 9).
 			Gap(8).AlignItems(ui.Center).Radius(8).TextColor(muted).Cursor(ui.CursorPointer).Label("复制 " + label)
-		if selected {
-			copy.Background(accent.Alpha(0.16)).Border(1, accent.Alpha(0.42))
-		} else if copy.Hovered() {
-			copy.Background(white.Alpha(0.45))
-		}
 		copy.Children(func() {
-			if entry.Image == nil {
-				ui.Icon(c, copyIcon).Size(14, 14).Shrink(0)
-			} else {
-				var visual *filePreview
-				if copy.InViewMargin(rowHeight) {
-					visual = a.filePreview(shelf.Item{Path: a.clipboardImagePath(entry.Image.ID)})
+			preview := ui.Box(c.Key("preview")).Size(44, 34).Shrink(0).Radius(6).Clip().Center()
+			if entry.Image != nil {
+				preview.Background(white.Alpha(0.45))
+			}
+			preview.Children(func() {
+				if entry.Image == nil {
+					ui.Icon(c, copyIcon).Size(14, 14)
+					return
 				}
-				ui.Box(c.Key("thumbnail")).Size(52, 40).Shrink(0).Radius(5).Clip().Center().Background(white.Alpha(0.5)).Children(func() {
+				if copy.InViewMargin(rowHeight) {
+					visual := a.filePreview(shelf.Item{Path: a.clipboardImagePath(entry.Image.ID)})
 					if visual != nil && visual.source != nil {
 						ui.Image(c, visual.source).Fill().Fit(ui.Contain)
-					} else {
-						ui.Icon(c, imageIcon).Size(16, 16).TextColor(muted)
+						return
 					}
-				})
-			}
+				}
+				ui.Icon(c, imageIcon).Size(16, 16).TextColor(muted)
+			})
 			ui.Column(c).Grow(1).MinWidth(0).Gap(1).Children(func() {
 				ui.Text(c, text).MinWidth(0).SingleLine().Ellipsis("…").FontSize(13).TextColor(ink)
 				if dimensions != "" {
