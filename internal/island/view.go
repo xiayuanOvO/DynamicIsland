@@ -364,28 +364,6 @@ func (a *island) actions(c *ui.Context) {
 }
 
 func (a *island) menu(m *ui.Menu) {
-	if m.Item("待办事项…").Chosen() {
-		a.win.Update(a.openTodos)
-	}
-	if m.Item("添加文件…").Disabled(a.choosing).Chosen() {
-		a.choose(false)
-	}
-	if m.Item("添加文件夹…").Disabled(a.choosing).Chosen() {
-		a.choose(true)
-	}
-	m.Separator()
-	if m.Item("全选").Disabled(len(a.files.Items) == 0).Chosen() {
-		for _, item := range a.files.Items {
-			a.selected[shelf.Key(item.Path)] = true
-		}
-	}
-	if m.Item("取消选择").Disabled(len(a.selected) == 0).Chosen() {
-		clear(a.selected)
-	}
-	if m.Item("清空暂存区").Disabled(len(a.files.Items) == 0).Chosen() {
-		a.removeFiles(a.files.Paths())
-	}
-	m.Separator()
 	if m.Item("回到屏幕顶部").Chosen() {
 		a.recenter()
 	}
