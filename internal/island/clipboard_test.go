@@ -396,7 +396,7 @@ func TestClipboardKeyboardSelectionScrollsIntoView(t *testing.T) {
 	}
 }
 
-func TestClipboardPointerSelectionStaysPutWhileScrolling(t *testing.T) {
+func TestClipboardDistinguishesScrollFromPointerMovement(t *testing.T) {
 	a := island{files: &shelf.Shelf{}, clipboard: clipboardComponent{clipboardState: clipboardState{Recording: true}}}
 	for i := range 12 {
 		a.clipboard.Entries = append(a.clipboard.Entries, clipboardEntry{Text: fmt.Sprintf("记录 %02d", i), CopiedAt: time.Now()})
@@ -410,18 +410,21 @@ func TestClipboardPointerSelectionStaysPutWhileScrolling(t *testing.T) {
 	}
 	view.Wheel(21, 125, 0, 53)
 	view.Advance(70 * time.Millisecond)
-	view.Move(22, 126)
 	if a.clipboard.selected != first {
-		t.Fatal("moving the mouse during a scrolling animation must not change the selection")
+		t.Fatal("wheel scrolling alone must keep the current selection")
 	}
-	view.Advance(140 * time.Millisecond)
 	next, found := view.Find("复制 记录 04")
 	if !found {
-		t.Fatal("the target row should be visible after scrolling")
+		t.Fatal("the target row should be visible during scrolling")
 	}
 	view.Move(next.X+20, next.Y+next.H/2)
-	if a.clipboard.selected != a.clipboard.Entries[4].key() {
-		t.Fatal("moving the mouse after scrolling should select the row under it")
+	selected := a.clipboard.Entries[4].key()
+	if a.clipboard.selected != selected {
+		t.Fatal("a real mouse move should select the row immediately during scrolling")
+	}
+	view.Advance(140 * time.Millisecond)
+	if a.clipboard.selected != selected {
+		t.Fatal("rows scrolling under a stationary mouse must not change the selection")
 	}
 }
 

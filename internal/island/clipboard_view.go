@@ -13,10 +13,7 @@ import (
 	"github.com/egoist/mygo/ui"
 )
 
-const (
-	clipboardPanelHeight = 284
-	clipboardHoverPause  = 160 * time.Millisecond
-)
+const clipboardPanelHeight = 284
 
 var clearClipboardIcon = svg(`<path d="M4 6h16M4 12h9M4 18h9m3-5 5 5m0-5-5 5"/>`)
 
@@ -29,7 +26,7 @@ func (a *island) openClipboard(fromShortcut bool) {
 	history := &a.clipboard
 	if !history.open {
 		history.query, history.selected = "", clipboardEntryKey{}
-		history.hoverSelection, history.resumeHoverAt = clipboardEntryKey{}, time.Time{}
+		history.hoverSelection = clipboardEntryKey{}
 		history.confirmClear, history.pendingPaste = false, nil
 		history.pasteTarget = clipboardPasteTarget{}
 	}
@@ -201,10 +198,9 @@ func (a *island) clipboardView(c *ui.Context, interactive bool, write func(trans
 				list := ui.Scroll(c.Key("entries")).FillWidth().Grow(1).MinHeight(0).Gap(3).
 					HandleInput(func(event ui.InputEvent) bool {
 						if event.Kind == ui.InputScroll {
-							// MyGo may send a pointer move before the wheel event.
-							// Discard that selection and wait for the scroll glide.
+							// MyGo updates the pointer before dispatching scroll input.
+							// Discard the hover staged by that same scroll event.
 							history.hoverSelection = clipboardEntryKey{}
-							history.resumeHoverAt = event.Time.Add(clipboardHoverPause)
 						}
 						return false
 					})
@@ -259,7 +255,7 @@ func (a *island) clipboardRow(c *ui.Context, index int, entry clipboardEntry, se
 	history := &a.clipboard
 	row := ui.Row(c.Key(key)).FillWidth().Height(rowHeight).Shrink(0).Gap(2).AlignItems(ui.Center).Radius(10).
 		HandleInput(func(event ui.InputEvent) bool {
-			if event.Kind != ui.InputPointerMove || event.Button != -1 || event.Time.Before(history.resumeHoverAt) {
+			if event.Kind != ui.InputPointerMove || event.Button != -1 {
 				return false
 			}
 			history.hoverSelection = key

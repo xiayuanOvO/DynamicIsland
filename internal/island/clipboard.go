@@ -69,7 +69,6 @@ type clipboardComponent struct {
 	focusSearch         bool
 	selected            clipboardEntryKey
 	hoverSelection      clipboardEntryKey
-	resumeHoverAt       time.Time
 	pendingPaste        *clipboardEntry
 	pasteTarget         clipboardPasteTarget
 	loadFailed          bool
