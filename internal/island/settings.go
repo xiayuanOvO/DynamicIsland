@@ -26,7 +26,7 @@ const (
 const (
 	settingsWidth           = 432
 	settingsControlWidth    = 236
-	clipboardSettingsHeight = 82
+	clipboardSettingsHeight = 128
 	cardPreviewInset        = 8
 	cardPreviewGap          = 12
 )
@@ -142,6 +142,7 @@ func (a *island) openSettings() {
 		a.settingsWindow.OnClosed(func() {
 			a.settingsWindow = nil
 			a.citySearch = weatherCitySearch{}
+			a.clipboard.editingShortcut, a.clipboard.shortcutProblem = false, ""
 			if a.updates.phase == updateLatest {
 				a.updates.phase = updateIdle
 			}

@@ -107,6 +107,7 @@ func (a *island) start() {
 		a.win.Show()
 	}
 	a.win.OnMove(a.windowMoved)
+	a.win.OnBlur(a.clipboardWindowBlurred)
 	mygo.Screen.OnDisplaysChanged(a.recenter)
 	mygo.App.OnWillQuit(func(*mygo.QuitEvent) {
 		a.saveSettings()
@@ -120,7 +121,14 @@ func (a *island) start() {
 			a.tray.Destroy()
 		}
 	})
-	if err := mygo.GlobalShortcut.Register(hotkey, a.toggle); err != nil {
+	if err := mygo.GlobalShortcut.Register(hotkey, func() {
+		if a.clipboard.editingShortcut && a.settingsWindow != nil && a.settingsWindow.IsFocused() {
+			a.clipboard.shortcutProblem = "快捷键已被灵动岛使用"
+			a.settingsWindow.Invalidate()
+			return
+		}
+		a.toggle()
+	}); err != nil {
 		log.Printf("global shortcut: %v", err)
 		a.message("快捷键被占用", true)
 	}

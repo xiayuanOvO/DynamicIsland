@@ -59,12 +59,8 @@ func (a *island) clipboardSettings(c *ui.Context) {
 		var label ui.Element
 		ui.Column(c).Grow(1).MinWidth(0).Gap(1).Children(func() {
 			label = ui.Text(c, "记录剪贴板").FontSize(13).TextColor(ink)
-			problem := history.problem
-			if problem == "" && history.shortcutUnavailable {
-				problem = "剪贴板快捷键不可用"
-			}
-			if problem != "" {
-				ui.Text(c, problem).FontSize(11).TextColor(ui.Hex("#a65b50"))
+			if history.problem != "" {
+				ui.Text(c, history.problem).FontSize(11).TextColor(ui.Hex("#a65b50"))
 			}
 		})
 		recording := history.Recording
@@ -86,6 +82,9 @@ func (a *island) clipboardSettings(c *ui.Context) {
 			}
 		}
 	})
+	if !history.loadFailed {
+		a.clipboardShortcutSettings(c)
+	}
 }
 
 func (a *island) clipboardCard(c *ui.Context, opacity float32) {
@@ -135,7 +134,9 @@ func (a *island) clipboardView(c *ui.Context, interactive bool, write func(trans
 						history.focusSearch = true
 					}
 					if ui.Button(c.Key("confirm"), "清空历史").Height(40).Clicked() {
-						if a.saveClipboard(clipboardState{Recording: history.Recording}) {
+						next := history.clipboardState
+						next.Entries = nil
+						if a.saveClipboard(next) {
 							history.confirmClear = false
 							history.focusSearch = true
 							c.Announce("剪贴板历史已清空")

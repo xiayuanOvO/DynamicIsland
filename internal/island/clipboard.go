@@ -23,12 +23,12 @@ import (
 )
 
 const (
-	clipboardHistoryLimit = 50
-	clipboardTextLimit    = 32 * 1024
-	clipboardImageLimit   = 16 << 20
-	clipboardImageBudget  = 64 << 20
-	clipboardHotkey       = "Alt+Shift+V"
-	clipboardHistoryFlag  = transfer.Format("CanIncludeInClipboardHistory")
+	clipboardHistoryLimit  = 50
+	clipboardTextLimit     = 32 * 1024
+	clipboardImageLimit    = 16 << 20
+	clipboardImageBudget   = 64 << 20
+	defaultClipboardHotkey = "Alt+Shift+V"
+	clipboardHistoryFlag   = transfer.Format("CanIncludeInClipboardHistory")
 )
 
 type clipboardEntry struct {
@@ -56,24 +56,34 @@ func (entry clipboardEntry) key() clipboardEntryKey {
 
 type clipboardState struct {
 	Recording bool             `json:"recording"`
+	Shortcut  string           `json:"shortcut,omitempty"`
 	Entries   []clipboardEntry `json:"entries,omitempty"`
+}
+
+func (s clipboardState) hotkey() string {
+	if s.Shortcut != "" {
+		return s.Shortcut
+	}
+	return defaultClipboardHotkey
 }
 
 type clipboardComponent struct {
 	clipboardState
-	open                bool
-	openedByShortcut    bool
-	shortcutUnavailable bool
-	confirmClear        bool
-	query               string
-	focusSearch         bool
-	selected            clipboardEntryKey
-	hoverSelection      clipboardEntryKey
-	pendingPaste        *clipboardEntry
-	pasteTarget         clipboardPasteTarget
-	loadFailed          bool
-	problem             string
-	stop                func()
+	open               bool
+	openedByShortcut   bool
+	registeredShortcut string
+	editingShortcut    bool
+	shortcutProblem    string
+	confirmClear       bool
+	query              string
+	focusSearch        bool
+	selected           clipboardEntryKey
+	hoverSelection     clipboardEntryKey
+	pendingPaste       *clipboardEntry
+	pasteTarget        clipboardPasteTarget
+	loadFailed         bool
+	problem            string
+	stop               func()
 }
 
 func (a *island) clipboardPath() string {
@@ -167,8 +177,10 @@ func (a *island) syncClipboardRecording() {
 			history.stop()
 			history.stop = nil
 		}
-		mygo.GlobalShortcut.Unregister(clipboardHotkey)
-		history.shortcutUnavailable = false
+		if history.registeredShortcut != "" {
+			mygo.GlobalShortcut.Unregister(history.registeredShortcut)
+			history.registeredShortcut = ""
+		}
 		return
 	}
 	if history.stop == nil {
@@ -180,12 +192,11 @@ func (a *island) syncClipboardRecording() {
 			}
 		})
 		if a.win != nil {
-			err := mygo.GlobalShortcut.RegisterWith(clipboardHotkey, mygo.GlobalShortcutOptions{Description: "打开剪贴板历史"}, func() {
-				a.openClipboard(true)
-			})
-			if err != nil {
-				history.shortcutUnavailable = true
+			keys := history.hotkey()
+			if err := a.registerClipboardShortcut(keys); err != nil {
 				log.Printf("clipboard shortcut: %v", err)
+			} else {
+				history.registeredShortcut = keys
 			}
 		}
 	}

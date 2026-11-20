@@ -3,6 +3,7 @@ package island
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"testing"
 	"time"
@@ -84,6 +85,49 @@ func TestClipboardSettingsRecoversUnreadableHistory(t *testing.T) {
 	}
 	if a.clipboard.loadFailed || a.clipboard.Recording || !view.HasText("记录剪贴板") {
 		t.Fatal("clearing unreadable history should restore the recording switch")
+	}
+}
+
+func TestClipboardShortcutCanBeRecordedAndSavedFromSettings(t *testing.T) {
+	a := island{statePath: filepath.Join(t.TempDir(), "shelf.json")}
+	view := ui.NewTester(a.settingsView, settingsWidth, a.settingsHeight())
+	defaultLabel, newLabel := "Alt + Shift + V", "Ctrl + Shift + K"
+	if runtime.GOOS == "darwin" {
+		defaultLabel, newLabel = "Option + Shift + V", "Control + Shift + K"
+	}
+	if err := view.Click("修改剪贴板快捷键 " + defaultLabel); err != nil {
+		t.Fatal(err)
+	}
+	view.Key(0, ui.KeyV)
+	if a.clipboard.hotkey() != defaultClipboardHotkey || !view.HasText("请使用组合键或功能键") {
+		t.Fatal("bare typing keys should leave the current global shortcut intact")
+	}
+	view.Key(ui.Cmd, ui.KeyV)
+	if a.clipboard.hotkey() != defaultClipboardHotkey || !view.HasText("此组合用于系统粘贴") {
+		t.Fatal("the normal paste combination should stay available to the target app")
+	}
+	view.Key(ui.Ctrl|ui.Shift, ui.KeyK)
+	if a.clipboard.editingShortcut || a.clipboard.hotkey() != "Ctrl+Shift+K" || !view.HasText(newLabel) {
+		t.Fatal("recording a combination should update the button and finish editing")
+	}
+	reopened := island{statePath: a.statePath}
+	reopened.loadClipboard()
+	if reopened.clipboard.hotkey() != "Ctrl+Shift+K" || reopened.clipboard.Recording {
+		t.Fatal("the customized shortcut should survive restart while recording is disabled")
+	}
+	if err := view.Click("修改剪贴板快捷键 " + newLabel); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(a.clipboardPath()+".tmp", 0700); err != nil {
+		t.Fatal(err)
+	}
+	view.Key(ui.Alt|ui.Shift, ui.KeyJ)
+	if a.clipboard.hotkey() != "Ctrl+Shift+K" || !view.HasText("快捷键保存失败") {
+		t.Fatal("a failed write should report the error and keep the current shortcut")
+	}
+	view.Key(0, ui.KeyEscape)
+	if a.clipboard.editingShortcut || a.clipboard.hotkey() != "Ctrl+Shift+K" {
+		t.Fatal("Escape should cancel the shortcut edit")
 	}
 }
 

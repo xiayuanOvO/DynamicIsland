@@ -226,7 +226,7 @@ func sampleClipboardPNG(t *testing.T) []byte {
 
 func TestClipboardPanelDeletesAndClearsSavedHistory(t *testing.T) {
 	a := island{expanded: true, files: &shelf.Shelf{}, statePath: filepath.Join(t.TempDir(), "shelf.json")}
-	if !a.saveClipboard(clipboardState{Recording: true, Entries: []clipboardEntry{
+	if !a.saveClipboard(clipboardState{Recording: true, Shortcut: "Alt+Shift+K", Entries: []clipboardEntry{
 		{Text: "样本文字 1", CopiedAt: time.Now()},
 		{Text: "样本文字 2", CopiedAt: time.Now()},
 	}}) {
@@ -272,12 +272,26 @@ func TestClipboardPanelDeletesAndClearsSavedHistory(t *testing.T) {
 	}
 	reopened := island{statePath: a.statePath}
 	reopened.loadClipboard()
-	if len(reopened.clipboard.Entries) != 0 || reopened.clipboard.loadFailed {
-		t.Fatal("the empty list was not saved")
+	if len(reopened.clipboard.Entries) != 0 || reopened.clipboard.loadFailed || reopened.clipboard.hotkey() != "Alt+Shift+K" {
+		t.Fatal("clearing should save the empty list and keep the shortcut")
 	}
 	view.Key(0, ui.KeyEscape)
 	if a.clipboard.open || !a.expanded {
 		t.Fatal("Escape should return to the expanded overview")
+	}
+}
+
+func TestClipboardBlurCollapsesShortcutOpenedPanel(t *testing.T) {
+	a := island{files: &shelf.Shelf{}, clipboard: clipboardComponent{clipboardState: clipboardState{Recording: true}}}
+	a.openClipboard(false)
+	a.clipboardWindowBlurred()
+	if !a.clipboard.open || !a.expanded {
+		t.Fatal("blur should keep the panel open when it was opened by clicking")
+	}
+	a.openClipboard(true)
+	a.clipboardWindowBlurred()
+	if a.clipboard.open || a.expanded || a.targetFrame().clipboard != 0 {
+		t.Fatal("blur should collapse a panel opened by the shortcut")
 	}
 }
 
