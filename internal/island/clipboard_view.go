@@ -86,25 +86,36 @@ func (a *island) clipboardSettings(c *ui.Context) {
 	}
 }
 
-func (a *island) clipboardCard(c *ui.Context, opacity float32) {
-	const cardWidth = (panelWidth-2-44)/2 - 8
-	card := ui.ButtonBase(c.Key("clipboard-card")).Column().Absolute().Top(0).Right(0).
-		Size(cardWidth, todoPreviewMinHeight).Padding(todoPreviewPadding, 10).AlignItems(ui.Stretch).Justify(ui.Start).
-		Radius(13).Border(0.75, white.Alpha(0.65)).Background(white.Alpha(0.4)).
-		Opacity(opacity).IgnoreInput(a.todos.open || opacity < 0.85).
-		Cursor(ui.CursorPointer).Label("查看剪贴板历史")
-	if card.Hovered() {
-		card.Background(white.Alpha(0.6))
-	}
-	card.Children(func() {
-		ui.Row(c).Height(todoPreviewHeader).Gap(6).AlignItems(ui.Center).Children(func() {
-			ui.Icon(c, clipboardIcon).Size(14, 14).TextColor(accent)
-			ui.Text(c, "剪贴板历史").SingleLine().FontSize(11).FontWeight(600).TextColor(muted)
-		})
+func (a *island) clipboardCard(c *ui.Context, progress, height, opacity float32, interactive bool) {
+	surface := panelCardSurface(c.Key("clipboard-surface"), progress, panelBodyWidth/2-8, height).
+		Absolute().Top(0).Right(0).Label("剪贴板卡片").Opacity(opacity).
+		IgnoreInput(a.todos.open || opacity < panelCardInputStart)
+	surface.Children(func() {
+		if progress < panelCardPreviewEnd {
+			card := ui.ButtonBase(c.Key("clipboard-card")).Column().Absolute().Top(0).Left(0).Right(0).
+				Height(todoPreviewMinHeight).Padding(todoPreviewPadding, 10).AlignItems(ui.Stretch).Justify(ui.Start).
+				Radius(13).Cursor(ui.CursorPointer).Label("查看剪贴板历史").
+				Opacity(1 - animationPhase(progress, 0, panelCardPreviewEnd)).IgnoreInput(a.clipboard.open)
+			if card.Hovered() {
+				card.Background(white.Alpha(0.2))
+			}
+			card.Children(func() {
+				ui.Row(c).Height(todoPreviewHeader).Gap(6).AlignItems(ui.Center).Children(func() {
+					ui.Icon(c, clipboardIcon).Size(14, 14).TextColor(accent)
+					ui.Text(c, "剪贴板历史").SingleLine().FontSize(11).FontWeight(600).TextColor(muted)
+				})
+			})
+			if card.Clicked() {
+				a.openClipboard(false)
+			}
+		}
+		if progress > panelCardPreviewEnd {
+			interactive = interactive && a.clipboard.open && progress >= panelCardInputStart
+			ui.Column(c.Key("clipboard-detail")).Absolute().Top(0).Left(0).Right(0).
+				Height(clipboardPanelHeight).Opacity(animationPhase(progress, panelCardPreviewEnd, panelCardDetailEnd)).
+				IgnoreInput(!interactive).Children(func() { a.clipboardView(c, interactive, writeClipboardEntry) })
+		}
 	})
-	if card.Clicked() {
-		a.openClipboard(false)
-	}
 }
 
 func (a *island) clipboardView(c *ui.Context, interactive bool, write func(transfer.Data) error) {

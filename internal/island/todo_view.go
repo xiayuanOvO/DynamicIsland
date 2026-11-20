@@ -78,27 +78,23 @@ func (t *todoComponent) previewHeight() int {
 	return max(todoPreviewMinHeight, todoPreviewHeader+rows*todoPreviewRowHeight+2*todoPreviewPadding)
 }
 
-func (a *island) todoCard(c *ui.Context, progress float32, frame islandFrame) {
+func (a *island) todoCard(c *ui.Context, progress, opacity float32, frame islandFrame) {
 	previewHeight := a.todos.previewHeight()
 	detailHeight := float32(a.todos.detailHeight())
 	if progress == 1 && frame.open == 1 {
 		detailHeight = frame.height - panelHeaderHeight - 20
 	}
 	height := float32(previewHeight) + (detailHeight-float32(previewHeight))*progress
-	surface := ui.Box(c.Key("todo-surface")).AlignSelf(ui.Start).WidthPercent(50 + 50*progress).
-		Height(height).Shrink(0).Label("待办卡片")
-	if progress < 1 {
-		surface.Radius(13).Clip().Background(white.Alpha(0.4*(1-progress))).
-			Border(0.75, white.Alpha(0.65*(1-progress)))
-	}
+	surface := panelCardSurface(c.Key("todo-surface"), progress, panelBodyWidth/2, height).
+		AlignSelf(ui.Start).Label("待办卡片").Opacity(opacity).IgnoreInput(a.clipboard.open || opacity < panelCardInputStart)
 	surface.Children(func() {
-		if progress < 0.45 {
-			a.todoPreview(c, float32(previewHeight), 1-animationPhase(progress, 0, 0.45))
+		if progress < panelCardPreviewEnd {
+			a.todoPreview(c, float32(previewHeight), 1-animationPhase(progress, 0, panelCardPreviewEnd))
 		}
-		if progress > 0.45 {
+		if progress > panelCardPreviewEnd {
 			ui.Column(c.Key("todo-detail")).Absolute().Top(0).Left(0).Right(0).
-				Height(detailHeight).Opacity(animationPhase(progress, 0.45, 0.9)).
-				IgnoreInput(!a.todos.open || progress < 0.85).Children(func() { a.todoView(c, frame) })
+				Height(detailHeight).Opacity(animationPhase(progress, panelCardPreviewEnd, panelCardDetailEnd)).
+				IgnoreInput(!a.todos.open || progress < panelCardInputStart).Children(func() { a.todoView(c, frame) })
 		}
 	})
 }

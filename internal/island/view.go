@@ -18,6 +18,14 @@ var fileDrop = transfer.DropOptions{
 	Formats: []transfer.Format{transfer.FileList, transfer.URIList}, Operations: transfer.Copy,
 }
 
+const (
+	panelBodyPadding    = 22
+	panelBodyWidth      = panelWidth - 2 - 2*panelBodyPadding
+	panelCardPreviewEnd = 0.45
+	panelCardDetailEnd  = 0.9
+	panelCardInputStart = 0.85
+)
+
 func (a *island) view(c *ui.Context) {
 	c.SetTheme(theme)
 	c.Root().Background(ui.Transparent)
@@ -194,47 +202,46 @@ func (a *island) header(c *ui.Context, open float32) {
 
 func (a *island) body(c *ui.Context, frame islandFrame) {
 	opacity := frame.content
-	clipboard := frame.clipboard
-	if !a.clipboard.Recording {
-		clipboard = 0
-	} else if c.Preferences().ReduceMotion {
-		clipboard = 0
+	todo, clipboard := frame.todo, frame.clipboard
+	if c.Preferences().ReduceMotion {
+		todo, clipboard = 0, 0
+		if a.todos.open {
+			todo = 1
+		}
 		if a.clipboard.open {
 			clipboard = 1
 		}
 	}
-	if clipboard > 0.5 {
-		interactive := a.expanded && a.clipboard.open && opacity >= 0.80 && clipboard >= 0.85
-		ui.Column(c.Key("clipboard-body")).Width(panelWidth-2).Shrink(0).Padding(0, 22, 20).
-			Opacity(opacity * animationPhase(clipboard, 0.5, 0.85)).IgnoreInput(!interactive).
-			Children(func() { a.clipboardView(c, interactive, writeClipboardEntry) })
-		return
+	if !a.clipboard.Recording {
+		clipboard = 0
 	}
-	body := ui.Column(c.Key("body")).Width(panelWidth-2).Shrink(0).Padding(0, 22, 20).
-		Opacity(opacity*(1-animationPhase(clipboard, 0, 0.5))).Translate(0, 10*(1-opacity)).
-		IgnoreInput(!a.expanded || a.clipboard.open || opacity < 0.80 || clipboard > 0.15)
-	progress := frame.todo
-	if c.Preferences().ReduceMotion {
-		progress = 0
-		if a.todos.open {
-			progress = 1
-		}
-	}
+	overview := 1 - max(todo, clipboard)
+	body := ui.Column(c.Key("body")).Width(panelWidth-2).Shrink(0).Padding(0, panelBodyPadding, 20).
+		Opacity(opacity).Translate(0, 10*(1-opacity)).IgnoreInput(!a.expanded || opacity < 0.80)
 	body.Children(func() {
-		if progress < 1 && a.media.track.Title != "" {
+		if overview > 0 && a.media.track.Title != "" {
 			ui.Column(c.Key("overview-media")).FillWidth().Shrink(0).
-				Height(float32(a.settings.cardHeight()+14) * (1 - progress)).Clip().
-				Opacity(1 - progress).IgnoreInput(a.todos.open).Children(func() { a.mediaCard(c) })
+				Height(float32(a.settings.cardHeight()+14) * overview).Clip().
+				Opacity(overview).IgnoreInput(a.todos.open || a.clipboard.open).Children(func() { a.mediaCard(c) })
 		}
-		ui.Box(c.Key("tools")).FillWidth().Shrink(0).Children(func() {
-			a.todoCard(c, progress, frame)
-			if a.clipboard.Recording && progress < 0.45 {
-				a.clipboardCard(c, 1-animationPhase(progress, 0, 0.45))
+		tools := ui.Box(c.Key("tools")).FillWidth().Shrink(0)
+		showClipboard := a.clipboard.Recording && (clipboard > 0 || todo < panelCardPreviewEnd)
+		clipboardHeight := todoPreviewMinHeight + (clipboardPanelHeight-todoPreviewMinHeight)*clipboard
+		if showClipboard {
+			tools.MinHeight(clipboardHeight)
+		}
+		tools.Children(func() {
+			if todo > 0 || clipboard < panelCardPreviewEnd {
+				a.todoCard(c, todo, 1-animationPhase(clipboard, todo, todo+panelCardPreviewEnd), frame)
+			}
+			if showClipboard {
+				a.clipboardCard(c, clipboard, clipboardHeight, 1-animationPhase(todo, clipboard, clipboard+panelCardPreviewEnd),
+					a.expanded && opacity >= 0.80)
 			}
 		})
-		if progress < 1 && (len(a.files.Items) > 0 || a.status != "") {
+		if overview > 0 && (len(a.files.Items) > 0 || a.status != "") {
 			ui.Column(c.Key("overview-files")).FillWidth().Shrink(0).Margin(14, 0, 0).Gap(14).
-				Opacity(1 - progress).IgnoreInput(a.todos.open).Children(func() {
+				Opacity(overview).IgnoreInput(a.todos.open || a.clipboard.open).Children(func() {
 				hasFiles := len(a.files.Items) > 0
 				if hasFiles {
 					ui.Text(c.Key("files-heading"), fmt.Sprintf("暂存文件  /  %02d", len(a.files.Items))).
@@ -263,6 +270,15 @@ func (a *island) body(c *ui.Context, frame islandFrame) {
 			})
 		}
 	})
+}
+
+func panelCardSurface(c *ui.Context, progress, previewWidth, height float32) ui.Element {
+	surface := ui.Box(c).Size(previewWidth+(panelBodyWidth-previewWidth)*progress, height).Shrink(0)
+	if progress < 1 {
+		surface.Radius(13).Clip().Background(white.Alpha(0.4*(1-progress))).
+			Border(0.75, white.Alpha(0.65*(1-progress)))
+	}
+	return surface
 }
 
 func (a *island) fileCard(c *ui.Context, item shelf.Item) {
