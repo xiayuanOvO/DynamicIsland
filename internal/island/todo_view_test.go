@@ -1,6 +1,7 @@
 package island
 
 import (
+	"fmt"
 	"math"
 	"testing"
 	"time"
@@ -90,6 +91,55 @@ func TestPanelCardsFollowWindowHeight(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestClipboardOpeningFadesOverviewBeforeRemovingIt(t *testing.T) {
+	a := newTestClipboard(t, true, "示例记录")
+	for i := range cardColumns * maxCardRows {
+		name := fmt.Sprintf("示例文件 %d.txt", i+1)
+		a.files.Items = append(a.files.Items, shelf.Item{Path: name, Name: name})
+	}
+	a.media.track = nowplaying.Track{Title: "示例曲目"}
+	a.todos.items = []todoItem{{ID: "example", Title: "示例待办"}}
+	a.status = "示例状态"
+	a.expanded = true
+	overview := a.targetFrame()
+	a.shownFrame = overview
+	now := time.Now()
+	a.animation = islandAnimation{from: overview, to: overview, started: now}
+	view := ui.NewTester(func(c *ui.Context) {
+		ui.Column(c).Fill().Clip().Children(func() {
+			ui.Box(c).Height(panelHeaderHeight).Shrink(0)
+			a.body(c, a.shownFrame)
+		})
+	}, panelWidth, int(overview.height))
+	overviewLabels := []string{"示例曲目", "示例待办", "示例文件 6.txt", "拖出全部", "示例状态"}
+	initial := make([]ui.Rect, len(overviewLabels))
+	for i, label := range overviewLabels {
+		var ok bool
+		initial[i], ok = view.Find(label)
+		if !ok || initial[i].H == 0 {
+			t.Fatalf("%q should be fully visible in the overview", label)
+		}
+	}
+	if err := view.Click("查看剪贴板历史"); err != nil {
+		t.Fatal(err)
+	}
+	for _, elapsed := range []time.Duration{35 * time.Millisecond, 60 * time.Millisecond, 75 * time.Millisecond, 100 * time.Millisecond} {
+		frame, _ := a.animation.sample(a.animation.started.Add(elapsed))
+		a.shownFrame = frame.aligned()
+		view.SetSize(panelWidth, int(a.shownFrame.height))
+		fading := frame.clipboard < panelCardPreviewEnd
+		for i, label := range overviewLabels {
+			box, ok := view.Find(label)
+			if fading && (!ok || box.W != initial[i].W || box.H != initial[i].H) {
+				t.Fatalf("%v: %q should stay whole while fading; changed from %+v to %+v", elapsed, label, initial[i], box)
+			}
+			if !fading && ok {
+				t.Fatalf("%v: %q should be gone when the history appears", elapsed, label)
+			}
+		}
 	}
 }
 

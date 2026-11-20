@@ -216,17 +216,21 @@ func (a *island) body(c *ui.Context, frame islandFrame) {
 		clipboard = 0
 	}
 	progress := max(todo, clipboard)
-	overview := 1 - progress
+	overviewOpacity := 1 - animationPhase(progress, 0, panelCardPreviewEnd)
+	mediaHeight := 0
+	if a.media.track.Title != "" {
+		mediaHeight = a.settings.cardHeight() + 14
+	}
 	body := ui.Column(c.Key("body")).Width(panelWidth-2).Shrink(0).Padding(0, panelBodyPadding, 20).
 		Opacity(opacity).Translate(0, 10*(1-opacity)).IgnoreInput(!a.expanded || opacity < 0.80)
 	body.Children(func() {
-		if overview > 0 && a.media.track.Title != "" {
+		if progress < 1 && mediaHeight > 0 {
 			// Only the space reserved for the music card shrinks. Keep its
 			// contents whole as they fade out above the expanding panel.
 			media := ui.Column(c.Key("overview-media")).FillWidth().Shrink(0).
-				Height(float32(a.settings.cardHeight()+14) * overview)
-			if progress < panelCardPreviewEnd {
-				media.ZIndex(1).Opacity(1 - animationPhase(progress, 0, panelCardPreviewEnd)).
+				Height(float32(mediaHeight) * (1 - progress))
+			if overviewOpacity > 0 {
+				media.ZIndex(1).Opacity(overviewOpacity).
 					IgnoreInput(progress > 0 || a.todos.open || a.clipboard.open).Children(func() { a.mediaCard(c) })
 			}
 		}
@@ -245,14 +249,21 @@ func (a *island) body(c *ui.Context, frame islandFrame) {
 					a.expanded && opacity >= 0.80)
 			}
 		})
-		if overview > 0 && (len(a.files.Items) > 0 || a.status != "") {
-			ui.Column(c.Key("overview-files")).FillWidth().Shrink(0).Margin(14, 0, 0).Gap(14).
-				Opacity(overview).IgnoreInput(a.todos.open || a.clipboard.open).Children(func() {
+		if overviewOpacity > 0 && (len(a.files.Items) > 0 || a.status != "") {
+			overviewHeight, gridHeight := a.overviewHeights()
+			files := ui.Column(c.Key("overview-files")).Width(panelBodyWidth).Shrink(0).Margin(14, 0, 0).Gap(14).
+				Opacity(overviewOpacity).IgnoreInput(progress > 0 || a.todos.open || a.clipboard.open)
+			if progress > 0 && frame.open == 1 {
+				// Keep the expanding card from pushing the fading files below the window.
+				// If the window is shrinking, move the group with its bottom edge.
+				files.Absolute().Left(panelBodyPadding).
+					Top(float32(mediaHeight+a.todos.previewHeight()) + min(0, frame.height-float32(overviewHeight)))
+			}
+			files.Children(func() {
 				hasFiles := len(a.files.Items) > 0
 				if hasFiles {
 					ui.Text(c.Key("files-heading"), fmt.Sprintf("暂存文件  /  %02d", len(a.files.Items))).
 						Height(24).Shrink(0).FontSize(10.5).TextColor(muted)
-					_, gridHeight := a.panelHeights()
 					ui.Scroll(c.Key("files")).Height(float32(gridHeight)).Shrink(0).
 						Children(func() {
 							ui.Grid(c.Key("file-cards")).FillWidth().Columns(cardColumns).Gap(cardGap).Padding(4).Children(func() {

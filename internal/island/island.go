@@ -184,7 +184,7 @@ func (a *island) compactIdle() bool {
 	return len(a.files.Items) == 0 && !a.media.track.Playing && a.todos.next() == nil
 }
 
-func (a *island) panelHeights() (height, gridHeight int) {
+func (a *island) overviewHeights() (height, gridHeight int) {
 	hasFiles := len(a.files.Items) > 0
 	height = panelHeaderHeight + 20
 	if hasFiles {
@@ -207,13 +207,18 @@ func (a *island) panelHeights() (height, gridHeight int) {
 	if a.dock.side != dockNone {
 		gridHeight = min(gridHeight, max(0, a.dock.display.WorkArea.Height-height))
 	}
+	return height + gridHeight, gridHeight
+}
+
+func (a *island) panelHeight() int {
 	if a.todos.open {
-		return panelHeaderHeight + 20 + a.todos.detailHeight(), gridHeight
+		return panelHeaderHeight + 20 + a.todos.detailHeight()
 	}
 	if a.clipboard.open {
-		return panelHeaderHeight + 20 + clipboardPanelHeight, gridHeight
+		return panelHeaderHeight + 20 + clipboardPanelHeight
 	}
-	return height + gridHeight, gridHeight
+	height, _ := a.overviewHeights()
+	return height
 }
 
 func (a *island) setExpanded(expanded bool) {

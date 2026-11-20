@@ -97,8 +97,7 @@ func (a *island) advanceWindowFrame(now time.Time) bool {
 
 func (a *island) targetFrame() islandFrame {
 	if a.expanded {
-		height, _ := a.panelHeights()
-		frame := islandFrame{width: panelWidth, height: float32(height), open: 1, content: 1}
+		frame := islandFrame{width: panelWidth, height: float32(a.panelHeight()), open: 1, content: 1}
 		if a.todos.open {
 			frame.todo = 1
 		}
