@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/egoist/mygo"
+	"github.com/egoist/mygo/plugins/updater"
 	"github.com/egoist/mygo/ui"
 )
 
@@ -116,7 +117,7 @@ func saveJSON(path string, value any) error {
 }
 
 func (a *island) settingsHeight() int {
-	height := 333 + a.settings.cardHeight() + 2*cardPreviewInset + cardPreviewGap
+	height := 415 + a.settings.cardHeight() + 2*cardPreviewInset + cardPreviewGap
 	if a.settings.Mode == waveCustom {
 		height += 334
 	}
@@ -246,6 +247,14 @@ func (a *island) settingsView(c *ui.Context) {
 						FillWidth().Label("自定义律动柱颜色").Changed()
 				})
 			}
+		})
+		settingsGroup(c.Key("app-settings"), "应用", func() {
+			settingsRow(c.Key("update-settings")).Children(func() {
+				ui.Text(c, fmt.Sprintf("版本 %s", mygo.App.Version())).Grow(1).FontSize(13).TextColor(ink)
+				if ui.Button(c.Key("check-for-updates"), "检查更新…").Height(40).FontSize(12).Clicked() {
+					updater.CheckForUpdates()
+				}
+			})
 		})
 		if (modeChanged || cardStyleChanged) && a.settingsWindow != nil {
 			win := a.settingsWindow
