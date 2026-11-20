@@ -1,10 +1,15 @@
 package lyrics
 
 import (
+	"log"
 	"slices"
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
+	"unicode"
+
+	"github.com/go-ego/gocc"
 )
 
 type Line struct {
@@ -13,6 +18,36 @@ type Line struct {
 }
 
 type Lines []Line
+
+var simplifiedChinese = sync.OnceValue(func() *gocc.Converter {
+	converter, err := gocc.New("t2s")
+	if err != nil {
+		log.Printf("initialize lyric conversion: %v", err)
+	}
+	return converter
+})
+
+// Simplified returns display lyrics without changing the source lines.
+func (l Lines) Simplified() Lines {
+	if len(l) == 0 {
+		return l
+	}
+	converter := simplifiedChinese()
+	if converter == nil {
+		return l
+	}
+	result := slices.Clone(l)
+	for i, line := range result {
+		// Preserve Japanese lines that contain kana and share kanji with Chinese.
+		if strings.ContainsFunc(line.Text, func(r rune) bool {
+			return unicode.In(r, unicode.Hiragana, unicode.Katakana)
+		}) {
+			continue
+		}
+		result[i].Text = converter.Convert(line.Text)
+	}
+	return result
+}
 
 func Parse(text string) Lines {
 	var lines Lines

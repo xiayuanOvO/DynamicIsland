@@ -74,6 +74,7 @@ func (a *island) updateLyrics(c *ui.Context, frame islandFrame, width, height in
 			version := overlay.cacheVersion
 			go func() {
 				lines, downloaded := overlay.diskCache.Load(context.Background(), folder, song)
+				displayLines := lines.Simplified()
 				a.win.Update(func() {
 					overlay.loading = false
 					if version != overlay.cacheVersion {
@@ -91,7 +92,7 @@ func (a *island) updateLyrics(c *ui.Context, frame islandFrame, width, height in
 					if overlay.cache == nil || len(overlay.cache) >= 32 {
 						overlay.cache = make(map[lyrics.Song]lyrics.Lines)
 					}
-					overlay.cache[song] = lines
+					overlay.cache[song] = displayLines
 				})
 			}()
 		}
