@@ -88,8 +88,8 @@ func pointerOverWindow(win *mygo.Window, fallback bool) bool {
 	return point.x >= rect.left && point.x < rect.right && point.y >= rect.top && point.y < rect.bottom
 }
 
-func configureWindowGlass(win *mygo.Window, radius int) {
-	win.SetVibrancy(mygo.VibrancyAcrylic)
+func configureWindowGlass(win *mygo.Window, radius int) bool {
+	resizeBackdrop := startWindowBackdrop(win)
 	var lastWindowShape [3]int32
 	update := func() {
 		hwnd := win.NativeHandle()
@@ -109,8 +109,14 @@ func configureWindowGlass(win *mygo.Window, radius int) {
 		if shape == lastWindowShape {
 			return
 		}
-		// The window region clips both the DWM backdrop and the hit area.
-		region, _, _ := createRoundRectRgn.Call(0, 0, uintptr(shape[0]+1), uintptr(shape[1]+1), diameter, diameter)
+		if resizeBackdrop != nil {
+			resizeBackdrop(float32(shape[0]), float32(shape[1]), float32(radius)*float32(dpi)/96)
+		}
+		// The composition visual supplies the antialiased outline.
+		// Leave two device pixels around it for the GDI hit area.
+		const outset = 2
+		region, _, _ := createRoundRectRgn.Call(^uintptr(outset-1), ^uintptr(outset-1),
+			uintptr(shape[0]+1+outset), uintptr(shape[1]+1+outset), diameter+2*outset, diameter+2*outset)
 		if region == 0 {
 			return
 		}
@@ -125,6 +131,7 @@ func configureWindowGlass(win *mygo.Window, radius int) {
 	}
 	win.OnResize(func() { mygo.RunOnMain(update) })
 	update()
+	return resizeBackdrop != nil
 }
 
 func foregroundFullscreen() bool {

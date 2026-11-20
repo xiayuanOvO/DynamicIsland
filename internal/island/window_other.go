@@ -8,8 +8,8 @@ import (
 	"github.com/egoist/mygo"
 )
 
-func configureWindowGlass(*mygo.Window, int) {}
-func configureFloatingWindow(*mygo.Window)   {}
+func configureWindowGlass(*mygo.Window, int) bool { return false }
+func configureFloatingWindow(*mygo.Window)        {}
 
 // On macOS the window can resize beneath a stationary pointer.
 func pointerOverWindow(win *mygo.Window, fallback bool) bool {

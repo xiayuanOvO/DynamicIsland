@@ -23,8 +23,8 @@ func TestWindowsGlassSurface(t *testing.T) {
 			}, width, height, 1)
 			alpha := img.RGBAAt(width/2, height/2).A
 			if test.backdrop {
-				if alpha < 40 || alpha > 100 {
-					t.Fatalf("tinted blur center alpha = %d, want 40–100", alpha)
+				if alpha < 150 || alpha > 190 {
+					t.Fatalf("tinted blur center alpha = %d, want 150–190", alpha)
 				}
 			} else if alpha != 255 {
 				t.Fatalf("fallback center alpha = %d, want 255", alpha)

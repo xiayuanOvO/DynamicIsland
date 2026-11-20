@@ -31,6 +31,7 @@ const (
 
 type island struct {
 	win                   *mygo.Window
+	hasWindowBackdrop     bool
 	tray                  *mygo.Tray
 	files                 *shelf.Shelf
 	statePath             string
@@ -91,7 +92,7 @@ func (a *island) start() {
 		BackgroundColor: "#00000000", Vibrancy: mygo.VibrancyGlass,
 	}
 	if runtime.GOOS == "windows" {
-		// Apply Acrylic after the popup frame is configured.
+		// The Windows backdrop is clipped inside the composition tree.
 		options.Vibrancy = mygo.VibrancyNone
 		options.DisableShadow = true
 		options.Hidden = true
@@ -102,7 +103,7 @@ func (a *island) start() {
 	a.media.adapter = nowplaying.Adapter()
 	a.startPreviews()
 	a.win.SetActiveAppearance(true)
-	configureWindowGlass(a.win, windowRadius)
+	a.hasWindowBackdrop = configureWindowGlass(a.win, windowRadius)
 	if options.Hidden {
 		a.win.Show()
 	}

@@ -37,7 +37,7 @@ func islandTheme() *ui.Theme {
 func glassSurface(element ui.Element, vibrant, over, movingGlass bool) {
 	switch {
 	case runtime.GOOS == "windows" && vibrant:
-		element.Gradient(white.Alpha(0.32), white.Alpha(0.14), 155)
+		element.Gradient(white.Alpha(0.70), white.Alpha(0.62), 155)
 	case vibrant:
 		// The system blurs the desktop. A light wash preserves its colors.
 		element.Gradient(white.Alpha(0.20), white.Alpha(0.07), 155)

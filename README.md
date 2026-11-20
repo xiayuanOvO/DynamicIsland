@@ -8,7 +8,7 @@
 
 ## 运行和构建
 
-主要面向 Windows 11 22H2 及以上版本。Windows 使用系统亚克力模糊灵动岛背后的桌面和窗口，并将效果限制在灵动岛的圆角轮廓内。系统不支持亚克力时使用实色渐变。macOS 使用 MyGo 的系统玻璃材质，Linux 使用渐变背景。
+主要面向 Windows 11 22H2 及以上版本。Windows x64 使用系统合成器模糊灵动岛背后的桌面和窗口，并将效果裁剪到灵动岛的圆角轮廓内。无法创建模糊背景时使用实色渐变。macOS 使用 MyGo 的系统玻璃材质，Linux 使用渐变背景。
 
 需要 Go 1.27.3+。`go.mod` 固定 MyGo v0.9.2；开启 `GOTOOLCHAIN=auto` 时，Go 会按需下载所需工具链。
 
@@ -136,4 +136,10 @@ macOS 将上述 `Ctrl` 换为 `Command`，将 `Alt` 换为 `Option`。隐藏、�
 ```powershell
 go vet ./...
 go build ./...
+```
+
+在开启系统透明效果的 Windows x64 桌面会话中，可检查原生模糊、圆角裁剪和窗口命中范围。
+
+```powershell
+go test -count=1 -tags desktoptest ./internal/island
 ```
