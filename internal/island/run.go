@@ -9,8 +9,6 @@ import (
 	"dynamicisland/internal/lyrics"
 	"dynamicisland/internal/shelf"
 	"github.com/egoist/mygo"
-	"github.com/egoist/mygo/plugins/updater"
-	updaterui "github.com/egoist/mygo/plugins/updater/native"
 )
 
 func Run() {
@@ -21,8 +19,6 @@ func Run() {
 	if !mygo.App.RequestSingleInstanceLock() {
 		return
 	}
-	mygo.Use(updaterui.New(updater.Options{Language: "zh-Hans"}))
-
 	config, err := os.UserConfigDir()
 	if err != nil {
 		log.Fatal(err)
@@ -61,6 +57,7 @@ func Run() {
 	})
 	mygo.App.WhenReady(func() {
 		a.start()
+		a.startUpdates()
 		a.addFiles(commandPaths(os.Args[1:], ""))
 	})
 	if err := mygo.App.Run(); err != nil {

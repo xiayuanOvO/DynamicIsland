@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/egoist/mygo"
-	"github.com/egoist/mygo/plugins/updater"
 	"github.com/egoist/mygo/ui"
 )
 
@@ -138,6 +137,9 @@ func (a *island) openSettings() {
 		a.settingsWindow.OnClosed(func() {
 			a.settingsWindow = nil
 			a.citySearch = weatherCitySearch{}
+			if a.updates.phase == updateLatest {
+				a.updates.phase = updateIdle
+			}
 		})
 	} else {
 		a.settingsWindow.Show()
@@ -251,9 +253,7 @@ func (a *island) settingsView(c *ui.Context) {
 		settingsGroup(c.Key("app-settings"), "应用", func() {
 			settingsRow(c.Key("update-settings")).Children(func() {
 				ui.Text(c, fmt.Sprintf("版本 %s", mygo.App.Version())).Grow(1).FontSize(13).TextColor(ink)
-				if ui.Button(c.Key("check-for-updates"), "检查更新…").Height(40).FontSize(12).Clicked() {
-					updater.CheckForUpdates()
-				}
+				a.updateControl(c)
 			})
 		})
 		if (modeChanged || cardStyleChanged) && a.settingsWindow != nil {

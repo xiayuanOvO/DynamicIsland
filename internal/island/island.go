@@ -66,6 +66,7 @@ type island struct {
 
 	todos              todoComponent
 	settings           appSettings
+	updates            appUpdates
 	citySearch         weatherCitySearch
 	settingsWindow     *mygo.Window
 	settingsSaveAt     time.Time
