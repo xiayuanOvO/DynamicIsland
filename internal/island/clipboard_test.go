@@ -3,7 +3,9 @@ package island
 import (
 	"bytes"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"image"
@@ -21,48 +23,73 @@ import (
 	"github.com/egoist/mygo/ui"
 )
 
-func TestClipboardHistoryPersistsRecentText(t *testing.T) {
-	a := island{statePath: filepath.Join(t.TempDir(), "shelf.json")}
+func newTestClipboard(t *testing.T, recording bool, texts ...string) *island {
+	t.Helper()
+	a := &island{files: &shelf.Shelf{}, statePath: filepath.Join(t.TempDir(), "shelf.json")}
 	a.loadClipboard()
+	if a.clipboard.loadFailed {
+		t.Fatal(a.clipboard.problem)
+	}
+	t.Cleanup(func() { a.clipboard.store.Close() })
+	if !a.saveClipboardSettings(clipboardState{Recording: recording}) {
+		t.Fatal(a.clipboard.problem)
+	}
+	now := time.Now()
+	for i, text := range texts {
+		if _, err := a.clipboard.store.record(clipboardRecord{text: text, copiedAt: now.Add(-time.Duration(i) * time.Second)}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return a
+}
+
+func readTestClipboardEntries(t *testing.T, store *clipboardStore, now time.Time) []clipboardEntry {
+	t.Helper()
+	entries, err := store.entries("", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return entries
+}
+
+func TestClipboardHistoryPersistsRecentText(t *testing.T) {
+	a := newTestClipboard(t, false)
 	now := time.Now()
 	if a.recordClipboard(transfer.TextData("样本文字"), now) {
 		t.Fatal("clipboard recording must start disabled")
 	}
-	if !a.saveClipboard(clipboardState{Recording: true}) {
+	if !a.saveClipboardSettings(clipboardState{Recording: true}) {
 		t.Fatal(a.clipboard.problem)
-	}
-	for i := range clipboardHistoryLimit + 1 {
-		if !a.recordClipboard(transfer.TextData(fmt.Sprintf("样本文字 %d", i)), now) {
-			t.Fatalf("did not record sample %d", i)
-		}
-	}
-	if got := a.clipboard.Entries; len(got) != clipboardHistoryLimit || got[len(got)-1].Text != "样本文字 1" {
-		t.Fatal("history did not evict the oldest sample")
 	}
 	const multiline = " 中文 😀\n保留空白  "
 	later := now.Add(time.Minute)
 	a.recordClipboard(transfer.TextData(multiline), now)
-	a.recordClipboard(transfer.TextData("样本文字 2"), now)
+	a.recordClipboard(transfer.TextData("样本文字"), now.Add(time.Second))
 	a.recordClipboard(transfer.TextData(multiline), later)
-	if a.clipboard.Entries[0].Text != multiline || !a.clipboard.Entries[0].CopiedAt.Equal(later) ||
-		slices.ContainsFunc(a.clipboard.Entries[1:], func(entry clipboardEntry) bool { return entry.Text == multiline }) {
-		t.Fatal("a repeated copy should put the exact text first without duplicating it")
+	entries := readTestClipboardEntries(t, a.clipboard.store, later)
+	if len(entries) != 2 || !entries[0].CopiedAt.Equal(later) || entries[1].Preview != "样本文字" {
+		t.Fatal("a repeated copy should refresh the date without duplicating the entry")
+	}
+	data, err := a.clipboardData(entries[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	text, err := data.Read(transfer.Text)
+	if err != nil || string(text) != multiline {
+		t.Fatal("restoring a record should preserve the entire text")
 	}
 	for _, ignored := range []string{"", " \n", "bad\x00text", strings.Repeat("x", clipboardTextLimit+1), multiline} {
 		if a.recordClipboard(transfer.TextData(ignored), now) {
-			t.Fatal("invalid or already-recent text changed the history")
+			t.Fatal("invalid or older copies changed the history")
 		}
 	}
-	state := a.clipboard.clipboardState
-	state.Recording = false
-	if !a.saveClipboard(state) {
+	if !a.saveClipboardSettings(clipboardState{Recording: false}) {
 		t.Fatal(a.clipboard.problem)
 	}
 	reopened := island{statePath: a.statePath}
 	reopened.loadClipboard()
-	if reopened.clipboard.Recording || !slices.EqualFunc(reopened.clipboard.Entries, state.Entries, func(a, b clipboardEntry) bool {
-		return a.Text == b.Text && a.CopiedAt.Equal(b.CopiedAt)
-	}) {
+	defer reopened.clipboard.store.Close()
+	if reopened.clipboard.Recording || !slices.Equal(readTestClipboardEntries(t, reopened.clipboard.store, later), entries) {
 		t.Fatal("reopening did not restore paused recording and saved entries")
 	}
 }
@@ -96,120 +123,180 @@ func TestClipboardHonorsClipboardHistoryMarkers(t *testing.T) {
 	}
 }
 
-func TestClipboardImagePersistsAndCanBeCopiedAtOriginalSize(t *testing.T) {
-	a := island{statePath: filepath.Join(t.TempDir(), "shelf.json")}
-	const textHistory = `{"recording":true,"entries":[{"text":"样本文字","copiedAt":"2026-01-02T03:04:05Z"}]}`
-	if err := os.WriteFile(a.clipboardPath(), []byte(textHistory), 0600); err != nil {
+func TestClipboardMigratesTextAndImagesFromJSON(t *testing.T) {
+	a := island{statePath: filepath.Join(t.TempDir(), "shelf.json"), files: &shelf.Shelf{}}
+	dir := filepath.Dir(a.statePath)
+	legacyPath, legacyImages := filepath.Join(dir, "clipboard.json"), filepath.Join(dir, "clipboard-images")
+	bitmap := sampleClipboardPNG(t)
+	digest := sha256.Sum256(bitmap)
+	id := hex.EncodeToString(digest[:])
+	if err := os.Mkdir(legacyImages, 0700); err != nil {
 		t.Fatal(err)
 	}
-	a.loadClipboard()
-	bitmap := sampleClipboardPNG(t)
-	offer := transfer.New(transfer.NewItem(transfer.Bytes(transfer.PNG, bitmap)))
-	data := readClipboard([]transfer.Format{transfer.PNG}, func(formats ...transfer.Format) (transfer.Data, error) {
-		if !slices.Equal(formats, []transfer.Format{transfer.PNG}) {
-			t.Fatalf("unexpected clipboard formats: %v", formats)
-		}
-		return offer, nil
-	})
-	now := time.Now()
-	if !a.recordClipboard(data, now) || a.recordClipboard(data, now) {
-		t.Fatal("image-only copies should be saved and deduplicated")
+	if err := os.WriteFile(filepath.Join(legacyImages, id+".png"), bitmap, 0600); err != nil {
+		t.Fatal(err)
 	}
-	a.recordClipboard(transfer.TextData("样本文字"), now)
-	if !a.recordClipboard(data, now) || len(a.clipboard.Entries) != 2 || a.clipboard.Entries[1].Text != "样本文字" {
-		t.Fatal("recopying an image should promote it without dropping text history")
-	}
-	reopened := island{statePath: a.statePath, expanded: true, files: &shelf.Shelf{}}
-	reopened.loadClipboard()
-	if reopened.clipboard.loadFailed || len(reopened.clipboard.Entries) != 2 {
-		t.Fatal("mixed history did not survive reloading")
-	}
-	entry := reopened.clipboard.Entries[0]
-	if entry.Image == nil || entry.Image.Width != 320 || entry.Image.Height != 180 {
-		t.Fatalf("the image dimensions did not survive reloading: %+v", entry.Image)
-	}
-	offer, err := reopened.clipboardData(entry)
+	now := time.Now().Add(-time.Hour)
+	legacy := map[string]any{"recording": true, "shortcut": "Alt+Shift+K", "entries": []map[string]any{
+		{"image": map[string]any{"id": id, "size": len(bitmap), "width": 320, "height": 180}, "copiedAt": now},
+		{"text": "样本文字", "copiedAt": now.Add(-time.Second)},
+		{"text": "已过期", "copiedAt": now.Add(-clipboardRetention)},
+	}}
+	marshaled, err := json.Marshal(legacy)
 	if err != nil {
 		t.Fatal(err)
 	}
-	restored, err := offer.Read(transfer.PNG)
-	if err != nil || !bytes.Equal(restored, bitmap) {
-		t.Fatal("recopying should offer the original PNG")
+	if err := os.WriteFile(legacyPath, marshaled, 0600); err != nil {
+		t.Fatal(err)
 	}
-	if reopened.recordClipboard(transfer.New(transfer.NewItem(transfer.Bytes(transfer.PNG, []byte("invalid")))), now) {
-		t.Fatal("recorded invalid image data")
+	a.loadClipboard()
+	if a.clipboard.loadFailed || !a.clipboard.Recording || a.clipboard.hotkey() != "Alt+Shift+K" {
+		t.Fatal("could not load the migrated clipboard settings")
 	}
-	reopened.openClipboard(true)
-	if !reopened.clipboard.open || !reopened.clipboard.openedByShortcut || reopened.targetFrame().clipboard != 1 {
-		t.Fatal("the shortcut should open the clipboard history directly")
+	if err := a.clipboard.store.Close(); err != nil {
+		t.Fatal(err)
 	}
+	a.clipboard.store = nil
+	a.loadClipboard()
+	defer a.clipboard.store.Close()
+	entries := readTestClipboardEntries(t, a.clipboard.store, time.Now())
+	if len(entries) != 2 || entries[0].Width != 320 || entries[0].Height != 180 || entries[1].Preview != "样本文字" {
+		t.Fatal("the SQLite database did not contain the unexpired legacy history")
+	}
+	for _, obsolete := range []string{legacyPath, legacyImages} {
+		if _, err := os.Stat(obsolete); !os.IsNotExist(err) {
+			t.Fatalf("the migrated legacy path still exists: %v", err)
+		}
+	}
+	entry := entries[0]
+	a.openClipboard(true)
 	var copiedImage []byte
 	view := ui.NewTester(func(c *ui.Context) {
-		if reopened.clipboard.open {
-			reopened.clipboardView(c, true, func(data transfer.Data) error {
+		if a.clipboard.open {
+			a.clipboardView(c, true, func(data transfer.Data) error {
 				var err error
 				copiedImage, err = data.Read(transfer.PNG)
 				return err
 			})
 		}
 	}, panelWidth, clipboardPanelHeight)
-	if _, found := view.Find("复制 图片 320 × 180"); !found {
-		t.Fatal("the history did not render the image action and dimensions")
-	}
 	view.Type("图片")
 	if view.HasText("样本文字") {
 		t.Fatal("searching for images should filter out unrelated text entries")
 	}
 	view.Key(0, ui.KeyEnter)
-	if !bytes.Equal(copiedImage, bitmap) || reopened.clipboard.open {
-		t.Fatal("Enter should copy the selected image and close the panel")
+	if !bytes.Equal(copiedImage, bitmap) || a.clipboard.open {
+		t.Fatal("Enter should copy the original migrated PNG and close the panel")
 	}
-	reopened.openClipboard(true)
+	a.openClipboard(true)
 	view.Frame()
-	if reopened.clipboard.query != "" {
-		t.Fatal("reopening the panel should start a new search")
+	if a.clipboard.query != "" {
+		t.Fatal("reopening should start a new search")
 	}
 	if err := view.Click("删除记录 图片 320 × 180"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := os.Stat(reopened.clipboardImagePath(entry.Image.ID)); !os.IsNotExist(err) || len(reopened.clipboard.Entries) != 1 {
-		t.Fatal("deleting the image should remove its PNG and retain the text entry")
+	if _, err := a.clipboardData(entry); !errors.Is(err, sql.ErrNoRows) || len(a.clipboard.entries) != 1 {
+		t.Fatal("deleting the image should remove its bytes and leave the text entry")
 	}
 }
 
-func TestClipboardImageWriteFailureDoesNotLeaveUnreferencedFile(t *testing.T) {
-	a := island{statePath: filepath.Join(t.TempDir(), "shelf.json")}
-	if !a.saveClipboard(clipboardState{Recording: true}) {
+func TestClipboardRecordsExpireAndKeepNewestTenThousand(t *testing.T) {
+	a := newTestClipboard(t, true)
+	store := a.clipboard.store
+	now := time.Now()
+	tx, err := store.Begin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback()
+	for _, record := range []clipboardRecord{
+		{text: "过期", copiedAt: now.Add(-clipboardRetention)},
+		{text: "未过期", copiedAt: now.Add(-clipboardRetention + time.Nanosecond)},
+	} {
+		if _, err := storeClipboardRecord(tx, record); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	if visible := readTestClipboardEntries(t, store, now); len(visible) != 1 || visible[0].Preview != "未过期" {
+		t.Fatal("entries should expire at exactly 90 days")
+	}
+	if changed, err := store.expire(now); !changed || err != nil {
+		t.Fatalf("expiry should remove the old row: %v", err)
+	}
+	var count int
+	if err := store.QueryRow("SELECT count(*) FROM entries").Scan(&count); err != nil || count != 1 {
+		t.Fatalf("expected the expired row to be removed from SQLite: count=%d, error=%v", count, err)
+	}
+
+	tx, err = store.Begin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback()
+	for i := range clipboardHistoryLimit {
+		if _, err := storeClipboardRecord(tx, clipboardRecord{text: fmt.Sprintf("记录 %05d", i), copiedAt: now}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	if !a.recordClipboard(transfer.TextData("最新"), now) {
 		t.Fatal(a.clipboard.problem)
+	}
+	entries := readTestClipboardEntries(t, store, now)
+	if len(entries) != 10_000 || entries[0].Preview != "最新" || entries[len(entries)-1].Preview != "记录 00001" {
+		t.Fatal("the history should retain exactly the newest 10,000 records in a stable order")
+	}
+	a.openClipboard(true)
+	view := ui.NewTester(func(c *ui.Context) { a.clipboardView(c, true, nil) }, panelWidth, clipboardPanelHeight)
+	if !view.HasText("最新") || len(view.Texts()) > 60 {
+		t.Fatal("the panel should build only visible rows even with a full history")
+	}
+	a.clipboard.list.ScrollToEnd()
+	view.Frame()
+	if !view.HasText("记录 00001") {
+		t.Fatal("the virtual list should reach the oldest retained record")
+	}
+}
+
+func TestClipboardRecordRollsBackIfRetentionFails(t *testing.T) {
+	a := newTestClipboard(t, true)
+	store := a.clipboard.store
+	now := time.Now()
+	if _, err := store.record(clipboardRecord{text: "旧记录", copiedAt: now.Add(-clipboardRetention)}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Exec(`CREATE TRIGGER reject_expiry BEFORE DELETE ON entries
+		BEGIN SELECT RAISE(ABORT, 'test expiry failed'); END`); err != nil {
+		t.Fatal(err)
 	}
 	bitmap := sampleClipboardPNG(t)
 	data := transfer.New(transfer.NewItem(transfer.Bytes(transfer.PNG, bitmap), transfer.Bytes(transfer.Text, []byte("原文"))))
-	if err := os.Mkdir(a.clipboardPath()+".tmp", 0700); err != nil {
+	if a.recordClipboard(data, now) {
+		t.Fatal("an image should not be saved if its transaction failed")
+	}
+	var count int
+	if err := store.QueryRow("SELECT count(*) FROM entries").Scan(&count); err != nil || count != 1 {
+		t.Fatalf("a failed write should leave the original row intact: count=%d error=%v", count, err)
+	}
+	if _, err := store.Exec("DROP TRIGGER reject_expiry"); err != nil {
 		t.Fatal(err)
 	}
-	id := sha256.Sum256(bitmap)
-	path := a.clipboardImagePath(hex.EncodeToString(id[:]))
-	if a.recordClipboard(data, time.Now()) {
-		t.Fatal("recorded an image without saving the history")
-	}
-	if _, err := os.Stat(path); !os.IsNotExist(err) {
-		t.Fatalf("found the image after saving failed: %v", err)
-	}
-	if !a.recordClipboard(data, time.Now()) {
+	if !a.recordClipboard(data, now) {
 		t.Fatal(a.clipboard.problem)
 	}
-	offer, err := a.clipboardData(a.clipboard.Entries[0])
+	entries := readTestClipboardEntries(t, store, now)
+	offer, err := a.clipboardData(entries[0])
 	if err != nil {
 		t.Fatal(err)
 	}
 	if text, err := offer.Read(transfer.Text); err != nil || string(text) != "原文" {
 		t.Fatal("recopying a mixed entry should keep its text representation")
-	}
-	if !a.saveClipboard(clipboardState{Recording: true}) {
-		t.Fatal(a.clipboard.problem)
-	}
-	if _, err := os.Stat(path); !os.IsNotExist(err) {
-		t.Fatalf("found the image after clearing history: %v", err)
 	}
 }
 
@@ -225,11 +312,9 @@ func sampleClipboardPNG(t *testing.T) []byte {
 }
 
 func TestClipboardPanelDeletesAndClearsSavedHistory(t *testing.T) {
-	a := island{expanded: true, files: &shelf.Shelf{}, statePath: filepath.Join(t.TempDir(), "shelf.json")}
-	if !a.saveClipboard(clipboardState{Recording: true, Shortcut: "Alt+Shift+K", Entries: []clipboardEntry{
-		{Text: "样本文字 1", CopiedAt: time.Now()},
-		{Text: "样本文字 2", CopiedAt: time.Now()},
-	}}) {
+	a := newTestClipboard(t, true, "样本文字 1", "样本文字 2")
+	a.expanded = true
+	if !a.saveClipboardSettings(clipboardState{Recording: true, Shortcut: "Alt+Shift+K"}) {
 		t.Fatal(a.clipboard.problem)
 	}
 	view := ui.NewTester(func(c *ui.Context) {
@@ -255,7 +340,7 @@ func TestClipboardPanelDeletesAndClearsSavedHistory(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if len(a.clipboard.Entries) != 1 || !a.clipboard.confirmClear {
+	if len(a.clipboard.entries) != 1 || !a.clipboard.confirmClear {
 		t.Fatal("deleting should remove one entry and clearing should ask for confirmation")
 	}
 	view.Key(0, ui.KeyEscape)
@@ -267,12 +352,13 @@ func TestClipboardPanelDeletesAndClearsSavedHistory(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if len(a.clipboard.Entries) != 0 || a.clipboard.confirmClear {
+	if len(a.clipboard.entries) != 0 || a.clipboard.confirmClear {
 		t.Fatal("confirmation should clear the list")
 	}
 	reopened := island{statePath: a.statePath}
 	reopened.loadClipboard()
-	if len(reopened.clipboard.Entries) != 0 || reopened.clipboard.loadFailed || reopened.clipboard.hotkey() != "Alt+Shift+K" {
+	defer reopened.clipboard.store.Close()
+	if len(readTestClipboardEntries(t, reopened.clipboard.store, time.Now())) != 0 || reopened.clipboard.loadFailed || reopened.clipboard.hotkey() != "Alt+Shift+K" {
 		t.Fatal("clearing should save the empty list and keep the shortcut")
 	}
 	view.Key(0, ui.KeyEscape)
@@ -282,7 +368,7 @@ func TestClipboardPanelDeletesAndClearsSavedHistory(t *testing.T) {
 }
 
 func TestClipboardBlurCollapsesShortcutOpenedPanel(t *testing.T) {
-	a := island{files: &shelf.Shelf{}, clipboard: clipboardComponent{clipboardState: clipboardState{Recording: true}}}
+	a := newTestClipboard(t, true)
 	a.openClipboard(false)
 	a.clipboardWindowBlurred()
 	if !a.clipboard.open || !a.expanded {
@@ -296,15 +382,7 @@ func TestClipboardBlurCollapsesShortcutOpenedPanel(t *testing.T) {
 }
 
 func TestClipboardSearchAndKeyboardPaste(t *testing.T) {
-	now := time.Now()
-	a := island{files: &shelf.Shelf{}, clipboard: clipboardComponent{clipboardState: clipboardState{
-		Recording: true,
-		Entries: []clipboardEntry{
-			{Text: "Alpha 第一条中文", CopiedAt: now},
-			{Text: "无关记录", CopiedAt: now},
-			{Text: "ALPHA\n第二条中文", CopiedAt: now},
-		},
-	}}}
+	a := newTestClipboard(t, true, "Alpha 第一条中文", "无关记录", "ALPHA\n第二条中文")
 	a.openClipboard(true)
 	var copied []string
 	view := ui.NewTester(func(c *ui.Context) {
@@ -332,11 +410,11 @@ func TestClipboardSearchAndKeyboardPaste(t *testing.T) {
 		t.Fatal("search should match all terms case-insensitively, including text past the preview")
 	}
 	view.Key(0, ui.KeyDown)
-	if a.clipboard.selected != a.clipboard.Entries[2].key() || !view.Focused("搜索剪贴板历史") {
+	if a.clipboard.selected != a.clipboard.entries[1].ID || !view.Focused("搜索剪贴板历史") {
 		t.Fatal("Down should select the next filtered entry while keeping search focused")
 	}
 	view.Key(0, ui.KeyUp)
-	if a.clipboard.selected != a.clipboard.Entries[0].key() {
+	if a.clipboard.selected != a.clipboard.entries[0].ID {
 		t.Fatal("Up should return to the previous filtered entry")
 	}
 	second, found := view.Find("复制 ALPHA…")
@@ -344,16 +422,16 @@ func TestClipboardSearchAndKeyboardPaste(t *testing.T) {
 		t.Fatal("the second filtered entry should be visible")
 	}
 	view.Move(second.X+20, second.Y+second.H/2)
-	if a.clipboard.selected != a.clipboard.Entries[2].key() {
+	if a.clipboard.selected != a.clipboard.entries[1].ID {
 		t.Fatal("moving the mouse should select the entry under it")
 	}
 	view.Key(0, ui.KeyUp)
 	view.Frame()
-	if a.clipboard.selected != a.clipboard.Entries[0].key() {
+	if a.clipboard.selected != a.clipboard.entries[0].ID {
 		t.Fatal("a stationary mouse should keep the keyboard selection intact")
 	}
 	view.Move(second.X+21, second.Y+second.H/2)
-	if a.clipboard.selected != a.clipboard.Entries[2].key() {
+	if a.clipboard.selected != a.clipboard.entries[1].ID {
 		t.Fatal("moving the mouse again should restore mouse selection")
 	}
 	view.KeyDown(ui.KeyEnter)
@@ -368,10 +446,7 @@ func TestClipboardSearchAndKeyboardPaste(t *testing.T) {
 }
 
 func TestClipboardSearchEmptyAndCopyFailure(t *testing.T) {
-	a := island{files: &shelf.Shelf{}, clipboard: clipboardComponent{clipboardState: clipboardState{
-		Recording: true,
-		Entries:   []clipboardEntry{{Text: "样本文字", CopiedAt: time.Now()}},
-	}}}
+	a := newTestClipboard(t, true, "样本文字")
 	a.openClipboard(true)
 	attempts := 0
 	view := ui.NewTester(func(c *ui.Context) {
@@ -394,10 +469,11 @@ func TestClipboardSearchEmptyAndCopyFailure(t *testing.T) {
 }
 
 func TestClipboardKeyboardSelectionScrollsIntoView(t *testing.T) {
-	a := island{files: &shelf.Shelf{}, clipboard: clipboardComponent{clipboardState: clipboardState{Recording: true}}}
-	for i := range 12 {
-		a.clipboard.Entries = append(a.clipboard.Entries, clipboardEntry{Text: fmt.Sprintf("记录 %02d", i), CopiedAt: time.Now()})
+	texts := make([]string, 12)
+	for i := range texts {
+		texts[i] = fmt.Sprintf("记录 %02d", i)
 	}
+	a := newTestClipboard(t, true, texts...)
 	a.openClipboard(true)
 	view := ui.NewTester(func(c *ui.Context) { a.clipboardView(c, true, nil) }, panelWidth, clipboardPanelHeight)
 	for range 11 {
@@ -405,19 +481,20 @@ func TestClipboardKeyboardSelectionScrollsIntoView(t *testing.T) {
 	}
 	row, found := view.Find("复制 记录 11")
 	search, _ := view.Find("搜索剪贴板历史")
-	if a.clipboard.selected != a.clipboard.Entries[11].key() || !found || row.Y < search.Y+search.H || row.Y+row.H > clipboardPanelHeight {
+	if a.clipboard.selected != a.clipboard.entries[11].ID || !found || row.Y < search.Y+search.H || row.Y+row.H > clipboardPanelHeight {
 		t.Fatalf("keyboard selection should scroll into the visible list: found=%t, row=%+v", found, row)
 	}
 }
 
 func TestClipboardDistinguishesScrollFromPointerMovement(t *testing.T) {
-	a := island{files: &shelf.Shelf{}, clipboard: clipboardComponent{clipboardState: clipboardState{Recording: true}}}
-	for i := range 12 {
-		a.clipboard.Entries = append(a.clipboard.Entries, clipboardEntry{Text: fmt.Sprintf("记录 %02d", i), CopiedAt: time.Now()})
+	texts := make([]string, 12)
+	for i := range texts {
+		texts[i] = fmt.Sprintf("记录 %02d", i)
 	}
+	a := newTestClipboard(t, true, texts...)
 	a.openClipboard(true)
 	view := ui.NewTester(func(c *ui.Context) { a.clipboardView(c, true, nil) }, panelWidth, clipboardPanelHeight)
-	first := a.clipboard.Entries[0].key()
+	first := a.clipboard.entries[0].ID
 	view.Scroll(20, 125, 0, 106)
 	if a.clipboard.selected != first {
 		t.Fatal("a scroll event must not select the row at its pointer position")
@@ -432,26 +509,12 @@ func TestClipboardDistinguishesScrollFromPointerMovement(t *testing.T) {
 		t.Fatal("the target row should be visible during scrolling")
 	}
 	view.Move(next.X+20, next.Y+next.H/2)
-	selected := a.clipboard.Entries[4].key()
+	selected := a.clipboard.entries[4].ID
 	if a.clipboard.selected != selected {
 		t.Fatal("a real mouse move should select the row immediately during scrolling")
 	}
 	view.Advance(140 * time.Millisecond)
 	if a.clipboard.selected != selected {
 		t.Fatal("rows scrolling under a stationary mouse must not change the selection")
-	}
-}
-
-func TestClipboardHistorySaveFailureLeavesEntriesIntact(t *testing.T) {
-	a := island{statePath: filepath.Join(t.TempDir(), "shelf.json")}
-	state := clipboardState{Entries: []clipboardEntry{{Text: "示例", CopiedAt: time.Now()}}}
-	if !a.saveClipboard(state) {
-		t.Fatal(a.clipboard.problem)
-	}
-	if err := os.Mkdir(a.clipboardPath()+".tmp", 0700); err != nil {
-		t.Fatal(err)
-	}
-	if a.saveClipboard(clipboardState{}) || !slices.Equal(a.clipboard.Entries, state.Entries) || a.clipboard.problem == "" {
-		t.Fatal("a failed save changed history or did not report the error")
 	}
 }

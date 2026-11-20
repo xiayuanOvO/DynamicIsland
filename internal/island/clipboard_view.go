@@ -7,7 +7,6 @@ import (
 	"strings"
 	"time"
 
-	"dynamicisland/internal/shelf"
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/transfer"
 	"github.com/egoist/mygo/ui"
@@ -25,8 +24,10 @@ func (a *island) openClipboard(fromShortcut bool) {
 	a.todos.draft, a.todos.leaving = nil, nil
 	history := &a.clipboard
 	if !history.open {
-		history.query, history.selected = "", clipboardEntryKey{}
-		history.hoverSelection = clipboardEntryKey{}
+		history.query, history.selected = "", 0
+		history.list = ui.ListState{}
+		a.refreshClipboardEntries(time.Now())
+		history.hoverSelection = 0
 		history.confirmClear, history.pendingPaste = false, nil
 		history.pasteTarget = clipboardPasteTarget{}
 	}
@@ -51,7 +52,7 @@ func (a *island) clipboardSettings(c *ui.Context) {
 				*confirm = true
 			}
 			if ui.AlertDialog(c, confirm, "清空剪贴板历史？", "", "清空历史", "取消") == 0 &&
-				a.saveClipboard(clipboardState{}) {
+				a.resetClipboard() {
 				c.Announce("剪贴板历史已清空")
 			}
 			return
@@ -67,7 +68,7 @@ func (a *island) clipboardSettings(c *ui.Context) {
 		if ui.Switch(c.Key("record"), &recording).LabelledBy(label).Changed() {
 			next := history.clipboardState
 			next.Recording = recording
-			if !a.saveClipboard(next) {
+			if !a.saveClipboardSettings(next) {
 				return
 			}
 			a.syncClipboardRecording()
@@ -120,7 +121,7 @@ func (a *island) clipboardView(c *ui.Context, interactive bool, write func(trans
 				}
 				search = ui.SearchField(c.Key("search"), &history.query).Grow(1).MinWidth(0).Height(36).
 					Label("搜索剪贴板历史").Placeholder("搜索记录")
-				if len(history.Entries) > 0 && iconButton(c.Key("clear"), clearClipboardIcon, "清空历史").Size(40, 40).Clicked() {
+				if history.hasEntries && iconButton(c.Key("clear"), clearClipboardIcon, "清空历史").Size(40, 40).Clicked() {
 					history.confirmClear = true
 				}
 			})
@@ -134,9 +135,12 @@ func (a *island) clipboardView(c *ui.Context, interactive bool, write func(trans
 						history.focusSearch = true
 					}
 					if ui.Button(c.Key("confirm"), "清空历史").Height(40).Clicked() {
-						next := history.clipboardState
-						next.Entries = nil
-						if a.saveClipboard(next) {
+						if err := history.store.clear(); err != nil {
+							log.Printf("clear clipboard history: %v", err)
+							history.problem = "清空历史失败"
+						} else {
+							a.refreshClipboardEntries(c.Now())
+							c.Invalidate()
 							history.confirmClear = false
 							history.focusSearch = true
 							c.Announce("剪贴板历史已清空")
@@ -151,33 +155,18 @@ func (a *island) clipboardView(c *ui.Context, interactive bool, write func(trans
 				history.focusSearch = false
 			}
 			if search.Changed() {
-				history.selected = clipboardEntryKey{}
+				history.selected = 0
+				a.refreshClipboardEntries(c.Now())
 				reveal = true
-			} else if history.hoverSelection != (clipboardEntryKey{}) {
+			} else if history.hoverSelection != 0 {
 				history.selected = history.hoverSelection
 			}
-			history.hoverSelection = clipboardEntryKey{}
-			terms := strings.Fields(strings.ToLower(history.query))
-			var results []int
-			selected := 0
-			for index, entry := range history.Entries {
-				if len(terms) > 0 {
-					text := strings.ToLower(entry.Text)
-					if entry.Image != nil {
-						text += " 图片"
-					}
-					if slices.ContainsFunc(terms, func(term string) bool { return !strings.Contains(text, term) }) {
-						continue
-					}
-				}
-				if entry.key() == history.selected {
-					selected = len(results)
-				}
-				results = append(results, index)
-			}
-			if len(results) == 0 {
+			history.hoverSelection = 0
+			entries := history.entries
+			selected := max(0, slices.IndexFunc(entries, func(entry clipboardEntry) bool { return entry.ID == history.selected }))
+			if len(entries) == 0 {
 				empty := "暂无剪贴板历史"
-				if len(terms) > 0 {
+				if strings.TrimSpace(history.query) != "" {
 					empty = "未找到匹配记录"
 				}
 				ui.Box(c).FillWidth().Grow(1).Center().Children(func() {
@@ -188,34 +177,31 @@ func (a *island) clipboardView(c *ui.Context, interactive bool, write func(trans
 					selected, reveal = max(0, selected-1), true
 					search.Focus()
 				} else if interactive && c.Shortcut(0, ui.KeyDown) {
-					selected, reveal = min(len(results)-1, selected+1), true
+					selected, reveal = min(len(entries)-1, selected+1), true
 					search.Focus()
 				}
-				entry := history.Entries[results[selected]]
-				history.selected = entry.key()
+				entry := entries[selected]
+				history.selected = entry.ID
 				if interactive && history.pendingPaste == nil && (search.Submitted() || c.Shortcut(0, ui.KeyEnter)) {
 					history.pendingPaste = &entry
 				}
-				list := ui.Scroll(c.Key("entries")).FillWidth().Grow(1).MinHeight(0).Gap(3).
+				if reveal {
+					history.list.ScrollIntoView(selected)
+				}
+				list := ui.List(c.Key("entries"), &history.list, len(entries)).
+					ItemKey(func(index int) any { return entries[index].ID }).FillWidth().Grow(1).MinHeight(0).Gap(3).
 					HandleInput(func(event ui.InputEvent) bool {
 						if event.Kind == ui.InputScroll {
 							// MyGo updates the pointer before dispatching scroll input.
 							// Discard the hover staged by that same scroll event.
-							history.hoverSelection = clipboardEntryKey{}
+							history.hoverSelection = 0
 						}
 						return false
 					})
-				list.Children(func() {
-					entries := history.Entries
-					for position, index := range results {
-						entry := entries[index]
-						row := a.clipboardRow(c, index, entry, position == selected, write)
-						if position == selected {
-							search.ActiveDescendant(row)
-							if reveal {
-								row.ScrollIntoView()
-							}
-						}
+				list.Rows(func(item ui.ListRow) {
+					row := a.clipboardRow(item.Context, entries[item.Index], item.Index == selected, write)
+					if item.Index == selected {
+						search.ActiveDescendant(row)
 					}
 				})
 			}
@@ -233,26 +219,18 @@ func (a *island) clipboardView(c *ui.Context, interactive bool, write func(trans
 	})
 }
 
-func (a *island) clipboardRow(c *ui.Context, index int, entry clipboardEntry, selected bool, write func(transfer.Data) error) ui.Element {
-	text := strings.TrimSpace(entry.Text)
-	count := 0
-	for i, r := range text {
-		if count == 120 || r == '\r' || r == '\n' {
-			text = text[:i] + "…"
-			break
-		}
-		count++
-	}
+func (a *island) clipboardRow(c *ui.Context, entry clipboardEntry, selected bool, write func(transfer.Data) error) ui.Element {
+	text := entry.Preview
 	dimensions := ""
 	const rowHeight = 50
-	if entry.Image != nil {
+	if entry.Width != 0 {
 		if text == "" {
 			text = "图片"
 		}
-		dimensions = fmt.Sprintf("%d × %d", entry.Image.Width, entry.Image.Height)
+		dimensions = fmt.Sprintf("%d × %d", entry.Width, entry.Height)
 	}
 	var copy ui.Element
-	key := entry.key()
+	key := entry.ID
 	history := &a.clipboard
 	row := ui.Row(c.Key(key)).FillWidth().Height(rowHeight).Shrink(0).Gap(2).AlignItems(ui.Center).Radius(10).
 		HandleInput(func(event ui.InputEvent) bool {
@@ -275,16 +253,16 @@ func (a *island) clipboardRow(c *ui.Context, index int, entry clipboardEntry, se
 			TextColor(muted).Cursor(ui.CursorPointer).Label("复制 " + label)
 		copy.Children(func() {
 			preview := ui.Box(c.Key("preview")).Size(44, 34).Shrink(0).Radius(6).Clip().Center()
-			if entry.Image != nil {
+			if entry.Width != 0 {
 				preview.Background(white.Alpha(0.45))
 			}
 			preview.Children(func() {
-				if entry.Image == nil {
+				if entry.Width == 0 {
 					ui.Icon(c, copyIcon).Size(14, 14)
 					return
 				}
 				if copy.InViewMargin(rowHeight) {
-					visual := a.filePreview(shelf.Item{Path: a.clipboardImagePath(entry.Image.ID)})
+					visual := a.clipboardPreview(entry.ID)
 					if visual != nil && visual.source != nil {
 						ui.Image(c, visual.source).Fill().Fit(ui.Contain)
 						return
@@ -310,11 +288,14 @@ func (a *island) clipboardRow(c *ui.Context, index int, entry clipboardEntry, se
 			}
 		}
 		if iconButton(c.Key("remove"), trashIcon, "删除此条记录").Size(40, 40).Label("删除记录 " + label).Clicked() {
-			next := a.clipboard.clipboardState
-			next.Entries = slices.Delete(slices.Clone(next.Entries), index, index+1)
-			if a.saveClipboard(next) {
+			if err := history.store.deleteEntry(entry.ID); err != nil {
+				log.Printf("delete clipboard entry: %v", err)
+				history.problem = "删除记录失败"
+			} else {
+				a.refreshClipboardEntries(c.Now())
 				c.Announce("已删除剪贴板记录")
 			}
+			c.Invalidate()
 		}
 	})
 	return copy
@@ -334,7 +315,7 @@ func (a *island) useClipboardEntry(c *ui.Context, entry clipboardEntry, paste bo
 	history := &a.clipboard
 	data, err := a.clipboardData(entry)
 	if err != nil {
-		history.problem = "剪贴板图片读取失败"
+		history.problem = "剪贴板记录读取失败"
 		return
 	}
 	if err := write(data); err != nil {

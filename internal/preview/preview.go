@@ -66,11 +66,20 @@ func decodeRaster(path string) (image.Image, error) {
 	if err != nil {
 		return nil, err
 	}
-	w, h := config.Width, config.Height
+	return thumbnail(img, config.Width, config.Height), nil
+}
+
+// Thumbnail scales an image so its longest side fits within Size pixels.
+func Thumbnail(img image.Image) image.Image {
+	bounds := img.Bounds()
+	return thumbnail(img, bounds.Dx(), bounds.Dy())
+}
+
+func thumbnail(img image.Image, w, h int) image.Image {
 	if longest := max(w, h); longest > Size {
 		w, h = max(1, w*Size/longest), max(1, h*Size/longest)
 	}
 	thumb := image.NewNRGBA(image.Rect(0, 0, w, h))
 	draw.CatmullRom.Scale(thumb, thumb.Bounds(), img, img.Bounds(), draw.Src, nil)
-	return thumb, nil
+	return thumb
 }

@@ -114,6 +114,10 @@ func (a *island) start() {
 		if a.clipboard.stop != nil {
 			a.clipboard.stop()
 		}
+		if a.clipboard.store != nil {
+			a.clipboard.store.Close()
+			a.clipboard.store = nil
+		}
 		a.media.stopWave()
 		close(a.previewJobs)
 		mygo.GlobalShortcut.UnregisterAll()
@@ -134,6 +138,7 @@ func (a *island) start() {
 	}
 	a.createTray()
 	a.syncClipboardRecording()
+	a.watchClipboardExpiry()
 	a.watchTodoReminders()
 	a.watchFullscreen()
 }

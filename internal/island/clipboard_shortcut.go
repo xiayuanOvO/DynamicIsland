@@ -50,7 +50,7 @@ func (a *island) changeClipboardShortcut(keys string) bool {
 	if keys != previous {
 		next := history.clipboardState
 		next.Shortcut = keys
-		if err := saveJSON(a.clipboardPath(), next); err != nil {
+		if err := history.store.saveSettings(next); err != nil {
 			if bind {
 				mygo.GlobalShortcut.Unregister(keys)
 			}

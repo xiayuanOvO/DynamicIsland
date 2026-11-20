@@ -1,9 +1,12 @@
 package island
 
 import (
+	"bytes"
+	"image/png"
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"dynamicisland/internal/preview"
@@ -19,8 +22,9 @@ type filePreview struct {
 }
 
 type previewJob struct {
-	path, key string
-	entry     *filePreview
+	key   string
+	entry *filePreview
+	load  func() ui.ImageSource
 }
 
 func (a *island) startPreviews() {
@@ -29,12 +33,7 @@ func (a *island) startPreviews() {
 	for range 2 {
 		go func() {
 			for job := range a.previewJobs {
-				var source ui.ImageSource
-				if img, err := preview.Load(job.path, job.entry.thumbnail); err == nil {
-					source = ui.NewBitmap(img)
-				} else if job.entry.thumbnail && strings.EqualFold(filepath.Ext(job.path), ".svg") {
-					source = svgPreview(job.path)
-				}
+				source := job.load()
 				a.win.Update(func() {
 					// A removed or replaced card must not acquire an old result.
 					if a.previews[job.key] == job.entry {
@@ -49,7 +48,33 @@ func (a *island) startPreviews() {
 // Only visible cards request work. The bounded queue and cache keep a
 // large shelf from decoding all its images or retaining their full sizes.
 func (a *island) filePreview(item shelf.Item) *filePreview {
-	key := shelf.Key(item.Path)
+	thumbnail := !item.Directory && preview.IsImage(item.Path)
+	return a.queuePreview(shelf.Key(item.Path), thumbnail, func() ui.ImageSource {
+		if img, err := preview.Load(item.Path, thumbnail); err == nil {
+			return ui.NewBitmap(img)
+		}
+		if thumbnail && strings.EqualFold(filepath.Ext(item.Path), ".svg") {
+			return svgPreview(item.Path)
+		}
+		return nil
+	})
+}
+
+func (a *island) clipboardPreview(id int64) *filePreview {
+	store := a.clipboard.store
+	return a.queuePreview("clipboard:"+strconv.FormatInt(id, 10), true, func() ui.ImageSource {
+		var bitmap []byte
+		if err := store.QueryRow("SELECT image FROM entries WHERE id=?", id).Scan(&bitmap); err != nil {
+			return nil
+		}
+		if img, err := png.Decode(bytes.NewReader(bitmap)); err == nil {
+			return ui.NewBitmap(preview.Thumbnail(img))
+		}
+		return nil
+	})
+}
+
+func (a *island) queuePreview(key string, thumbnail bool, load func() ui.ImageSource) *filePreview {
 	a.previewClock++
 	if entry := a.previews[key]; entry != nil {
 		entry.used = a.previewClock
@@ -71,11 +96,9 @@ func (a *island) filePreview(item shelf.Item) *filePreview {
 		}
 		delete(a.previews, oldestKey)
 	}
-	entry := &filePreview{
-		thumbnail: !item.Directory && preview.IsImage(item.Path), pending: true, used: a.previewClock,
-	}
+	entry := &filePreview{thumbnail: thumbnail, pending: true, used: a.previewClock}
 	select {
-	case a.previewJobs <- previewJob{path: item.Path, key: key, entry: entry}:
+	case a.previewJobs <- previewJob{key: key, entry: entry, load: load}:
 		a.previews[key] = entry
 		return entry
 	default:

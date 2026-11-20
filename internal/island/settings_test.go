@@ -1,6 +1,7 @@
 package island
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -9,15 +10,12 @@ import (
 	"time"
 
 	"dynamicisland/internal/lyrics"
-	"dynamicisland/internal/shelf"
 	"github.com/egoist/mygo/ui"
 )
 
 func TestClipboardSettingTogglesHistoryEntrypoints(t *testing.T) {
-	a := island{expanded: true, files: &shelf.Shelf{}, statePath: filepath.Join(t.TempDir(), "shelf.json")}
-	if !a.saveClipboard(clipboardState{Entries: []clipboardEntry{{Text: "样本文字", CopiedAt: time.Now()}}}) {
-		t.Fatal(a.clipboard.problem)
-	}
+	a := newTestClipboard(t, false, "样本文字")
+	a.expanded = true
 	t.Cleanup(func() {
 		if a.clipboard.stop != nil {
 			a.clipboard.stop()
@@ -46,7 +44,9 @@ func TestClipboardSettingTogglesHistoryEntrypoints(t *testing.T) {
 		}
 		reopened := island{statePath: a.statePath}
 		reopened.loadClipboard()
-		if reopened.clipboard.Recording != enabled || len(reopened.clipboard.Entries) != 1 || reopened.clipboard.Entries[0].Text != "样本文字" {
+		entries := readTestClipboardEntries(t, reopened.clipboard.store, time.Now())
+		reopened.clipboard.store.Close()
+		if reopened.clipboard.Recording != enabled || len(entries) != 1 || entries[0].Preview != "样本文字" {
 			t.Fatal("the setting or existing history was not persisted")
 		}
 		if enabled {
@@ -66,7 +66,7 @@ func TestClipboardSettingTogglesHistoryEntrypoints(t *testing.T) {
 
 func TestClipboardSettingsRecoversUnreadableHistory(t *testing.T) {
 	a := island{statePath: filepath.Join(t.TempDir(), "shelf.json")}
-	if err := os.WriteFile(a.clipboardPath(), []byte("{"), 0600); err != nil {
+	if err := os.WriteFile(a.clipboardPath(), bytes.Repeat([]byte("{"), 4096), 0600); err != nil {
 		t.Fatal(err)
 	}
 	a.loadClipboard()
@@ -86,10 +86,11 @@ func TestClipboardSettingsRecoversUnreadableHistory(t *testing.T) {
 	if a.clipboard.loadFailed || a.clipboard.Recording || !view.HasText("记录剪贴板") {
 		t.Fatal("clearing unreadable history should restore the recording switch")
 	}
+	a.clipboard.store.Close()
 }
 
 func TestClipboardShortcutCanBeRecordedAndSavedFromSettings(t *testing.T) {
-	a := island{statePath: filepath.Join(t.TempDir(), "shelf.json")}
+	a := newTestClipboard(t, false)
 	view := ui.NewTester(a.settingsView, settingsWidth, a.settingsHeight())
 	defaultLabel, newLabel := "Alt + Shift + V", "Ctrl + Shift + K"
 	if runtime.GOOS == "darwin" {
@@ -112,13 +113,15 @@ func TestClipboardShortcutCanBeRecordedAndSavedFromSettings(t *testing.T) {
 	}
 	reopened := island{statePath: a.statePath}
 	reopened.loadClipboard()
+	defer reopened.clipboard.store.Close()
 	if reopened.clipboard.hotkey() != "Ctrl+Shift+K" || reopened.clipboard.Recording {
 		t.Fatal("the customized shortcut should survive restart while recording is disabled")
 	}
 	if err := view.Click("修改剪贴板快捷键 " + newLabel); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Mkdir(a.clipboardPath()+".tmp", 0700); err != nil {
+	if _, err := a.clipboard.store.Exec(`CREATE TRIGGER reject_setting BEFORE UPDATE ON settings
+		BEGIN SELECT RAISE(ABORT, 'test settings write failed'); END`); err != nil {
 		t.Fatal(err)
 	}
 	view.Key(ui.Alt|ui.Shift, ui.KeyJ)
