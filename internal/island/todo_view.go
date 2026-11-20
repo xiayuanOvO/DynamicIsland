@@ -146,19 +146,12 @@ func (a *island) todoPreview(c *ui.Context, height, opacity float32) {
 
 func (a *island) openTodos() {
 	t := &a.todos
+	a.clipboard.open, a.clipboard.confirmClear = false, false
 	if t.loadFailed {
 		a.loadTodos()
 	}
 	t.open = true
-	a.hiddenByUser = false
-	if a.win != nil && !a.win.IsVisible() && !a.fullscreen {
-		a.show()
-		return
-	}
-	a.setExpanded(true)
-	if a.win != nil && !a.fullscreen {
-		a.win.Update(a.win.Focus)
-	}
+	a.showPanel()
 }
 
 func (t *todoComponent) closeEditor() {

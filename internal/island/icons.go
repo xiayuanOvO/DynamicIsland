@@ -27,6 +27,8 @@ var (
 	trashIcon   = svg(`<path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7m4-7v7"/>`)
 )
 
+var clipboardIcon = svg(`<rect x="8" y="3" width="8" height="4" rx="1.4"/><path d="M8 5H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2M8 12h8m-8 4h6"/>`)
+
 func trayIcon() []byte {
 	icon := image.NewNRGBA(image.Rect(0, 0, 32, 32))
 	for y := 6; y < 26; y++ {

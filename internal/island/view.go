@@ -54,7 +54,8 @@ func (a *island) view(c *ui.Context) {
 	}
 	a.finishMove(c)
 	if !a.moving {
-		a.hover(c, hovered || over)
+		clipboardFocused := a.clipboard.open && c.WindowActive() && root.FocusWithin()
+		a.hover(c, hovered || over || clipboardFocused)
 	}
 
 	a.updateMedia(c)
@@ -193,8 +194,22 @@ func (a *island) header(c *ui.Context, open float32) {
 
 func (a *island) body(c *ui.Context, frame islandFrame) {
 	opacity := frame.content
+	clipboard := frame.clipboard
+	if c.Preferences().ReduceMotion {
+		clipboard = 0
+		if a.clipboard.open {
+			clipboard = 1
+		}
+	}
+	if clipboard > 0.5 {
+		ui.Column(c.Key("clipboard-body")).Width(panelWidth-2).Shrink(0).Padding(0, 22, 20).
+			Opacity(opacity * animationPhase(clipboard, 0.5, 0.85)).IgnoreInput(!a.expanded || !a.clipboard.open || opacity < 0.80 || clipboard < 0.85).
+			Children(func() { a.clipboardView(c) })
+		return
+	}
 	body := ui.Column(c.Key("body")).Width(panelWidth-2).Shrink(0).Padding(0, 22, 20).
-		Opacity(opacity).Translate(0, 10*(1-opacity)).IgnoreInput(!a.expanded || opacity < 0.80)
+		Opacity(opacity*(1-animationPhase(clipboard, 0, 0.5))).Translate(0, 10*(1-opacity)).
+		IgnoreInput(!a.expanded || a.clipboard.open || opacity < 0.80 || clipboard > 0.15)
 	progress := frame.todo
 	if c.Preferences().ReduceMotion {
 		progress = 0
@@ -208,7 +223,12 @@ func (a *island) body(c *ui.Context, frame islandFrame) {
 				Height(float32(a.settings.cardHeight()+14) * (1 - progress)).Clip().
 				Opacity(1 - progress).IgnoreInput(a.todos.open).Children(func() { a.mediaCard(c) })
 		}
-		a.todoCard(c, progress, frame)
+		ui.Box(c.Key("tools")).FillWidth().Shrink(0).Children(func() {
+			a.todoCard(c, progress, frame)
+			if progress < 0.45 {
+				a.clipboardCard(c, 1-animationPhase(progress, 0, 0.45))
+			}
+		})
 		if progress < 1 && (len(a.files.Items) > 0 || a.status != "") {
 			ui.Column(c.Key("overview-files")).FillWidth().Shrink(0).Margin(14, 0, 0).Gap(14).
 				Opacity(1 - progress).IgnoreInput(a.todos.open).Children(func() {
@@ -382,6 +402,16 @@ func (a *island) menu(m *ui.Menu) {
 }
 
 func (a *island) shortcuts(c *ui.Context) {
+	if a.expanded && a.clipboard.open {
+		if c.Shortcut(0, ui.KeyEscape) {
+			if a.clipboard.confirmClear {
+				a.clipboard.confirmClear = false
+			} else {
+				a.clipboard.open = false
+			}
+		}
+		return
+	}
 	if a.expanded && a.todos.open {
 		if c.Shortcut(0, ui.KeyEscape) {
 			if a.todos.draft != nil {

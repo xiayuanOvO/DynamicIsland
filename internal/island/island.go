@@ -65,6 +65,7 @@ type island struct {
 	canvas transitionCanvas
 
 	todos              todoComponent
+	clipboard          clipboardComponent
 	settings           appSettings
 	updates            appUpdates
 	citySearch         weatherCitySearch
@@ -109,6 +110,9 @@ func (a *island) start() {
 	mygo.Screen.OnDisplaysChanged(a.recenter)
 	mygo.App.OnWillQuit(func(*mygo.QuitEvent) {
 		a.saveSettings()
+		if a.clipboard.stop != nil {
+			a.clipboard.stop()
+		}
 		a.media.stopWave()
 		close(a.previewJobs)
 		mygo.GlobalShortcut.UnregisterAll()
@@ -121,6 +125,7 @@ func (a *island) start() {
 		a.message("快捷键被占用", true)
 	}
 	a.createTray()
+	a.syncClipboardWatch()
 	a.watchTodoReminders()
 	a.watchFullscreen()
 }
@@ -129,6 +134,7 @@ func (a *island) createTray() {
 	menu := mygo.NewMenu([]*mygo.MenuItem{
 		{Label: "显示灵动岛", Click: func(*mygo.MenuItem, *mygo.Window) { a.show() }},
 		{Label: "待办事项…", Click: func(*mygo.MenuItem, *mygo.Window) { a.openTodos() }},
+		{Label: "剪贴板历史…", Click: func(*mygo.MenuItem, *mygo.Window) { a.openClipboard() }},
 		{Label: "添加文件…", Click: func(*mygo.MenuItem, *mygo.Window) { a.show(); a.choose(false) }},
 		{Label: "添加文件夹…", Click: func(*mygo.MenuItem, *mygo.Window) { a.show(); a.choose(true) }},
 		mygo.Separator(),
@@ -184,6 +190,9 @@ func (a *island) panelHeights() (height, gridHeight int) {
 	if a.todos.open {
 		return panelHeaderHeight + 20 + a.todos.detailHeight(), gridHeight
 	}
+	if a.clipboard.open {
+		return panelHeaderHeight + 20 + clipboardPanelHeight, gridHeight
+	}
 	return height + gridHeight, gridHeight
 }
 
@@ -195,6 +204,7 @@ func (a *island) setExpanded(expanded bool) {
 	if !expanded {
 		a.todos.open = false
 		a.todos.draft, a.todos.leaving = nil, nil
+		a.clipboard.open, a.clipboard.confirmClear = false, false
 	}
 	a.media.scrubbing = false
 	if expanded {
@@ -245,6 +255,18 @@ func (a *island) show() {
 	a.setExpanded(true)
 }
 
+func (a *island) showPanel() {
+	a.hiddenByUser = false
+	if a.win != nil && !a.win.IsVisible() && !a.fullscreen {
+		a.show()
+		return
+	}
+	a.setExpanded(true)
+	if a.win != nil && !a.fullscreen {
+		a.win.Update(a.win.Focus)
+	}
+}
+
 func (a *island) toggle() {
 	if a.win.IsVisible() && a.expanded {
 		a.setExpanded(false)
@@ -269,7 +291,8 @@ func (a *island) applyWindowFrame(frame islandFrame, animated bool) {
 	usingCanvas := false
 	if animated && frame != a.animation.to && a.dock.side == dockNone {
 		starting := a.canvas.restore == nil
-		if starting && (a.animation.from.open != a.animation.to.open || a.animation.from.todo != a.animation.to.todo) {
+		if starting && (a.animation.from.open != a.animation.to.open || a.animation.from.todo != a.animation.to.todo ||
+			a.animation.from.clipboard != a.animation.to.clipboard) {
 			a.canvas = startTransitionCanvas(a.win)
 			if a.canvas.restore != nil {
 				target := a.windowBounds(

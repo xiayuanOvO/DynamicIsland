@@ -30,6 +30,7 @@ func Run() {
 	}
 	a.lyrics.diskCache = lyrics.NewCache(filepath.Dir(statePath))
 	a.loadTodos()
+	a.loadClipboard()
 	a.settings, err = loadSettings(a.settingsPath())
 	if err != nil {
 		log.Printf("load settings: %v", err)
