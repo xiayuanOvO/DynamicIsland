@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"dynamicisland/internal/audiolevel"
+	"dynamicisland/internal/lyrics"
 	"dynamicisland/internal/nowplaying"
 	"github.com/egoist/mygo/ui"
 )
@@ -28,6 +29,7 @@ func (s appSettings) cardHeight() int {
 type islandMedia struct {
 	adapter          string
 	track            nowplaying.Track
+	catalogDuration  float64
 	artwork          ui.ImageSource
 	artworkColor     ui.Color
 	artworkHash      [32]byte
@@ -110,8 +112,26 @@ func (a *island) requestMedia(command nowplaying.Command) {
 				trackChanged = !m.track.SameSong(track)
 				if trackChanged {
 					m.scrubbing = false
+					m.catalogDuration = 0
 					if cover == nil {
 						a.setArtwork(nil, ui.Transparent, [32]byte{})
+					}
+					if track.Duration <= 0 && track.IsNetEase() && track.Artist != "" {
+						go func() {
+							ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+							defer cancel()
+							duration := lyrics.NetEaseDuration(ctx, lyrics.Song{Title: track.Title, Artist: track.Artist, Album: track.Album})
+							if duration > 0 {
+								a.win.Update(func() {
+									if m.track.SameSong(track) {
+										m.catalogDuration = duration
+										if a.settingsWindow != nil {
+											a.settingsWindow.Invalidate()
+										}
+									}
+								})
+							}
+						}()
 					}
 				}
 				m.track = track
@@ -267,8 +287,7 @@ func (a *island) mediaCard(c *ui.Context) {
 }
 
 func (a *island) mediaCardPreview(c *ui.Context) {
-	preview := islandMedia{artwork: a.media.artwork, artworkColor: a.media.artworkColor}
-	preview.track = a.media.track
+	preview := islandMedia{track: a.media.track, artwork: a.media.artwork, artworkColor: a.media.artworkColor, catalogDuration: a.media.catalogDuration}
 	if preview.track.Title == "" {
 		preview.track = nowplaying.Track{
 			Title: "示例曲目", Artist: "示例艺人", Position: 63, Duration: 228,
@@ -285,6 +304,15 @@ func (s appSettings) renderMediaCard(c *ui.Context, m *islandMedia, expanded boo
 	track := m.track
 	large := s.MediaCardStyle == mediaCardLargeCover
 	position := track.Elapsed(c.Now())
+	duration := track.Duration
+	if duration <= 0 && m.catalogDuration > 0 {
+		duration = m.catalogDuration
+		if track.EstimatedPosition || track.Position > 0 {
+			position = min(position, duration)
+		} else {
+			position = 0
+		}
+	}
 	if m.action == nowplaying.Seek {
 		position = m.scrub
 	} else if m.pending.Action == nowplaying.Seek {
@@ -351,8 +379,8 @@ func (s appSettings) renderMediaCard(c *ui.Context, m *islandMedia, expanded boo
 			m.scrubbing = false
 		}
 		fraction := float32(0)
-		if track.Duration > 0 {
-			fraction = float32(position / track.Duration)
+		if duration > 0 {
+			fraction = float32(position / duration)
 		}
 		waveHeight := float32(24)
 		if large {
@@ -372,8 +400,8 @@ func (s appSettings) renderMediaCard(c *ui.Context, m *islandMedia, expanded boo
 		ui.Row(c.Key("times")).FillWidth().Height(14).Shrink(0).AlignItems(ui.Center).Children(func() {
 			ui.Text(c, mediaTime(position)).FontSize(10).TextColor(muted)
 			ui.Box(c).Grow(1)
-			if track.Duration > 0 {
-				ui.Text(c, mediaTime(track.Duration)).FontSize(10).TextColor(muted)
+			if duration > 0 {
+				ui.Text(c, mediaTime(duration)).FontSize(10).TextColor(muted)
 			}
 		})
 	}

@@ -32,10 +32,12 @@ func (t Track) SameSong(other Track) bool {
 
 func (t Track) CanSeek() bool { return t.Seek && t.Duration > 0 }
 
+func (t Track) IsNetEase() bool { return strings.EqualFold(t.Source, "cloudmusic.exe") }
+
 // EstimateNetEasePosition follows playback from a song change observed in the Windows session.
 func (t *Track) EstimateNetEasePosition(previous Track) {
 	gap := t.Sampled.Sub(previous.Sampled)
-	if t.Duration > 0 || t.Position != 0 || !strings.EqualFold(t.Source, "cloudmusic.exe") || t.Source != previous.Source ||
+	if t.Duration > 0 || t.Position != 0 || !t.IsNetEase() || t.Source != previous.Source ||
 		t.Title == "" || previous.Title == "" || gap <= 0 || gap > 5*time.Second {
 		return
 	}

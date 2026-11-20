@@ -13,6 +13,24 @@ type lyricTransport func(*http.Request) (*http.Response, error)
 
 func (f lyricTransport) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
 
+func TestFindNetEaseTrackReturnsDurationForMatchingMix(t *testing.T) {
+	song := Song{Title: "夜行列车 (舞曲版)", Artist: "林海风"}
+	client := &http.Client{Transport: lyricTransport(func(r *http.Request) (*http.Response, error) {
+		if r.URL.Path != "/api/search/get/web" || r.URL.Query().Get("s") != song.Title+" "+song.Artist {
+			t.Fatalf("unexpected search request: %s", r.URL)
+		}
+		body := `{"code":200,"result":{"songs":[
+			{"id":1,"name":"夜行列车 (加长舞曲版)","duration":473125,"artists":[{"name":"林海风"}]},
+			{"id":2,"name":"夜行列车 (舞曲版)","duration":210000,"artists":[{"name":"李沐"}]},
+			{"id":3,"name":"夜行列车 (舞曲版)","duration":378461,"artists":[{"name":"林海风"},{"name":"李沐"}]}
+		]}}`
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(body))}, nil
+	})}
+	if id, duration := findNetEaseTrack(t.Context(), client, song); id != 3 || duration != 378.461 {
+		t.Errorf("got recording %d with duration %v, want recording 3 with duration 378.461", id, duration)
+	}
+}
+
 func TestLoadOnlineFallsBackToKugou(t *testing.T) {
 	song := Song{Title: "月光列车 (女声版)", Artist: "林海风", Duration: 226}
 	for _, test := range []struct {

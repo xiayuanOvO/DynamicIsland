@@ -9,7 +9,10 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 )
+
+const netEaseHost = "https://music.163.com"
 
 type creditedArtist struct {
 	Name string
@@ -23,8 +26,17 @@ func artistNames(artists []creditedArtist) []string {
 	return names
 }
 
-func searchNetEase(ctx context.Context, client *http.Client, song Song) Lines {
-	const host = "https://music.163.com"
+// NetEaseDuration looks up the catalog duration in seconds for a matching recording.
+func NetEaseDuration(ctx context.Context, song Song) float64 {
+	song.Title, song.Artist, song.Album = strings.TrimSpace(song.Title), strings.TrimSpace(song.Artist), strings.TrimSpace(song.Album)
+	if song.Title == "" || song.Artist == "" {
+		return 0
+	}
+	_, duration := findNetEaseTrack(ctx, http.DefaultClient, song)
+	return duration
+}
+
+func findNetEaseTrack(ctx context.Context, client *http.Client, song Song) (id int64, duration float64) {
 	params := url.Values{"s": {song.Title + " " + song.Artist}, "type": {"1"}, "limit": {"10"}}
 	var result struct {
 		Code   int
@@ -38,27 +50,32 @@ func searchNetEase(ctx context.Context, client *http.Client, song Song) Lines {
 			}
 		}
 	}
-	if !fetchJSON(ctx, client, host+"/api/search/get/web?"+params.Encode(), host+"/", nil, &result) || result.Code != 200 {
-		return nil
+	if !fetchJSON(ctx, client, netEaseHost+"/api/search/get/web?"+params.Encode(), netEaseHost+"/", nil, &result) || result.Code != 200 {
+		return 0, 0
 	}
 
-	var id int64
 	best := math.Inf(1)
 	for _, candidate := range result.Result.Songs {
-		if score := matchScore(song, candidate.Name, artistNames(candidate.Artists), candidate.Album.Name, candidate.Duration/1000); candidate.ID > 0 && score < best {
-			id, best = candidate.ID, score
+		seconds := candidate.Duration / 1000
+		if score := matchScore(song, candidate.Name, artistNames(candidate.Artists), candidate.Album.Name, seconds); candidate.ID > 0 && score < best {
+			id, duration, best = candidate.ID, seconds, score
 		}
 	}
+	return id, duration
+}
+
+func searchNetEase(ctx context.Context, client *http.Client, song Song) Lines {
+	id, _ := findNetEaseTrack(ctx, client, song)
 	if id == 0 {
 		return nil
 	}
 
-	params = url.Values{"id": {strconv.FormatInt(id, 10)}, "lv": {"1"}, "kv": {"1"}, "tv": {"-1"}}
+	params := url.Values{"id": {strconv.FormatInt(id, 10)}, "lv": {"1"}, "kv": {"1"}, "tv": {"-1"}}
 	var lyrics struct {
 		Code int
 		LRC  struct{ Lyric string }
 	}
-	if !fetchJSON(ctx, client, host+"/api/song/lyric?"+params.Encode(), host+"/", nil, &lyrics) || lyrics.Code != 200 {
+	if !fetchJSON(ctx, client, netEaseHost+"/api/song/lyric?"+params.Encode(), netEaseHost+"/", nil, &lyrics) || lyrics.Code != 200 {
 		return nil
 	}
 	return Parse(lyrics.LRC.Lyric)
