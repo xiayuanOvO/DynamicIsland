@@ -10,6 +10,40 @@ import (
 	"github.com/egoist/mygo/ui"
 )
 
+func (a *island) clipboardShortcuts(c *ui.Context) {
+	history := &a.clipboard
+	if c.Shortcut(0, ui.KeyEscape) {
+		if history.confirmClear {
+			history.confirmClear = false
+			history.focusSearch = true
+		} else {
+			history.open = false
+		}
+		return
+	}
+	if history.confirmClear || len(history.entries) == 0 {
+		return
+	}
+
+	// The window can receive keys before the animated search field takes focus.
+	up := c.Shortcut(0, ui.KeyUp)
+	down := c.Shortcut(0, ui.KeyDown)
+	if !up && !down {
+		return
+	}
+	selected := history.selectedIndex()
+	if up {
+		selected = max(0, selected-1)
+	} else {
+		if selected+1 >= len(history.entries)-1 {
+			a.loadMoreClipboardEntries(c.Now())
+		}
+		selected = min(len(history.entries)-1, selected+1)
+	}
+	history.selected = history.entries[selected].ID
+	history.focusSearch = true
+}
+
 func (a *island) clipboardWindowBlurred() {
 	if a.clipboard.open && a.clipboard.openedByShortcut {
 		a.setExpanded(false)

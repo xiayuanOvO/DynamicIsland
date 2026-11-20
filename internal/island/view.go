@@ -443,14 +443,7 @@ func (a *island) menu(m *ui.Menu) {
 
 func (a *island) shortcuts(c *ui.Context) {
 	if a.expanded && a.clipboard.open {
-		if c.Shortcut(0, ui.KeyEscape) {
-			if a.clipboard.confirmClear {
-				a.clipboard.confirmClear = false
-				a.clipboard.focusSearch = true
-			} else {
-				a.clipboard.open = false
-			}
-		}
+		a.clipboardShortcuts(c)
 		return
 	}
 	if a.expanded && a.todos.open {

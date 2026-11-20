@@ -9,6 +9,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -67,6 +68,10 @@ type clipboardComponent struct {
 	loadFailed         bool
 	problem            string
 	stop               func()
+}
+
+func (h *clipboardComponent) selectedIndex() int {
+	return max(0, slices.IndexFunc(h.entries, func(entry clipboardEntry) bool { return entry.ID == h.selected }))
 }
 
 func (a *island) clipboardPath() string {

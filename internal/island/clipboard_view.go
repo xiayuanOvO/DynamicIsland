@@ -3,7 +3,6 @@ package island
 import (
 	"fmt"
 	"log"
-	"slices"
 	"strings"
 	"time"
 
@@ -172,7 +171,7 @@ func (a *island) clipboardView(c *ui.Context, interactive bool, write func(trans
 			}
 			history.hoverSelection = 0
 			entries := history.entries
-			selected := max(0, slices.IndexFunc(entries, func(entry clipboardEntry) bool { return entry.ID == history.selected }))
+			selected := history.selectedIndex()
 			if len(entries) == 0 {
 				empty := "暂无剪贴板历史"
 				if strings.TrimSpace(history.query) != "" {
@@ -182,17 +181,6 @@ func (a *island) clipboardView(c *ui.Context, interactive bool, write func(trans
 					ui.Text(c, empty).FontSize(13).TextColor(muted)
 				})
 			} else {
-				if interactive && c.Shortcut(0, ui.KeyUp) {
-					selected, reveal = max(0, selected-1), true
-					search.Focus()
-				} else if interactive && c.Shortcut(0, ui.KeyDown) {
-					if selected+1 >= len(entries)-1 {
-						a.loadMoreClipboardEntries(c.Now())
-						entries = history.entries
-					}
-					selected, reveal = min(len(entries)-1, selected+1), true
-					search.Focus()
-				}
 				entry := entries[selected]
 				history.selected = entry.ID
 				if interactive && history.pendingPaste == nil && (search.Submitted() || c.Shortcut(0, ui.KeyEnter)) {

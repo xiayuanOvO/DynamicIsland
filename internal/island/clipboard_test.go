@@ -387,6 +387,43 @@ func TestClipboardBlurCollapsesShortcutOpenedPanel(t *testing.T) {
 	}
 }
 
+func TestClipboardShortcutSelectsWhilePanelExpands(t *testing.T) {
+	a := newTestClipboard(t, true, "第一条", "第二条", "第三条")
+	frame := a.targetFrame()
+	view := ui.NewTester(func(c *ui.Context) {
+		if a.expanded {
+			a.body(c, frame)
+		}
+		a.shortcuts(c)
+	}, panelWidth, clipboardPanelHeight+20)
+	a.openClipboard(true)
+	view.Frame()
+	view.Key(0, ui.KeyDown)
+	if a.clipboard.selected != a.clipboard.entries[1].ID {
+		t.Fatal("Down should select a record before the search field is visible")
+	}
+	frame = a.targetFrame()
+	frame.clipboard = 0.6
+	view.Frame()
+	view.Key(0, ui.KeyDown)
+	if a.clipboard.selected != a.clipboard.entries[2].ID {
+		t.Fatal("Down should select the next record while the search field is opening")
+	}
+	view.Key(0, ui.KeyUp)
+	if a.clipboard.selected != a.clipboard.entries[1].ID {
+		t.Fatal("the arrows should move through records during the opening animation")
+	}
+	frame = a.targetFrame()
+	view.Frame()
+	if a.clipboard.selected != a.clipboard.entries[1].ID || !view.Focused("搜索剪贴板历史") {
+		t.Fatal("the expanded panel should keep the keyboard selection and focus search")
+	}
+	view.Key(0, ui.KeyUp)
+	if a.clipboard.selected != a.clipboard.entries[0].ID {
+		t.Fatal("Up should select the previous record after the panel expands")
+	}
+}
+
 func TestClipboardSearchAndKeyboardPaste(t *testing.T) {
 	a := newTestClipboard(t, true, "Alpha 第一条中文", "无关记录", "ALPHA\n第二条中文")
 	a.openClipboard(true)
@@ -399,6 +436,7 @@ func TestClipboardSearchAndKeyboardPaste(t *testing.T) {
 				return err
 			})
 		}
+		a.shortcuts(c)
 	}, panelWidth, clipboardPanelHeight)
 	if !view.Focused("搜索剪贴板历史") {
 		t.Fatal("opening history should focus search")
@@ -481,7 +519,10 @@ func TestClipboardKeyboardSelectionScrollsIntoView(t *testing.T) {
 	}
 	a := newTestClipboard(t, true, texts...)
 	a.openClipboard(true)
-	view := ui.NewTester(func(c *ui.Context) { a.clipboardView(c, true, nil) }, panelWidth, clipboardPanelHeight)
+	view := ui.NewTester(func(c *ui.Context) {
+		a.clipboardView(c, true, nil)
+		a.shortcuts(c)
+	}, panelWidth, clipboardPanelHeight)
 	for range 11 {
 		view.Key(0, ui.KeyDown)
 	}
@@ -540,6 +581,7 @@ func TestClipboardKeyboardContinuesAcrossSearchPages(t *testing.T) {
 				return err
 			})
 		}
+		a.shortcuts(c)
 	}, panelWidth, clipboardPanelHeight)
 	view.Type("匹配")
 	if len(a.clipboard.entries) != clipboardPageSize || a.clipboard.entries[clipboardPageSize-1].Preview != "文本 49…" || !a.clipboard.hasMore {
