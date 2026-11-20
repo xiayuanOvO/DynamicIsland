@@ -44,6 +44,7 @@ func (t *Track) EstimateNetEasePosition(previous Track) {
 
 	if t.SameSong(previous) && previous.HasPosition() {
 		t.Position = previous.Elapsed(t.Sampled)
+		t.Duration = previous.Duration
 	}
 	t.EstimatedPosition = true
 	if t.Rate <= 0 {

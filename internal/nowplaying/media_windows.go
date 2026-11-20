@@ -13,6 +13,8 @@ import (
 	"syscall"
 	"time"
 	"unicode/utf16"
+
+	"golang.org/x/sys/windows"
 )
 
 //go:embed session_windows.ps1
@@ -43,6 +45,13 @@ func Read(ctx context.Context, adapter string, withArtwork bool) (Track, error) 
 		return Track{}, err
 	}
 	track.Sampled = time.Now()
+	if track.IsNetEase() && track.Title != "" && track.Artist != "" && !track.HasPosition() {
+		uptime := windows.DurationSinceBoot()
+		track.Position, track.Duration = readNetEaseTimeline(track, uptime)
+		if track.Duration > 0 && track.Rate <= 0 {
+			track.Rate = 1
+		}
+	}
 	return track, nil
 }
 
