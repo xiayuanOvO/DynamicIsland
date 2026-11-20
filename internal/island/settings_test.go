@@ -3,10 +3,44 @@ package island
 import (
 	"slices"
 	"testing"
+	"time"
 
 	"dynamicisland/internal/lyrics"
 	"github.com/egoist/mygo/ui"
 )
+
+func TestUpdateActivityUsesOneRingWithoutText(t *testing.T) {
+	a := island{updates: appUpdates{phase: updateChecking, interactive: true}}
+	view := ui.NewTester(a.updateControl, 100, 46)
+	firstFrame := slices.Clone(view.Image().Pix)
+	view.Advance(150 * time.Millisecond)
+	if slices.Equal(firstFrame, view.Image().Pix) {
+		t.Fatal("the checking ring did not rotate")
+	}
+	view.SetPreferences(ui.Preferences{ReduceMotion: true})
+	checking := slices.Clone(view.Image().Pix)
+	if labels := view.Texts(); !slices.Equal(labels, []string{"正在检查更新"}) {
+		t.Fatalf("unexpected labels while checking: %v", labels)
+	}
+
+	a.updates.phase, a.updates.percent = updateDownloading, 25
+	view.Frame()
+	if labels := view.Texts(); !slices.Equal(labels, []string{"更新下载进度"}) {
+		t.Fatalf("unexpected labels while downloading: %v", labels)
+	}
+	if !slices.Equal(checking, view.Image().Pix) {
+		t.Fatal("checking and downloading painted different quarter rings")
+	}
+
+	a.updates.percent = 100
+	view.Frame()
+	if labels := view.Texts(); !slices.Equal(labels, []string{"正在安装更新"}) {
+		t.Fatalf("unexpected labels while installing: %v", labels)
+	}
+	if slices.Equal(checking, view.Image().Pix) {
+		t.Fatal("the ring did not change at full progress")
+	}
+}
 
 func TestClearLyricCacheFromSettings(t *testing.T) {
 	cache := lyrics.NewCache(t.TempDir())

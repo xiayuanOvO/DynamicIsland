@@ -244,41 +244,42 @@ func (a *island) updateControl(c *ui.Context) {
 		u.announcement = ""
 	}
 	switch {
-	case u.phase == updateChecking && u.interactive:
-		ui.Row(c).Height(40).Gap(8).AlignItems(ui.Center).Children(func() {
-			if !c.Preferences().ReduceMotion {
-				ui.Spinner(c).Size(18, 18).Label("正在检查更新")
+	case u.phase == updateChecking && u.interactive, u.phase == updateDownloading:
+		checking := u.phase == updateChecking
+		label, value := "更新下载进度", float64(u.percent)
+		fraction := value / 100
+		if checking {
+			label, value, fraction = "正在检查更新", -1, 0.25
+		} else if u.percent == 100 {
+			label = "正在安装更新"
+		}
+		rotating := checking && !c.Preferences().ReduceMotion
+		ui.Box(c.Key("update-progress")).Size(80, 40).Shrink(0).Role(ui.RoleProgress).
+			Label(label).Range(0, 100, value).Draw(func(p *ui.Painter, r ui.Rect) {
+			const radius, stroke = 8.5, 2.5
+			cx, cy := r.X+r.W/2, r.Y+r.H/2
+			var ring ui.Path
+			p.StrokePath(ring.Circle(cx, cy, radius), stroke, theme.Border)
+			if fraction == 0 {
+				return
 			}
-			ui.Text(c, "检查中").FontSize(12).TextColor(muted)
+			start := 0.0
+			if rotating {
+				const turnMillis = 900
+				start = 2 * math.Pi * float64(p.Now().UnixMilli()%turnMillis) / turnMillis
+				p.AnimationFrameRate(30)
+			}
+			var arc ui.Path
+			arc.MoveTo(cx+radius*float32(math.Sin(start)), cy-radius*float32(math.Cos(start)))
+			steps := int(math.Ceil(48 * fraction))
+			for i := 1; i <= steps; i++ {
+				angle := start + 2*math.Pi*fraction*float64(i)/float64(steps)
+				arc.LineTo(cx+radius*float32(math.Sin(angle)), cy-radius*float32(math.Cos(angle)))
+			}
+			p.StrokePath(&arc, stroke, accent)
 		})
 	case u.phase == updateOffering:
 		ui.Text(c, "有新版本").FontSize(12).TextColor(ink)
-	case u.phase == updateDownloading:
-		percent, fraction := u.percent, float64(u.percent)/100
-		label := fmt.Sprintf("%d%%", percent)
-		if percent == 100 {
-			label = "正在安装"
-		}
-		ui.Row(c).Height(40).Gap(8).AlignItems(ui.Center).Children(func() {
-			ui.Box(c.Key("update-progress")).Size(22, 22).Role(ui.RoleProgress).
-				Label("更新下载进度").Range(0, 100, float64(percent)).Draw(func(p *ui.Painter, r ui.Rect) {
-				const radius, stroke = 8.5, 2.5
-				cx, cy := r.X+r.W/2, r.Y+r.H/2
-				var ring ui.Path
-				p.StrokePath(ring.Circle(cx, cy, radius), stroke, theme.Border)
-				if fraction > 0 {
-					var arc ui.Path
-					arc.MoveTo(cx, cy-radius)
-					steps := int(math.Ceil(48 * fraction))
-					for i := 1; i <= steps; i++ {
-						angle := 2 * math.Pi * fraction * float64(i) / float64(steps)
-						arc.LineTo(cx+radius*float32(math.Sin(angle)), cy-radius*float32(math.Cos(angle)))
-					}
-					p.StrokePath(&arc, stroke, accent)
-				}
-			})
-			ui.Text(c, label).FontSize(12).TextColor(ink)
-		})
 	case u.phase == updateLatest:
 		ui.Text(c, "已是最新版本").FontSize(12).TextColor(ink)
 	case u.phase == updateReady:
