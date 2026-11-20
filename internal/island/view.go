@@ -241,12 +241,16 @@ func (a *island) body(c *ui.Context, frame islandFrame) {
 			tools.MinHeight(clipboardHeight)
 		}
 		tools.Children(func() {
+			// Counter the shrinking media slot for the card that is only fading out.
+			todoFade := max(0, clipboard-todo)
+			clipboardFade := max(0, todo-clipboard)
 			if todo > 0 || clipboard < panelCardPreviewEnd {
-				a.todoCard(c, todo, 1-animationPhase(clipboard, todo, todo+panelCardPreviewEnd), frame)
+				a.todoCard(c, todo, 1-animationPhase(todoFade, 0, panelCardPreviewEnd), frame).
+					Translate(0, float32(mediaHeight)*todoFade)
 			}
 			if showClipboard {
-				a.clipboardCard(c, clipboard, clipboardHeight, 1-animationPhase(todo, clipboard, clipboard+panelCardPreviewEnd),
-					a.expanded && opacity >= 0.80)
+				a.clipboardCard(c, clipboard, clipboardHeight, 1-animationPhase(clipboardFade, 0, panelCardPreviewEnd),
+					a.expanded && opacity >= 0.80).Translate(0, float32(mediaHeight)*clipboardFade)
 			}
 		})
 		if overviewOpacity > 0 && (len(a.files.Items) > 0 || a.status != "") {

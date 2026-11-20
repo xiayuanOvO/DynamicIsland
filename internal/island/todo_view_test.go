@@ -114,7 +114,7 @@ func TestClipboardOpeningFadesOverviewBeforeRemovingIt(t *testing.T) {
 			a.body(c, a.shownFrame)
 		})
 	}, panelWidth, int(overview.height))
-	overviewLabels := []string{"示例曲目", "示例待办", "示例文件 6.txt", "拖出全部", "示例状态"}
+	overviewLabels := []string{"示例曲目", "待办卡片", "示例待办", "示例文件 6.txt", "拖出全部", "示例状态"}
 	initial := make([]ui.Rect, len(overviewLabels))
 	for i, label := range overviewLabels {
 		var ok bool
@@ -133,8 +133,11 @@ func TestClipboardOpeningFadesOverviewBeforeRemovingIt(t *testing.T) {
 		fading := frame.clipboard < panelCardPreviewEnd
 		for i, label := range overviewLabels {
 			box, ok := view.Find(label)
-			if fading && (!ok || box.W != initial[i].W || box.H != initial[i].H) {
+			if fading && (!ok || math.Abs(float64(box.W-initial[i].W)) > 0.5 || math.Abs(float64(box.H-initial[i].H)) > 0.5) {
 				t.Fatalf("%v: %q should stay whole while fading; changed from %+v to %+v", elapsed, label, initial[i], box)
+			}
+			if fading && label == "待办卡片" && math.Abs(float64(box.Y-initial[i].Y)) > 0.5 {
+				t.Fatalf("%v: the fading todo card moved from y=%.1f to y=%.1f", elapsed, initial[i].Y, box.Y)
 			}
 			if !fading && ok {
 				t.Fatalf("%v: %q should be gone when the history appears", elapsed, label)

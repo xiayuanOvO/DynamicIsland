@@ -78,7 +78,7 @@ func (t *todoComponent) previewHeight() int {
 	return max(todoPreviewMinHeight, todoPreviewHeader+rows*todoPreviewRowHeight+2*todoPreviewPadding)
 }
 
-func (a *island) todoCard(c *ui.Context, progress, opacity float32, frame islandFrame) {
+func (a *island) todoCard(c *ui.Context, progress, opacity float32, frame islandFrame) ui.Element {
 	previewHeight := a.todos.previewHeight()
 	detailHeight := float32(a.todos.detailHeight())
 	if progress == 1 && frame.open == 1 {
@@ -97,6 +97,7 @@ func (a *island) todoCard(c *ui.Context, progress, opacity float32, frame island
 				IgnoreInput(!a.todos.open || progress < panelCardInputStart).Children(func() { a.todoView(c, frame) })
 		}
 	})
+	return surface
 }
 
 func (a *island) todoPreview(c *ui.Context, height, opacity float32) {

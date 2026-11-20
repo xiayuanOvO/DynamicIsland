@@ -86,7 +86,7 @@ func (a *island) clipboardSettings(c *ui.Context) {
 	}
 }
 
-func (a *island) clipboardCard(c *ui.Context, progress, height, opacity float32, interactive bool) {
+func (a *island) clipboardCard(c *ui.Context, progress, height, opacity float32, interactive bool) ui.Element {
 	surface := panelCardSurface(c.Key("clipboard-surface"), progress, panelBodyWidth/2-8, height).
 		Absolute().Top(0).Right(0).Label("剪贴板卡片").Opacity(opacity).
 		IgnoreInput(a.todos.open || opacity < panelCardInputStart)
@@ -116,6 +116,7 @@ func (a *island) clipboardCard(c *ui.Context, progress, height, opacity float32,
 				IgnoreInput(!interactive).Children(func() { a.clipboardView(c, interactive, writeClipboardEntry) })
 		}
 	})
+	return surface
 }
 
 func (a *island) clipboardView(c *ui.Context, interactive bool, write func(transfer.Data) error) {
