@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"dynamicisland/internal/nowplaying"
 	"dynamicisland/internal/shelf"
 	"github.com/egoist/mygo/ui"
 )
@@ -89,5 +90,51 @@ func TestPanelCardsFollowWindowHeight(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestPanelOpeningKeepsMediaCardGeometry(t *testing.T) {
+	for _, style := range []int{mediaCardDefault, mediaCardLargeCover} {
+		a := newTestClipboard(t, true, "示例记录")
+		a.settings.MediaCardStyle = style
+		a.media.track = nowplaying.Track{Title: "示例曲目", Artist: "示例艺人", Duration: 190, Previous: true, Toggle: true}
+		a.expanded = true
+		a.shownFrame = a.targetFrame()
+		now := time.Now()
+		a.animation = islandAnimation{from: a.shownFrame, to: a.shownFrame, started: now}
+		view := ui.NewTester(func(c *ui.Context) {
+			ui.Column(c).Fill().Clip().Children(func() {
+				ui.Box(c).Height(panelHeaderHeight).Shrink(0)
+				a.body(c, a.shownFrame)
+			})
+		}, panelWidth, int(a.shownFrame.height))
+		labels := []string{"示例曲目", "示例艺人", "上一首", "3:10"}
+		bounds := make([]ui.Rect, len(labels))
+		for i, label := range labels {
+			box, ok := view.Find(label)
+			if !ok || box.H <= 0 {
+				t.Fatalf("style %d: could not find %q before opening", style, label)
+			}
+			bounds[i] = box
+		}
+		if err := view.Click("查看剪贴板历史"); err != nil {
+			t.Fatal(err)
+		}
+		for _, elapsed := range []time.Duration{35 * time.Millisecond, 60 * time.Millisecond, 75 * time.Millisecond} {
+			frame, _ := a.animation.sample(a.animation.started.Add(elapsed))
+			a.shownFrame = frame.aligned()
+			view.SetSize(panelWidth, int(a.shownFrame.height))
+			for i, label := range labels {
+				if box, ok := view.Find(label); !ok || box != bounds[i] {
+					t.Fatalf("style %d at %v: %q changed from %+v to %+v", style, elapsed, label, bounds[i], box)
+				}
+			}
+		}
+		frame, _ := a.animation.sample(a.animation.started.Add(100 * time.Millisecond))
+		a.shownFrame = frame.aligned()
+		view.SetSize(panelWidth, int(a.shownFrame.height))
+		if !view.HasText("示例记录") || view.HasText("示例曲目") {
+			t.Fatalf("style %d: the music card should finish fading out as the history appears", style)
+		}
 	}
 }

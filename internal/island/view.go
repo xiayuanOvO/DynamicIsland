@@ -215,14 +215,20 @@ func (a *island) body(c *ui.Context, frame islandFrame) {
 	if !a.clipboard.Recording {
 		clipboard = 0
 	}
-	overview := 1 - max(todo, clipboard)
+	progress := max(todo, clipboard)
+	overview := 1 - progress
 	body := ui.Column(c.Key("body")).Width(panelWidth-2).Shrink(0).Padding(0, panelBodyPadding, 20).
 		Opacity(opacity).Translate(0, 10*(1-opacity)).IgnoreInput(!a.expanded || opacity < 0.80)
 	body.Children(func() {
 		if overview > 0 && a.media.track.Title != "" {
-			ui.Column(c.Key("overview-media")).FillWidth().Shrink(0).
-				Height(float32(a.settings.cardHeight()+14) * overview).Clip().
-				Opacity(overview).IgnoreInput(a.todos.open || a.clipboard.open).Children(func() { a.mediaCard(c) })
+			// Only the space reserved for the music card shrinks. Keep its
+			// contents whole as they fade out above the expanding panel.
+			media := ui.Column(c.Key("overview-media")).FillWidth().Shrink(0).
+				Height(float32(a.settings.cardHeight()+14) * overview)
+			if progress < panelCardPreviewEnd {
+				media.ZIndex(1).Opacity(1 - animationPhase(progress, 0, panelCardPreviewEnd)).
+					IgnoreInput(progress > 0 || a.todos.open || a.clipboard.open).Children(func() { a.mediaCard(c) })
+			}
 		}
 		tools := ui.Box(c.Key("tools")).FillWidth().Shrink(0)
 		showClipboard := a.clipboard.Recording && (clipboard > 0 || todo < panelCardPreviewEnd)
