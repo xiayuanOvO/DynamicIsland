@@ -34,26 +34,21 @@ func (t Track) CanSeek() bool { return t.Seek && t.Duration > 0 }
 
 func (t Track) IsNetEase() bool { return strings.EqualFold(t.Source, "cloudmusic.exe") }
 
-// EstimateNetEasePosition follows playback from a song change observed in the Windows session.
+func (t Track) HasPosition() bool { return t.Duration > 0 || t.Position > 0 || t.EstimatedPosition }
+
+// EstimateNetEasePosition keeps a clock for sessions that only report the song and play state.
 func (t *Track) EstimateNetEasePosition(previous Track) {
-	gap := t.Sampled.Sub(previous.Sampled)
-	if t.Duration > 0 || t.Position != 0 || !t.IsNetEase() || t.Source != previous.Source ||
-		t.Title == "" || previous.Title == "" || gap <= 0 || gap > 5*time.Second {
+	if !t.IsNetEase() || t.Title == "" || t.HasPosition() {
 		return
 	}
 
-	// A change can have happened anywhere between the two samples.
-	midpoint := previous.Sampled.Add(gap / 2)
-	if t.SameSong(previous) {
-		if !previous.EstimatedPosition {
-			return
-		}
-		t.Position = previous.Elapsed(midpoint)
-	}
-	if t.Playing {
-		t.Position += t.Sampled.Sub(midpoint).Seconds() * t.Rate
+	if t.SameSong(previous) && previous.HasPosition() {
+		t.Position = previous.Elapsed(t.Sampled)
 	}
 	t.EstimatedPosition = true
+	if t.Rate <= 0 {
+		t.Rate = 1
+	}
 }
 
 func (t Track) Elapsed(now time.Time) float64 {

@@ -20,7 +20,7 @@ func TestMediaCardShowsProgressWithCatalogDuration(t *testing.T) {
 		t.Run(style.name, func(t *testing.T) {
 			settings := appSettings{MediaCardStyle: style.kind}
 			media := islandMedia{
-				track:           nowplaying.Track{Title: "示例曲目", Rate: 1, Playing: true, Seek: true},
+				track:           nowplaying.Track{Source: "cloudmusic.exe", Title: "示例曲目", Rate: 1, Playing: true, Seek: true},
 				catalogDuration: 120,
 			}
 			view := ui.NewTester(func(c *ui.Context) {

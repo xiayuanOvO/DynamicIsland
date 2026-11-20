@@ -303,15 +303,14 @@ func (a *island) mediaCardPreview(c *ui.Context) {
 func (s appSettings) renderMediaCard(c *ui.Context, m *islandMedia, expanded bool, control func(nowplaying.Action, float64)) {
 	track := m.track
 	large := s.MediaCardStyle == mediaCardLargeCover
-	position := track.Elapsed(c.Now())
+	var position float64
+	if !track.IsNetEase() || track.HasPosition() {
+		position = track.Elapsed(c.Now())
+	}
 	duration := track.Duration
 	if duration <= 0 && m.catalogDuration > 0 {
 		duration = m.catalogDuration
-		if track.EstimatedPosition || track.Position > 0 {
-			position = min(position, duration)
-		} else {
-			position = 0
-		}
+		position = min(position, duration)
 	}
 	if m.action == nowplaying.Seek {
 		position = m.scrub

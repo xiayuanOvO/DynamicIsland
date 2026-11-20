@@ -48,31 +48,30 @@ Read-Artwork ($referenceType::CreateFromFile($file))
 
 func TestEstimateNetEasePosition(t *testing.T) {
 	time0 := time.Unix(1000, 0)
-	previous := Track{Source: "cloudmusic.exe", Title: "灯塔", Playing: true, Rate: 1, Sampled: time0}
+	var previous Track
 	for _, sample := range []struct {
 		name, title string
 		second      int
 		playing     bool
-		estimated   bool
 		position    float64
 	}{
-		{"already playing", "灯塔", 2, true, false, 0},
-		{"song change", "潮汐", 4, true, true, 1},
-		{"continues playing", "潮汐", 6, true, true, 3},
-		{"pause", "潮汐", 8, false, true, 4},
-		{"stays paused", "潮汐", 10, false, true, 4},
-		{"resume", "潮汐", 12, true, true, 5},
-		{"gap in samples", "潮汐", 30, true, false, 0},
-		{"next observed song", "远山", 32, true, true, 1},
+		{"already playing on startup", "灯塔", 0, true, 0},
+		{"first zero position refresh", "灯塔", 2, true, 2},
+		{"second zero position refresh", "灯塔", 4, true, 4},
+		{"pause", "灯塔", 6, false, 6},
+		{"stays paused", "灯塔", 8, false, 6},
+		{"resume", "灯塔", 10, true, 6},
+		{"gap in samples", "灯塔", 30, true, 26},
+		{"next observed song", "远山", 32, true, 0},
 	} {
 		t.Run(sample.name, func(t *testing.T) {
 			track := Track{
-				Source: previous.Source, Title: sample.title, Playing: sample.playing,
-				Rate: 1, Sampled: time0.Add(time.Duration(sample.second) * time.Second),
+				Source: "cloudmusic.exe", Title: sample.title, Playing: sample.playing,
+				Sampled: time0.Add(time.Duration(sample.second) * time.Second),
 			}
 			track.EstimateNetEasePosition(previous)
-			if track.EstimatedPosition != sample.estimated || track.Position != sample.position {
-				t.Errorf("position = %v (estimated: %v), want %v (estimated: %v)", track.Position, track.EstimatedPosition, sample.position, sample.estimated)
+			if !track.EstimatedPosition || !track.HasPosition() || track.Position != sample.position {
+				t.Errorf("position = %v (estimated: %v), want estimated position %v", track.Position, track.EstimatedPosition, sample.position)
 			}
 			previous = track
 		})

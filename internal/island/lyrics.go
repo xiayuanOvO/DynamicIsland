@@ -54,7 +54,7 @@ func (a *island) updateLyrics(c *ui.Context, frame islandFrame, width, height in
 	var anchor mygo.Rectangle
 	var side dockSide
 	var lineEndsAt time.Time
-	if !a.settings.HideLyrics && a.win.IsVisible() && track.Playing && track.Title != "" && (track.Duration > 0 || track.EstimatedPosition) {
+	if !a.settings.HideLyrics && a.win.IsVisible() && track.Playing && track.Title != "" && track.HasPosition() {
 		song = lyrics.Song{
 			Title: strings.TrimSpace(track.Title), Artist: strings.TrimSpace(track.Artist),
 			Album: strings.TrimSpace(track.Album), Duration: math.Round(track.Duration),
