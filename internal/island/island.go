@@ -125,7 +125,7 @@ func (a *island) start() {
 		a.message("快捷键被占用", true)
 	}
 	a.createTray()
-	a.syncClipboardWatch()
+	a.syncClipboardRecording()
 	a.watchTodoReminders()
 	a.watchFullscreen()
 }
@@ -136,7 +136,7 @@ func (a *island) trayMenu() *mygo.Menu {
 		{Label: "待办事项…", Click: func(*mygo.MenuItem, *mygo.Window) { a.openTodos() }},
 	}
 	if a.clipboard.Recording {
-		items = append(items, &mygo.MenuItem{ID: "clipboard-history", Label: "剪贴板历史…", Click: func(*mygo.MenuItem, *mygo.Window) { a.openClipboard() }})
+		items = append(items, &mygo.MenuItem{ID: "clipboard-history", Label: "剪贴板历史…", Click: func(*mygo.MenuItem, *mygo.Window) { a.openClipboard(false) }})
 	}
 	return mygo.NewMenu(append(items, []*mygo.MenuItem{
 		{Label: "添加文件…", Click: func(*mygo.MenuItem, *mygo.Window) { a.show(); a.choose(false) }},

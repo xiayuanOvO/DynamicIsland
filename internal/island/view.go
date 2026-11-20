@@ -54,7 +54,7 @@ func (a *island) view(c *ui.Context) {
 	}
 	a.finishMove(c)
 	if !a.moving {
-		clipboardFocused := a.clipboard.open && c.WindowActive() && root.FocusWithin()
+		clipboardFocused := a.clipboard.open && c.WindowActive() && (a.clipboard.openedByShortcut || root.FocusWithin())
 		a.hover(c, hovered || over || clipboardFocused)
 	}
 

@@ -1,24 +1,26 @@
 package island
 
 import (
+	"fmt"
 	"log"
 	"slices"
 	"strings"
 
+	"dynamicisland/internal/shelf"
 	"github.com/egoist/mygo"
-	"github.com/egoist/mygo/transfer"
 	"github.com/egoist/mygo/ui"
 )
 
 const clipboardPanelHeight = 280
 
-func (a *island) openClipboard() {
+func (a *island) openClipboard(fromShortcut bool) {
 	if !a.clipboard.Recording {
 		return
 	}
 	a.todos.open = false
 	a.todos.draft, a.todos.leaving = nil, nil
 	a.clipboard.open = true
+	a.clipboard.openedByShortcut = fromShortcut
 	a.showPanel()
 }
 
@@ -41,8 +43,12 @@ func (a *island) clipboardSettings(c *ui.Context) {
 		var label ui.Element
 		ui.Column(c).Grow(1).MinWidth(0).Gap(1).Children(func() {
 			label = ui.Text(c, "记录剪贴板").FontSize(13).TextColor(ink)
-			if history.problem != "" {
-				ui.Text(c, history.problem).FontSize(11).TextColor(ui.Hex("#a65b50"))
+			problem := history.problem
+			if problem == "" && history.shortcutUnavailable {
+				problem = "剪贴板快捷键不可用"
+			}
+			if problem != "" {
+				ui.Text(c, problem).FontSize(11).TextColor(ui.Hex("#a65b50"))
 			}
 		})
 		recording := history.Recording
@@ -52,7 +58,7 @@ func (a *island) clipboardSettings(c *ui.Context) {
 			if !a.saveClipboard(next) {
 				return
 			}
-			a.syncClipboardWatch()
+			a.syncClipboardRecording()
 			if !recording {
 				history.open, history.confirmClear = false, false
 			}
@@ -83,7 +89,7 @@ func (a *island) clipboardCard(c *ui.Context, opacity float32) {
 		})
 	})
 	if card.Clicked() {
-		a.openClipboard()
+		a.openClipboard(false)
 	}
 }
 
@@ -143,19 +149,53 @@ func (a *island) clipboardRow(c *ui.Context, index int, entry clipboardEntry) {
 		}
 		count++
 	}
-	ui.Row(c.Key(entry.Text)).FillWidth().Height(44).Shrink(0).Gap(4).AlignItems(ui.Center).Children(func() {
-		copy := ui.ButtonBase(c.Key("copy")).Row().Grow(1).MinWidth(0).Height(44).Padding(0, 8).
-			Gap(8).AlignItems(ui.Center).Radius(8).TextColor(muted).Cursor(ui.CursorPointer).Label("复制 " + text)
+	dimensions := ""
+	rowHeight := float32(44)
+	if entry.Image != nil {
+		rowHeight = 56
+		if text == "" {
+			text = "图片"
+		}
+		dimensions = fmt.Sprintf("%d × %d", entry.Image.Width, entry.Image.Height)
+	}
+	ui.Row(c.Key(entry.key())).FillWidth().Height(rowHeight).Shrink(0).Gap(4).AlignItems(ui.Center).Children(func() {
+		label := text
+		if dimensions != "" {
+			label += " " + dimensions
+		}
+		copy := ui.ButtonBase(c.Key("copy")).Row().Grow(1).MinWidth(0).Height(rowHeight).Padding(0, 8).
+			Gap(8).AlignItems(ui.Center).Radius(8).TextColor(muted).Cursor(ui.CursorPointer).Label("复制 " + label)
 		if copy.Hovered() {
 			copy.Background(white.Alpha(0.45))
 		}
 		copy.Children(func() {
-			ui.Icon(c, copyIcon).Size(14, 14).Shrink(0)
-			ui.Text(c, text).Grow(1).MinWidth(0).SingleLine().Ellipsis("…").FontSize(13).TextColor(ink)
+			if entry.Image == nil {
+				ui.Icon(c, copyIcon).Size(14, 14).Shrink(0)
+			} else {
+				var visual *filePreview
+				if copy.InViewMargin(rowHeight) {
+					visual = a.filePreview(shelf.Item{Path: a.clipboardImagePath(entry.Image.ID)})
+				}
+				ui.Box(c.Key("thumbnail")).Size(52, 40).Shrink(0).Radius(5).Clip().Center().Background(white.Alpha(0.5)).Children(func() {
+					if visual != nil && visual.source != nil {
+						ui.Image(c, visual.source).Fill().Fit(ui.Contain)
+					} else {
+						ui.Icon(c, imageIcon).Size(16, 16).TextColor(muted)
+					}
+				})
+			}
+			ui.Column(c).Grow(1).MinWidth(0).Gap(1).Children(func() {
+				ui.Text(c, text).MinWidth(0).SingleLine().Ellipsis("…").FontSize(13).TextColor(ink)
+				if dimensions != "" {
+					ui.Text(c, dimensions).FontSize(10).TextColor(muted)
+				}
+			})
 			ui.Text(c, entry.CopiedAt.Local().Format("01-02 15:04")).Shrink(0).FontSize(10).TextColor(muted)
 		})
 		if copy.Clicked() {
-			if err := mygo.Clipboard.Write(transfer.TextData(entry.Text)); err != nil {
+			if data, err := a.clipboardData(entry); err != nil {
+				a.clipboard.problem = "剪贴板图片读取失败"
+			} else if err := mygo.Clipboard.Write(data); err != nil {
 				a.clipboard.problem = "复制失败，可重试"
 			} else {
 				if err := mygo.Clipboard.Flush(); err != nil {
@@ -165,7 +205,7 @@ func (a *island) clipboardRow(c *ui.Context, index int, entry clipboardEntry) {
 				c.Toast("已复制")
 			}
 		}
-		if iconButton(c.Key("remove"), trashIcon, "删除此条记录").Size(40, 40).Label("删除记录 " + text).Clicked() {
+		if iconButton(c.Key("remove"), trashIcon, "删除此条记录").Size(40, 40).Label("删除记录 " + label).Clicked() {
 			next := a.clipboard.clipboardState
 			next.Entries = slices.Delete(slices.Clone(next.Entries), index, index+1)
 			if a.saveClipboard(next) {

@@ -105,6 +105,10 @@ func saveJSON(path string, value any) error {
 	if err != nil {
 		return err
 	}
+	return saveStateFile(path, data)
+}
+
+func saveStateFile(path string, data []byte) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
 		return err
 	}

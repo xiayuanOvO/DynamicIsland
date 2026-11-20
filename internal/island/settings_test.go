@@ -55,7 +55,7 @@ func TestClipboardSettingTogglesHistoryEntrypoints(t *testing.T) {
 				t.Fatal("history should open with the saved entries and keep the switch in settings")
 			}
 		} else {
-			a.openClipboard()
+			a.openClipboard(true)
 			if a.clipboard.open {
 				t.Fatal("history opened while recording was disabled")
 			}
