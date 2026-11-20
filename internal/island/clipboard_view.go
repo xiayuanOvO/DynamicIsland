@@ -238,12 +238,17 @@ func (a *island) clipboardRow(c *ui.Context, index int, entry clipboardEntry, se
 		dimensions = fmt.Sprintf("%d × %d", entry.Image.Width, entry.Image.Height)
 	}
 	var copy ui.Element
-	row := ui.Row(c.Key(entry.key())).FillWidth().Height(rowHeight).Shrink(0).Gap(2).AlignItems(ui.Center).Radius(10)
-	hovered := row.Hovered()
+	key := entry.key()
+	row := ui.Row(c.Key(key)).FillWidth().Height(rowHeight).Shrink(0).Gap(2).AlignItems(ui.Center).Radius(10).
+		HandleInput(func(event ui.InputEvent) bool {
+			if event.Kind != ui.InputPointerMove || event.Button != -1 || a.clipboard.selected == key {
+				return false
+			}
+			a.clipboard.selected = key
+			return true
+		})
 	if selected {
 		row.Background(accent.Alpha(0.15))
-	} else if hovered {
-		row.Background(white.Alpha(0.32))
 	}
 	row.Children(func() {
 		if selected {

@@ -325,7 +325,23 @@ func TestClipboardSearchAndKeyboardPaste(t *testing.T) {
 	if a.clipboard.selected != a.clipboard.Entries[0].key() {
 		t.Fatal("Up should return to the previous filtered entry")
 	}
-	view.Key(0, ui.KeyDown)
+	second, found := view.Find("复制 ALPHA…")
+	if !found {
+		t.Fatal("the second filtered entry should be visible")
+	}
+	view.Move(second.X+20, second.Y+second.H/2)
+	if a.clipboard.selected != a.clipboard.Entries[2].key() {
+		t.Fatal("moving the mouse should select the entry under it")
+	}
+	view.Key(0, ui.KeyUp)
+	view.Frame()
+	if a.clipboard.selected != a.clipboard.Entries[0].key() {
+		t.Fatal("a stationary mouse should keep the keyboard selection intact")
+	}
+	view.Move(second.X+21, second.Y+second.H/2)
+	if a.clipboard.selected != a.clipboard.Entries[2].key() {
+		t.Fatal("moving the mouse again should restore mouse selection")
+	}
 	view.KeyDown(ui.KeyEnter)
 	view.KeyRepeat(0, ui.KeyEnter)
 	if len(copied) != 0 || !a.clipboard.open {
