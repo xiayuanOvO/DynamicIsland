@@ -91,7 +91,7 @@ func (a *island) start() {
 		BackgroundColor: "#00000000", Vibrancy: mygo.VibrancyGlass,
 	}
 	if runtime.GOOS == "windows" {
-		// Windows clips its backdrop brush to the island inside the HWND.
+		// Apply Acrylic after the popup frame is configured.
 		options.Vibrancy = mygo.VibrancyNone
 		options.DisableShadow = true
 		options.Hidden = true

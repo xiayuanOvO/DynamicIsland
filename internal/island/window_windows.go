@@ -51,8 +51,7 @@ func configureFloatingWindow(win *mygo.Window) {
 		setWindowPos.Call(hwnd, 0, 0, 0, 0, 0, swpFrameChanged|swpNoSize|swpNoMove|swpNoZOrder|swpNoActivate)
 	}
 
-	// SetVibrancy explicitly clears both the extended frame and the
-	// whole-window backdrop. The island installs its clipped brush separately.
+	// Clear the extended frame and backdrop for transparent overlays.
 	win.SetVibrancy(mygo.VibrancyNone)
 	const dwmwaNCRenderingPolicy, dwmwaWindowCornerPreference, dwmwaBorderColor = 2, 33, 34
 	disabled := int32(1) // DWMNCRP_DISABLED
@@ -90,7 +89,7 @@ func pointerOverWindow(win *mygo.Window, fallback bool) bool {
 }
 
 func configureWindowGlass(win *mygo.Window, radius int) {
-	resizeBackdrop := startWindowBackdrop(win)
+	win.SetVibrancy(mygo.VibrancyAcrylic)
 	var lastWindowShape [3]int32
 	update := func() {
 		hwnd := win.NativeHandle()
@@ -110,14 +109,8 @@ func configureWindowGlass(win *mygo.Window, radius int) {
 		if shape == lastWindowShape {
 			return
 		}
-		if resizeBackdrop != nil {
-			resizeBackdrop(float32(shape[0]), float32(shape[1]), float32(radius)*float32(dpi)/96)
-		}
-		// Leave two device pixels around the antialiased curve. The GDI
-		// region handles corner hit testing, not the visible silhouette.
-		const outset = 2
-		region, _, _ := createRoundRectRgn.Call(^uintptr(outset-1), ^uintptr(outset-1),
-			uintptr(rect.right-rect.left+1+outset), uintptr(rect.bottom-rect.top+1+outset), diameter+2*outset, diameter+2*outset)
+		// The window region clips both the DWM backdrop and the hit area.
+		region, _, _ := createRoundRectRgn.Call(0, 0, uintptr(shape[0]+1), uintptr(shape[1]+1), diameter, diameter)
 		if region == 0 {
 			return
 		}

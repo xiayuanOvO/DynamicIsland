@@ -35,16 +35,22 @@ func islandTheme() *ui.Theme {
 }
 
 func glassSurface(element ui.Element, vibrant, over, movingGlass bool) {
-	if vibrant {
+	switch {
+	case runtime.GOOS == "windows" && vibrant:
+		element.Gradient(white.Alpha(0.32), white.Alpha(0.14), 155)
+	case vibrant:
 		// The system blurs the desktop. A light wash preserves its colors.
 		element.Gradient(white.Alpha(0.20), white.Alpha(0.07), 155)
-	} else if runtime.GOOS == "windows" {
-		element.Gradient(ui.Hex("#eceef1").Alpha(0.84), ui.Hex("#bfc4cb").Alpha(0.78), 155)
-	} else {
+	case runtime.GOOS == "windows":
+		element.Gradient(ui.Hex("#eceef1"), ui.Hex("#bfc4cb"), 155)
+	default:
 		element.Gradient(ui.Hex("#f2f3f5"), ui.Hex("#e7e9ed"), 155)
 	}
 	// Keep the same content inset when the native glass draws the rim.
-	element.Draw(paintFrost).BorderWidth(0.75)
+	element.BorderWidth(0.75)
+	if runtime.GOOS != "windows" || !vibrant {
+		element.Draw(paintFrost)
+	}
 	if movingGlass && !over {
 		// The native glass rim follows the mask. A rim in the last Metal
 		// frame can sit a refresh behind it and look like a second outline.
