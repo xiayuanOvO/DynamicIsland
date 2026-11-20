@@ -269,19 +269,19 @@ func (a *island) applyWindowFrame(frame islandFrame, animated bool) {
 	usingCanvas := false
 	if animated && frame != a.animation.to && a.dock.side == dockNone {
 		starting := a.canvas.restore == nil
-		if starting && a.animation.from.open != a.animation.to.open {
+		if starting && (a.animation.from.open != a.animation.to.open || a.animation.from.todo != a.animation.to.todo) {
 			a.canvas = startTransitionCanvas(a.win)
-			if a.canvas.restore != nil && a.animation.to.open == 1 {
-				// Grow the backing surface once, while the mask still shows
-				// only the part of the panel reached by the animation.
-				target := a.windowBounds(int(a.animation.to.width), int(a.animation.to.height))
-				if a.canvas.bounds != target && previous.open == 0 {
-					// Paint the compact capsule at the new backing size before
-					// the visible opening starts.
+			if a.canvas.restore != nil {
+				target := a.windowBounds(
+					max(a.canvas.bounds.Width, int(a.animation.to.width)),
+					max(a.canvas.bounds.Height, int(a.animation.to.height)),
+				)
+				if a.canvas.bounds != target {
+					// Paint the current island at the larger backing size
+					// before starting the visible transition.
 					a.canvas.warming = true
 					a.shownFrame = previous
 					bounds = a.windowBounds(int(previous.width), int(previous.height))
-					nativeBounds = bounds
 					a.animation.started = a.animation.lastTick
 				}
 				a.canvas.bounds = target

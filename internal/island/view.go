@@ -195,11 +195,13 @@ func (a *island) body(c *ui.Context, frame islandFrame) {
 	opacity := frame.content
 	body := ui.Column(c.Key("body")).Width(panelWidth-2).Shrink(0).Padding(0, 22, 20).
 		Opacity(opacity).Translate(0, 10*(1-opacity)).IgnoreInput(!a.expanded || opacity < 0.80)
-	var target float32
-	if a.todos.open {
-		target = 1
+	progress := frame.todo
+	if c.Preferences().ReduceMotion {
+		progress = 0
+		if a.todos.open {
+			progress = 1
+		}
 	}
-	progress := body.Animate("todo-expansion", target, islandResizeDuration)
 	body.Children(func() {
 		if progress < 1 && a.media.track.Title != "" {
 			ui.Column(c.Key("overview-media")).FillWidth().Shrink(0).

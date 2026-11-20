@@ -13,7 +13,7 @@ const (
 )
 
 type islandFrame struct {
-	width, height, open, content, editor, schedule float32
+	width, height, open, content, todo, editor, schedule float32
 }
 
 func (f islandFrame) aligned() islandFrame {
@@ -44,7 +44,7 @@ func (c transitionCanvas) contentRect(r mygo.Rectangle) mygo.Rectangle {
 	return r
 }
 
-type islandVelocity struct{ width, height, open, editor, schedule float32 }
+type islandVelocity struct{ width, height, open, todo, editor, schedule float32 }
 
 type islandAnimation struct {
 	from, to          islandFrame
@@ -99,6 +99,9 @@ func (a *island) targetFrame() islandFrame {
 	if a.expanded {
 		height, _ := a.panelHeights()
 		frame := islandFrame{width: panelWidth, height: float32(height), open: 1, content: 1}
+		if a.todos.open {
+			frame.todo = 1
+		}
 		if a.todos.draft != nil {
 			frame.editor = 1
 		}
@@ -166,6 +169,7 @@ func (m *islandAnimation) sample(now time.Time) (islandFrame, islandVelocity) {
 	seconds := elapsed.Seconds()
 	width, vx := springSample(m.from.width, m.velocity.width, m.to.width, seconds, frequency)
 	height, vy := springSample(m.from.height, m.velocity.height, m.to.height, seconds, frequency)
+	todo, vt := springSample(m.from.todo, m.velocity.todo, m.to.todo, seconds, frequency)
 	editor, ve := springSample(m.from.editor, m.velocity.editor, m.to.editor, seconds, frequency)
 	schedule, vs := springSample(m.from.schedule, m.velocity.schedule, m.to.schedule, seconds, frequency)
 	open, vo := springSample(m.from.open, m.velocity.open, m.to.open, seconds, frequency)
@@ -175,9 +179,10 @@ func (m *islandAnimation) sample(now time.Time) (islandFrame, islandVelocity) {
 		height:   max(compactHeight-4, height),
 		open:     min(1, max(0, open)),
 		content:  content,
+		todo:     min(1, max(0, todo)),
 		editor:   editor,
 		schedule: schedule,
-	}, islandVelocity{width: vx, height: vy, open: vo, editor: ve, schedule: vs}
+	}, islandVelocity{width: vx, height: vy, open: vo, todo: vt, editor: ve, schedule: vs}
 }
 
 // A critically damped spring eases into the target and preserves velocity
