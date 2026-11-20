@@ -21,6 +21,7 @@ import (
 const (
 	clipboardTextLimit     = 32 * 1024
 	clipboardImageLimit    = 16 << 20
+	clipboardPageSize      = 50
 	defaultClipboardHotkey = "Alt+Shift+V"
 	clipboardHistoryFlag   = transfer.Format("CanIncludeInClipboardHistory")
 )
@@ -49,6 +50,7 @@ type clipboardComponent struct {
 	store              *clipboardStore
 	entries            []clipboardEntry
 	hasEntries         bool
+	hasMore            bool
 	list               ui.ListState
 	open               bool
 	openedByShortcut   bool
@@ -136,9 +138,14 @@ func (a *island) saveClipboardSettings(next clipboardState) bool {
 	return true
 }
 
-func (a *island) refreshClipboardEntries(now time.Time) {
+func (a *island) refreshClipboardEntries(now time.Time, reset bool) {
 	history := &a.clipboard
-	entries, err := history.store.entries(history.query, now)
+	if reset {
+		history.entries, history.hasMore = nil, false
+		history.selected, history.hoverSelection = 0, 0
+		history.list = ui.ListState{}
+	}
+	entries, more, err := history.store.entryPage(history.query, now, clipboardEntry{}, max(clipboardPageSize, len(history.entries)))
 	if err != nil {
 		log.Printf("read clipboard entries: %v", err)
 		history.problem = "剪贴板历史读取失败"
@@ -152,7 +159,23 @@ func (a *island) refreshClipboardEntries(now time.Time) {
 		history.problem = "剪贴板历史读取失败"
 		return
 	}
-	history.entries, history.problem = entries, ""
+	history.entries, history.hasMore, history.problem = entries, more, ""
+}
+
+func (a *island) loadMoreClipboardEntries(now time.Time) {
+	history := &a.clipboard
+	if !history.hasMore {
+		return
+	}
+	after := history.entries[len(history.entries)-1]
+	entries, more, err := history.store.entryPage(history.query, now, after, clipboardPageSize)
+	if err != nil {
+		log.Printf("read older clipboard entries: %v", err)
+		history.problem = "剪贴板历史读取失败"
+		return
+	}
+	history.entries = append(history.entries, entries...)
+	history.hasMore, history.problem = more, ""
 }
 
 func (a *island) watchClipboardExpiry() {
@@ -177,7 +200,7 @@ func (a *island) watchClipboardExpiry() {
 						log.Printf("expire clipboard entries: %v", err)
 					}
 					if changed && history.open {
-						a.refreshClipboardEntries(now)
+						a.refreshClipboardEntries(now, false)
 						a.win.Invalidate()
 					}
 				})
@@ -278,7 +301,7 @@ func (a *island) recordClipboard(data transfer.Data, copiedAt time.Time) bool {
 	}
 	history.problem = ""
 	if changed && history.open {
-		a.refreshClipboardEntries(copiedAt)
+		a.refreshClipboardEntries(copiedAt, false)
 	}
 	return changed
 }

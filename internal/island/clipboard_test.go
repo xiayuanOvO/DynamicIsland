@@ -45,9 +45,12 @@ func newTestClipboard(t *testing.T, recording bool, texts ...string) *island {
 
 func readTestClipboardEntries(t *testing.T, store *clipboardStore, now time.Time) []clipboardEntry {
 	t.Helper()
-	entries, err := store.entries("", now)
+	entries, more, err := store.entryPage("", now, clipboardEntry{}, clipboardHistoryLimit)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if more {
+		t.Fatal("history exceeds its limit")
 	}
 	return entries
 }
@@ -254,13 +257,16 @@ func TestClipboardRecordsExpireAndKeepNewestTenThousand(t *testing.T) {
 	}
 	a.openClipboard(true)
 	view := ui.NewTester(func(c *ui.Context) { a.clipboardView(c, true, nil) }, panelWidth, clipboardPanelHeight)
-	if !view.HasText("最新") || len(view.Texts()) > 60 {
-		t.Fatal("the panel should build only visible rows even with a full history")
+	if !slices.Equal(a.clipboard.entries, entries[:clipboardPageSize]) || !a.clipboard.hasMore || !view.HasText("最新") || len(view.Texts()) > 60 {
+		t.Fatal("the panel should read only the newest page and build only visible rows even with a full history")
 	}
-	a.clipboard.list.ScrollToEnd()
-	view.Frame()
-	if !view.HasText("记录 00001") {
-		t.Fatal("the virtual list should reach the oldest retained record")
+	a.loadMoreClipboardEntries(now)
+	if !slices.Equal(a.clipboard.entries, entries[:2*clipboardPageSize]) {
+		t.Fatal("pagination should neither skip nor repeat records with the same timestamp")
+	}
+	view.Type("00001")
+	if len(a.clipboard.entries) != 1 || a.clipboard.hasMore || !view.HasText("记录 00001") {
+		t.Fatal("search should find the oldest retained record even though it has not been loaded")
 	}
 }
 
@@ -483,6 +489,79 @@ func TestClipboardKeyboardSelectionScrollsIntoView(t *testing.T) {
 	search, _ := view.Find("搜索剪贴板历史")
 	if a.clipboard.selected != a.clipboard.entries[11].ID || !found || row.Y < search.Y+search.H || row.Y+row.H > clipboardPanelHeight {
 		t.Fatalf("keyboard selection should scroll into the visible list: found=%t, row=%+v", found, row)
+	}
+}
+
+func TestClipboardLoadsOnePageAtATimeWhileScrolling(t *testing.T) {
+	texts := make([]string, 2*clipboardPageSize)
+	for i := range texts {
+		texts[i] = fmt.Sprintf("记录 %02d", i)
+	}
+	a := newTestClipboard(t, true, texts...)
+	a.openClipboard(true)
+	view := ui.NewTester(func(c *ui.Context) { a.clipboardView(c, true, nil) }, panelWidth, clipboardPanelHeight)
+	first := a.clipboard.selected
+	view.Scroll(20, 125, 0, 106)
+	if len(a.clipboard.entries) != clipboardPageSize {
+		t.Fatal("scrolling near the start should leave only the first page loaded")
+	}
+	view.Scroll(20, 125, 0, 3000)
+	if len(a.clipboard.entries) != len(texts) || a.clipboard.hasMore || a.clipboard.selected != first {
+		t.Fatal("scrolling to the end should append exactly one page and keep the selection")
+	}
+	if !view.HasText(texts[clipboardPageSize-1]) || view.HasText(texts[len(texts)-1]) {
+		t.Fatal("appending a page should keep the viewport near the page boundary")
+	}
+	view.Scroll(20, 125, 0, 3000)
+	if !view.HasText(texts[len(texts)-1]) || len(a.clipboard.entries) != len(texts) {
+		t.Fatal("continuing to scroll should reach the oldest entry without loading more pages")
+	}
+	a.clipboard.open = false
+	a.openClipboard(true)
+	view.Frame()
+	if len(a.clipboard.entries) != clipboardPageSize || !view.HasText(texts[0]) {
+		t.Fatal("reopening history should start again at the first page")
+	}
+}
+
+func TestClipboardKeyboardContinuesAcrossSearchPages(t *testing.T) {
+	texts := make([]string, 0, 2*clipboardPageSize+2)
+	for i := range clipboardPageSize + 1 {
+		texts = append(texts, fmt.Sprintf("无关 %02d", i), fmt.Sprintf("文本 %02d\n匹配", i))
+	}
+	a := newTestClipboard(t, true, texts...)
+	a.openClipboard(true)
+	var copied string
+	view := ui.NewTester(func(c *ui.Context) {
+		if a.clipboard.open {
+			a.clipboardView(c, true, func(data transfer.Data) error {
+				value, err := data.Read(transfer.Text)
+				copied = string(value)
+				return err
+			})
+		}
+	}, panelWidth, clipboardPanelHeight)
+	view.Type("匹配")
+	if len(a.clipboard.entries) != clipboardPageSize || a.clipboard.entries[clipboardPageSize-1].Preview != "文本 49…" || !a.clipboard.hasMore {
+		t.Fatal("search should find a full page of matching text across the entire history")
+	}
+	for range clipboardPageSize - 2 {
+		view.Key(0, ui.KeyDown)
+	}
+	if len(a.clipboard.entries) != clipboardPageSize {
+		t.Fatal("arrow navigation should not load more until the selection reaches the last row")
+	}
+	view.Key(0, ui.KeyDown)
+	if len(a.clipboard.entries) != clipboardPageSize+1 || a.clipboard.hasMore || a.clipboard.selected != a.clipboard.entries[clipboardPageSize-1].ID {
+		t.Fatal("reaching the last row should load more results without skipping that row")
+	}
+	view.Key(0, ui.KeyDown)
+	if a.clipboard.selected != a.clipboard.entries[clipboardPageSize].ID || !view.HasText("文本 50…") || !view.Focused("搜索剪贴板历史") {
+		t.Fatal("Down should select and reveal the first row of the next page while keeping search focused")
+	}
+	view.Key(0, ui.KeyEnter)
+	if copied != "文本 50\n匹配" || a.clipboard.open {
+		t.Fatal("Enter should copy the selected record from the next page and close the panel")
 	}
 }
 

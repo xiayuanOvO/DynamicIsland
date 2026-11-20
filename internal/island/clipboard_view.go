@@ -24,10 +24,8 @@ func (a *island) openClipboard(fromShortcut bool) {
 	a.todos.draft, a.todos.leaving = nil, nil
 	history := &a.clipboard
 	if !history.open {
-		history.query, history.selected = "", 0
-		history.list = ui.ListState{}
-		a.refreshClipboardEntries(time.Now())
-		history.hoverSelection = 0
+		history.query = ""
+		a.refreshClipboardEntries(time.Now(), true)
 		history.confirmClear, history.pendingPaste = false, nil
 		history.pasteTarget = clipboardPasteTarget{}
 	}
@@ -139,7 +137,7 @@ func (a *island) clipboardView(c *ui.Context, interactive bool, write func(trans
 							log.Printf("clear clipboard history: %v", err)
 							history.problem = "清空历史失败"
 						} else {
-							a.refreshClipboardEntries(c.Now())
+							a.refreshClipboardEntries(c.Now(), true)
 							c.Invalidate()
 							history.confirmClear = false
 							history.focusSearch = true
@@ -155,8 +153,7 @@ func (a *island) clipboardView(c *ui.Context, interactive bool, write func(trans
 				history.focusSearch = false
 			}
 			if search.Changed() {
-				history.selected = 0
-				a.refreshClipboardEntries(c.Now())
+				a.refreshClipboardEntries(c.Now(), true)
 				reveal = true
 			} else if history.hoverSelection != 0 {
 				history.selected = history.hoverSelection
@@ -177,6 +174,10 @@ func (a *island) clipboardView(c *ui.Context, interactive bool, write func(trans
 					selected, reveal = max(0, selected-1), true
 					search.Focus()
 				} else if interactive && c.Shortcut(0, ui.KeyDown) {
+					if selected+1 >= len(entries)-1 {
+						a.loadMoreClipboardEntries(c.Now())
+						entries = history.entries
+					}
 					selected, reveal = min(len(entries)-1, selected+1), true
 					search.Focus()
 				}
@@ -187,6 +188,12 @@ func (a *island) clipboardView(c *ui.Context, interactive bool, write func(trans
 				}
 				if reveal {
 					history.list.ScrollIntoView(selected)
+				}
+				history.list.EndReached = nil
+				if interactive && history.hasMore {
+					now := c.Now()
+					history.list.NearEnd = 2
+					history.list.EndReached = func(int) { a.loadMoreClipboardEntries(now) }
 				}
 				list := ui.List(c.Key("entries"), &history.list, len(entries)).
 					ItemKey(func(index int) any { return entries[index].ID }).FillWidth().Grow(1).MinHeight(0).Gap(3).
@@ -292,7 +299,7 @@ func (a *island) clipboardRow(c *ui.Context, entry clipboardEntry, selected bool
 				log.Printf("delete clipboard entry: %v", err)
 				history.problem = "删除记录失败"
 			} else {
-				a.refreshClipboardEntries(c.Now())
+				a.refreshClipboardEntries(c.Now(), false)
 				c.Announce("已删除剪贴板记录")
 			}
 			c.Invalidate()

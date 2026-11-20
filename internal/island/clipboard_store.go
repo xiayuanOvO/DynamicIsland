@@ -166,30 +166,37 @@ func (s *clipboardStore) expire(now time.Time) (bool, error) {
 	return n > 0, err
 }
 
-func (s *clipboardStore) entries(query string, now time.Time) ([]clipboardEntry, error) {
+func (s *clipboardStore) entryPage(query string, now time.Time, after clipboardEntry, limit int) ([]clipboardEntry, bool, error) {
 	statement := "SELECT id, preview, copied_at, image_width, image_height FROM entries WHERE copied_at > ?"
 	args := []any{now.Add(-clipboardRetention).UnixNano()}
+	if after.ID != 0 {
+		statement += " AND (copied_at, id) < (?, ?)"
+		args = append(args, after.CopiedAt.UnixNano(), after.ID)
+	}
 	if terms := strings.Fields(strings.ToLower(query)); len(terms) > 0 {
 		encoded, _ := json.Marshal(terms)
 		statement += " AND NOT EXISTS (SELECT 1 FROM json_each(?) WHERE instr(entries.search_text, value) = 0)"
 		args = append(args, string(encoded))
 	}
-	rows, err := s.Query(statement+" ORDER BY copied_at DESC, id DESC", args...)
+	rows, err := s.Query(statement+" ORDER BY copied_at DESC, id DESC LIMIT ?", append(args, limit+1)...)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	defer rows.Close()
 	var entries []clipboardEntry
 	for rows.Next() {
+		if len(entries) == limit {
+			return entries, true, nil
+		}
 		var entry clipboardEntry
 		var copiedAt int64
 		if err := rows.Scan(&entry.ID, &entry.Preview, &copiedAt, &entry.Width, &entry.Height); err != nil {
-			return nil, err
+			return nil, false, err
 		}
 		entry.CopiedAt = time.Unix(0, copiedAt)
 		entries = append(entries, entry)
 	}
-	return entries, rows.Err()
+	return entries, false, rows.Err()
 }
 
 func (s *clipboardStore) deleteEntry(id int64) error {
