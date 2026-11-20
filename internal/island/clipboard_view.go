@@ -253,7 +253,7 @@ func (a *island) clipboardRow(c *ui.Context, index int, entry clipboardEntry, se
 	var copy ui.Element
 	key := entry.key()
 	history := &a.clipboard
-	row := ui.Row(c.Key(key)).FillWidth().Height(rowHeight).Shrink(0).Gap(2).AlignItems(ui.Center).
+	row := ui.Row(c.Key(key)).FillWidth().Height(rowHeight).Shrink(0).Gap(2).AlignItems(ui.Center).Radius(10).
 		HandleInput(func(event ui.InputEvent) bool {
 			if event.Kind != ui.InputPointerMove || event.Button != -1 {
 				return false
@@ -261,17 +261,17 @@ func (a *island) clipboardRow(c *ui.Context, index int, entry clipboardEntry, se
 			history.hoverSelection = key
 			return history.selected != key
 		})
+	if selected {
+		row.Background(theme.SurfaceHover)
+	}
 	row.Children(func() {
 		label := text
 		if dimensions != "" {
 			label += " " + dimensions
 		}
 		copy = ui.ButtonBase(c.Key("copy")).Row().Grow(1).MinWidth(0).Height(rowHeight).Padding(0, 9).
-			Gap(8).AlignItems(ui.Center).Radius(8).Border(1, ui.Transparent).
+			Gap(8).AlignItems(ui.Center).Radius(8).
 			TextColor(muted).Cursor(ui.CursorPointer).Label("复制 " + label)
-		if selected {
-			copy.Background(accent.Alpha(0.16)).Border(1, accent.Alpha(0.42))
-		}
 		copy.Children(func() {
 			preview := ui.Box(c.Key("preview")).Size(44, 34).Shrink(0).Radius(6).Clip().Center()
 			if entry.Image != nil {
