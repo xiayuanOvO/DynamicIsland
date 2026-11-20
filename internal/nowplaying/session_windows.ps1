@@ -4,7 +4,6 @@ Add-Type -AssemblyName System.Runtime.WindowsRuntime
 $managerType = [Windows.Media.Control.GlobalSystemMediaTransportControlsSessionManager, Windows.Media.Control, ContentType=WindowsRuntime]
 $mediaType = [Windows.Media.Control.GlobalSystemMediaTransportControlsSessionMediaProperties, Windows.Media.Control, ContentType=WindowsRuntime]
 $streamType = [Windows.Storage.Streams.IRandomAccessStreamWithContentType, Windows.Storage.Streams, ContentType=WindowsRuntime]
-$readerType = [Windows.Storage.Streams.DataReader, Windows.Storage.Streams, ContentType=WindowsRuntime]
 $asTask = [System.WindowsRuntimeSystemExtensions].GetMethods() | Where-Object {
     $_.Name -eq 'AsTask' -and $_.IsGenericMethodDefinition -and
     $_.GetParameters().Count -eq 1 -and $_.GetParameters()[0].ParameterType.Name -eq 'IAsyncOperation`1'
@@ -13,6 +12,27 @@ $asTask = [System.WindowsRuntimeSystemExtensions].GetMethods() | Where-Object {
 function Wait-Result($operation, [type]$resultType) {
     $task = $asTask.MakeGenericMethod($resultType).Invoke($null, @($operation))
     return $task.GetAwaiter().GetResult()
+}
+
+function Read-Artwork($reference) {
+    try {
+        $stream = Wait-Result ($reference.OpenReadAsync()) $streamType
+        # Windows PowerShell sees the returned WinRT interface as a COM object.
+        $randomAccessType = [Windows.Storage.Streams.IRandomAccessStream, Windows.Storage.Streams, ContentType=WindowsRuntime]
+        $asStream = [System.IO.WindowsRuntimeStreamExtensions].GetMethod('AsStream', [type[]]@($randomAccessType))
+        $inputStream = $asStream.Invoke($null, @($stream))
+        try {
+            $length = $inputStream.Length
+            if ($length -gt 0 -and $length -le 8MB) {
+                $reader = [IO.BinaryReader]::new($inputStream)
+                $bytes = $reader.ReadBytes([int]$length)
+                if ($bytes.Length -eq $length) { return [Convert]::ToBase64String($bytes) }
+            }
+        } finally { $inputStream.Dispose() }
+    } catch {
+        return ''
+    }
+    return ''
 }
 
 $manager = Wait-Result ($managerType::RequestAsync()) $managerType
@@ -63,22 +83,7 @@ if ($playing -and $timeline.LastUpdatedTime.Year -gt 1900) {
 
 $artwork = ''
 if ($env:DYNAMICISLAND_MEDIA_ARTWORK -eq 'true' -and $null -ne $media.Thumbnail) {
-    try {
-        $stream = Wait-Result ($media.Thumbnail.OpenReadAsync()) $streamType
-        try {
-            if ($stream.Size -gt 0 -and $stream.Size -le 8MB) {
-                $reader = $readerType::new($stream.GetInputStreamAt(0))
-                try {
-                    $size = Wait-Result ($reader.LoadAsync([uint32]$stream.Size)) ([uint32])
-                    $bytes = [byte[]]::new($size)
-                    $reader.ReadBytes($bytes)
-                    $artwork = [Convert]::ToBase64String($bytes)
-                } finally { $reader.Dispose() }
-            }
-        } finally { $stream.Dispose() }
-    } catch {
-        $artwork = ''
-    }
+    $artwork = Read-Artwork $media.Thumbnail
 }
 
 @{

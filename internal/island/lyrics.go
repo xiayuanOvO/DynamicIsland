@@ -54,7 +54,7 @@ func (a *island) updateLyrics(c *ui.Context, frame islandFrame, width, height in
 	var anchor mygo.Rectangle
 	var side dockSide
 	var lineEndsAt time.Time
-	if !a.settings.HideLyrics && a.win.IsVisible() && track.Playing && track.Title != "" && track.Duration > 0 {
+	if !a.settings.HideLyrics && a.win.IsVisible() && track.Playing && track.Title != "" && (track.Duration > 0 || track.EstimatedPosition) {
 		song = lyrics.Song{
 			Title: strings.TrimSpace(track.Title), Artist: strings.TrimSpace(track.Artist),
 			Album: strings.TrimSpace(track.Album), Duration: math.Round(track.Duration),
@@ -91,17 +91,19 @@ func (a *island) updateLyrics(c *ui.Context, frame islandFrame, width, height in
 			position := track.Elapsed(now)
 			var next float64
 			rows, index, next = lines.Surrounding(position)
-			if next > position && next <= track.Duration {
+			if next > position && (track.Duration <= 0 || next <= track.Duration) {
 				delay := (next - position) / track.Rate
 				c.After(max(time.Millisecond, time.Duration(delay*float64(time.Second))))
 			}
 			if rows[1] != "" {
 				end := track.Duration
-				if next > position {
-					end = min(next, end)
+				if next > position && (end <= 0 || next < end) {
+					end = next
 				}
-				// Anchor to the player sample so repainting alone does not change the deadline.
-				lineEndsAt = track.Sampled.Add(time.Duration((end - track.Position) / track.Rate * float64(time.Second)))
+				if end > 0 {
+					// Anchor to the player sample so repainting alone does not change the deadline.
+					lineEndsAt = track.Sampled.Add(time.Duration((end - track.Position) / track.Rate * float64(time.Second)))
+				}
 				anchor = a.windowBounds(width, height)
 				side = a.dock.side
 			}

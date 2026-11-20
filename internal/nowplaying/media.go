@@ -3,6 +3,7 @@ package nowplaying
 import (
 	"context"
 	"math"
+	"strings"
 	"time"
 )
 
@@ -15,6 +16,7 @@ type Track struct {
 	Playing                          bool
 	Previous, Next                   bool
 	Toggle, Seek                     bool
+	EstimatedPosition                bool
 	ArtworkLoader                    func(context.Context) []byte
 }
 
@@ -29,6 +31,28 @@ func (t Track) SameSong(other Track) bool {
 }
 
 func (t Track) CanSeek() bool { return t.Seek && t.Duration > 0 }
+
+// EstimateNetEasePosition follows playback from a song change observed in the Windows session.
+func (t *Track) EstimateNetEasePosition(previous Track) {
+	gap := t.Sampled.Sub(previous.Sampled)
+	if t.Duration > 0 || t.Position != 0 || !strings.EqualFold(t.Source, "cloudmusic.exe") || t.Source != previous.Source ||
+		t.Title == "" || previous.Title == "" || gap <= 0 || gap > 5*time.Second {
+		return
+	}
+
+	// A change can have happened anywhere between the two samples.
+	midpoint := previous.Sampled.Add(gap / 2)
+	if t.SameSong(previous) {
+		if !previous.EstimatedPosition {
+			return
+		}
+		t.Position = previous.Elapsed(midpoint)
+	}
+	if t.Playing {
+		t.Position += t.Sampled.Sub(midpoint).Seconds() * t.Rate
+	}
+	t.EstimatedPosition = true
+}
 
 func (t Track) Elapsed(now time.Time) float64 {
 	position := t.Position

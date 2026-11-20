@@ -106,6 +106,7 @@ func (a *island) requestMedia(command nowplaying.Command) {
 			}
 			trackChanged := false
 			if readErr == nil && (!fastRefresh || (track.Title != "" && (track.Playing || track.Source == m.track.Source))) {
+				track.EstimateNetEasePosition(m.track)
 				trackChanged = !m.track.SameSong(track)
 				if trackChanged {
 					m.scrubbing = false

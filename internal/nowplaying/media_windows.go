@@ -18,14 +18,16 @@ import (
 //go:embed session_windows.ps1
 var sessionScript string
 
-var encodedScript = func() string {
-	chars := utf16.Encode([]rune(sessionScript))
+var encodedScript = encodePowerShell(sessionScript)
+
+func encodePowerShell(script string) string {
+	chars := utf16.Encode([]rune(script))
 	buf := make([]byte, len(chars)*2)
 	for i, char := range chars {
 		binary.LittleEndian.PutUint16(buf[i*2:], char)
 	}
 	return base64.StdEncoding.EncodeToString(buf)
-}()
+}
 
 func Adapter() string {
 	return filepath.Join(os.Getenv("SystemRoot"), "System32", "WindowsPowerShell", "v1.0", "powershell.exe")
