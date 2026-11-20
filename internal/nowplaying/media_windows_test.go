@@ -2,7 +2,9 @@ package nowplaying
 
 import (
 	"bytes"
+	"context"
 	"encoding/base64"
+	"fmt"
 	"image"
 	"image/png"
 	"os"
@@ -11,6 +13,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"dynamicisland/internal/lyrics"
 )
 
 func TestReadWindowsArtwork(t *testing.T) {
@@ -44,6 +48,52 @@ Read-Artwork ($referenceType::CreateFromFile($file))
 	if err != nil || !bytes.Equal(data, artwork.Bytes()) {
 		t.Fatalf("artwork from WinRT stream: %d bytes, want %d (decode error: %v)", len(data), artwork.Len(), err)
 	}
+}
+
+func TestDecodeWindowsTrackForLyrics(t *testing.T) {
+	const appleMusic = "AppleInc.AppleMusicWin_nzyj5cx40ttqa!App"
+	for _, tt := range []struct {
+		name, source, artist, album, wantArtist, wantAlbum string
+	}{
+		{"combined fields", appleMusic, "林海风 — 远方", "", "林海风", "远方"},
+		{"dash within album", appleMusic, "林海风 — 远方 — 第二辑", "", "林海风", "远方 — 第二辑"},
+		{"separate album", appleMusic, "林海风 — 江雁", "远方", "林海风 — 江雁", "远方"},
+		{"artist only", appleMusic, "林海风 - 江雁", "", "林海风 - 江雁", ""},
+		{"missing artist", appleMusic, " — 远方", "", " — 远方", ""},
+		{"missing album", appleMusic, "林海风 — ", "", "林海风 — ", ""},
+		{"other player", "other.exe", "林海风 — 江雁", "", "林海风 — 江雁", ""},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			data := fmt.Sprintf(`{"Source":%q,"Artist":%q,"Album":%q}`, tt.source, tt.artist, tt.album)
+			track, err := decodeWindowsTrack([]byte(data))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if track.Artist != tt.wantArtist || track.Album != tt.wantAlbum {
+				t.Fatalf("artist and album = %q, %q, want %q, %q", track.Artist, track.Album, tt.wantArtist, tt.wantAlbum)
+			}
+		})
+	}
+
+	t.Run("local lyrics follow Apple Music position", func(t *testing.T) {
+		data := []byte(`{"Source":"AppleInc.AppleMusicWin_nzyj5cx40ttqa!App","Title":"灯塔","Artist":"林海风 — 远方","Album":"","Position":41,"Duration":234,"Rate":1,"Playing":true}`)
+		track, err := decodeWindowsTrack(data)
+		if err != nil {
+			t.Fatal(err)
+		}
+		track.Sampled = time.Unix(1000, 0)
+		folder := t.TempDir()
+		if err := os.WriteFile(filepath.Join(folder, "林海风 - 灯塔.lrc"), []byte("[00:40.00]灯亮了\n[00:44.00]天快亮了"), 0600); err != nil {
+			t.Fatal(err)
+		}
+		ctx, cancel := context.WithCancel(t.Context())
+		cancel() // The fixture must work without an online lookup.
+		song := lyrics.Song{Title: track.Title, Artist: track.Artist, Album: track.Album, Duration: track.Duration}
+		lines, _ := lyrics.NewCache(folder).Load(ctx, folder, song)
+		if text, _ := lines.Current(track.Elapsed(track.Sampled.Add(3 * time.Second))); text != "天快亮了" {
+			t.Errorf("lyric after playing for 3 seconds = %q, want 天快亮了", text)
+		}
+	})
 }
 
 func TestEstimateNetEasePosition(t *testing.T) {

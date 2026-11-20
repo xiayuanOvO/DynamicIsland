@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 	"unicode/utf16"
@@ -40,8 +41,8 @@ func Read(ctx context.Context, adapter string, withArtwork bool) (Track, error) 
 	if err != nil {
 		return Track{}, err
 	}
-	var track Track
-	if err := json.Unmarshal(data, &track); err != nil {
+	track, err := decodeWindowsTrack(data)
+	if err != nil {
 		return Track{}, err
 	}
 	track.Sampled = time.Now()
@@ -50,6 +51,22 @@ func Read(ctx context.Context, adapter string, withArtwork bool) (Track, error) 
 		track.Position, track.Duration = readNetEaseTimeline(track, uptime)
 		if track.Duration > 0 && track.Rate <= 0 {
 			track.Rate = 1
+		}
+	}
+	return track, nil
+}
+
+func decodeWindowsTrack(data []byte) (Track, error) {
+	var track Track
+	if err := json.Unmarshal(data, &track); err != nil {
+		return Track{}, err
+	}
+	// Apple Music can publish "Artist — Album" as the artist and leave the album empty.
+	if strings.EqualFold(track.Source, "AppleInc.AppleMusicWin_nzyj5cx40ttqa!App") && strings.TrimSpace(track.Album) == "" {
+		artist, album, _ := strings.Cut(track.Artist, " — ")
+		artist, album = strings.TrimSpace(artist), strings.TrimSpace(album)
+		if artist != "" && album != "" {
+			track.Artist, track.Album = artist, album
 		}
 	}
 	return track, nil
