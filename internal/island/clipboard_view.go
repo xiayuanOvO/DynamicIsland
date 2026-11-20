@@ -5,13 +5,15 @@ import (
 	"log"
 	"slices"
 	"strings"
+	"time"
 
 	"dynamicisland/internal/shelf"
 	"github.com/egoist/mygo"
+	"github.com/egoist/mygo/transfer"
 	"github.com/egoist/mygo/ui"
 )
 
-const clipboardPanelHeight = 280
+const clipboardPanelHeight = 328
 
 func (a *island) openClipboard(fromShortcut bool) {
 	if !a.clipboard.Recording {
@@ -19,8 +21,19 @@ func (a *island) openClipboard(fromShortcut bool) {
 	}
 	a.todos.open = false
 	a.todos.draft, a.todos.leaving = nil, nil
-	a.clipboard.open = true
-	a.clipboard.openedByShortcut = fromShortcut
+	history := &a.clipboard
+	if !history.open {
+		history.query, history.selected = "", clipboardEntryKey{}
+		history.confirmClear, history.pendingPaste = false, nil
+		history.pasteTarget = clipboardPasteTarget{}
+	}
+	if a.win != nil && (!history.open || fromShortcut) {
+		if target := captureClipboardPasteTarget(); target != (clipboardPasteTarget{}) {
+			history.pasteTarget = target
+		}
+	}
+	history.open, history.focusSearch = true, true
+	history.openedByShortcut = fromShortcut
 	a.showPanel()
 }
 
@@ -93,7 +106,7 @@ func (a *island) clipboardCard(c *ui.Context, opacity float32) {
 	}
 }
 
-func (a *island) clipboardView(c *ui.Context) {
+func (a *island) clipboardView(c *ui.Context, interactive bool, write func(transfer.Data) error) {
 	history := &a.clipboard
 	ui.Themed(c.Key("clipboard-history"), todoTheme).FillWidth().Height(clipboardPanelHeight).
 		Shrink(0).Gap(8).Background(ui.Transparent).Children(func() {
@@ -113,25 +126,89 @@ func (a *island) clipboardView(c *ui.Context) {
 				ui.Row(c).Gap(8).Children(func() {
 					if ui.Button(c.Key("cancel"), "取消").Height(40).AutoFocus().Clicked() {
 						history.confirmClear = false
+						history.focusSearch = true
 					}
 					if ui.Button(c.Key("confirm"), "清空历史").Height(40).Clicked() {
 						if a.saveClipboard(clipboardState{Recording: history.Recording}) {
 							history.confirmClear = false
+							history.focusSearch = true
 							c.Announce("剪贴板历史已清空")
 						}
 					}
 				})
 			})
-		} else if len(history.Entries) == 0 {
-			ui.Box(c).FillWidth().Grow(1).Center().Children(func() {
-				ui.Text(c, "暂无剪贴板历史").FontSize(13).TextColor(muted)
-			})
 		} else {
-			ui.Scroll(c.Key("entries")).FillWidth().Grow(1).MinHeight(0).Gap(4).Children(func() {
-				for i, entry := range history.Entries {
-					a.clipboardRow(c, i, entry)
+			search := ui.SearchField(c.Key("search"), &history.query).FillWidth().Height(40).Shrink(0).
+				Label("搜索剪贴板历史").Placeholder("搜索剪贴板历史")
+			reveal := history.focusSearch && interactive
+			if reveal {
+				search.Focus()
+				history.focusSearch = false
+			}
+			if search.Changed() {
+				history.selected = clipboardEntryKey{}
+				reveal = true
+			}
+			terms := strings.Fields(strings.ToLower(history.query))
+			var results []int
+			selected := 0
+			for index, entry := range history.Entries {
+				if len(terms) > 0 {
+					text := strings.ToLower(entry.Text)
+					if entry.Image != nil {
+						text += " 图片"
+					}
+					if slices.ContainsFunc(terms, func(term string) bool { return !strings.Contains(text, term) }) {
+						continue
+					}
 				}
-			})
+				if entry.key() == history.selected {
+					selected = len(results)
+				}
+				results = append(results, index)
+			}
+			if len(results) == 0 {
+				empty := "暂无剪贴板历史"
+				if len(terms) > 0 {
+					empty = "未找到匹配记录"
+				}
+				ui.Box(c).FillWidth().Grow(1).Center().Children(func() {
+					ui.Text(c, empty).FontSize(13).TextColor(muted)
+				})
+			} else {
+				if interactive && c.Shortcut(0, ui.KeyUp) {
+					selected, reveal = max(0, selected-1), true
+					search.Focus()
+				} else if interactive && c.Shortcut(0, ui.KeyDown) {
+					selected, reveal = min(len(results)-1, selected+1), true
+					search.Focus()
+				}
+				entry := history.Entries[results[selected]]
+				history.selected = entry.key()
+				if interactive && history.pendingPaste == nil && (search.Submitted() || c.Shortcut(0, ui.KeyEnter)) {
+					history.pendingPaste = &entry
+				}
+				ui.Scroll(c.Key("entries")).FillWidth().Grow(1).MinHeight(0).Gap(4).Children(func() {
+					entries := history.Entries
+					for position, index := range results {
+						entry := entries[index]
+						row := a.clipboardRow(c, index, entry, position == selected, write)
+						if position == selected {
+							search.ActiveDescendant(row)
+							if reveal {
+								row.ScrollIntoView()
+							}
+						}
+					}
+				})
+			}
+			// Release Enter while the island is still focused so a held key
+			// cannot repeat into the original input after focus is restored.
+			if interactive && history.pendingPaste != nil && !c.KeyDown(ui.KeyEnter) {
+				entry := *history.pendingPaste
+				history.pendingPaste = nil
+				a.useClipboardEntry(c, entry, true, write)
+			}
 		}
 		if history.problem != "" {
 			ui.Text(c, history.problem).FontSize(11).TextColor(ui.Hex("#a65b50")).SingleLine()
@@ -139,7 +216,7 @@ func (a *island) clipboardView(c *ui.Context) {
 	})
 }
 
-func (a *island) clipboardRow(c *ui.Context, index int, entry clipboardEntry) {
+func (a *island) clipboardRow(c *ui.Context, index int, entry clipboardEntry, selected bool, write func(transfer.Data) error) ui.Element {
 	text := strings.TrimSpace(entry.Text)
 	count := 0
 	for i, r := range text {
@@ -158,14 +235,17 @@ func (a *island) clipboardRow(c *ui.Context, index int, entry clipboardEntry) {
 		}
 		dimensions = fmt.Sprintf("%d × %d", entry.Image.Width, entry.Image.Height)
 	}
+	var copy ui.Element
 	ui.Row(c.Key(entry.key())).FillWidth().Height(rowHeight).Shrink(0).Gap(4).AlignItems(ui.Center).Children(func() {
 		label := text
 		if dimensions != "" {
 			label += " " + dimensions
 		}
-		copy := ui.ButtonBase(c.Key("copy")).Row().Grow(1).MinWidth(0).Height(rowHeight).Padding(0, 8).
+		copy = ui.ButtonBase(c.Key("copy")).Row().Grow(1).MinWidth(0).Height(rowHeight).Padding(0, 8).
 			Gap(8).AlignItems(ui.Center).Radius(8).TextColor(muted).Cursor(ui.CursorPointer).Label("复制 " + label)
-		if copy.Hovered() {
+		if selected {
+			copy.Background(accent.Alpha(0.16)).Border(1, accent.Alpha(0.42))
+		} else if copy.Hovered() {
 			copy.Background(white.Alpha(0.45))
 		}
 		copy.Children(func() {
@@ -193,16 +273,12 @@ func (a *island) clipboardRow(c *ui.Context, index int, entry clipboardEntry) {
 			ui.Text(c, entry.CopiedAt.Local().Format("01-02 15:04")).Shrink(0).FontSize(10).TextColor(muted)
 		})
 		if copy.Clicked() {
-			if data, err := a.clipboardData(entry); err != nil {
-				a.clipboard.problem = "剪贴板图片读取失败"
-			} else if err := mygo.Clipboard.Write(data); err != nil {
-				a.clipboard.problem = "复制失败，可重试"
-			} else {
-				if err := mygo.Clipboard.Flush(); err != nil {
-					log.Printf("flush clipboard: %v", err)
+			if c.KeyDown(ui.KeyEnter) {
+				if a.clipboard.pendingPaste == nil {
+					a.clipboard.pendingPaste = &entry
 				}
-				a.clipboard.problem = ""
-				c.Toast("已复制")
+			} else {
+				a.useClipboardEntry(c, entry, false, write)
 			}
 		}
 		if iconButton(c.Key("remove"), trashIcon, "删除此条记录").Size(40, 40).Label("删除记录 " + label).Clicked() {
@@ -213,4 +289,60 @@ func (a *island) clipboardRow(c *ui.Context, index int, entry clipboardEntry) {
 			}
 		}
 	})
+	return copy
+}
+
+func writeClipboardEntry(data transfer.Data) error {
+	if err := mygo.Clipboard.Write(data); err != nil {
+		return err
+	}
+	if err := mygo.Clipboard.Flush(); err != nil {
+		log.Printf("flush clipboard: %v", err)
+	}
+	return nil
+}
+
+func (a *island) useClipboardEntry(c *ui.Context, entry clipboardEntry, paste bool, write func(transfer.Data) error) {
+	history := &a.clipboard
+	data, err := a.clipboardData(entry)
+	if err != nil {
+		history.problem = "剪贴板图片读取失败"
+		return
+	}
+	if err := write(data); err != nil {
+		history.problem = "复制失败，可重试"
+		return
+	}
+	history.problem = ""
+	if !paste {
+		c.Toast("已复制")
+		return
+	}
+	target := history.pasteTarget
+	a.setExpanded(false)
+	if win := a.win; win != nil {
+		win.Update(func() {
+			if a.expanded || a.hiddenByUser || a.fullscreen {
+				return
+			}
+			pasteReady := target.restore(win)
+			if !win.IsVisible() {
+				frame := a.targetFrame()
+				a.animation = islandAnimation{from: frame, to: frame, started: time.Now()}
+				a.applyWindowFrame(frame, false)
+				win.ShowInactive()
+			}
+			if !pasteReady {
+				return
+			}
+			// Desktop focus changes are delivered asynchronously.
+			time.AfterFunc(75*time.Millisecond, func() {
+				mygo.RunOnMain(func() {
+					if !a.expanded && history.Recording {
+						target.paste()
+					}
+				})
+			})
+		})
+	}
 }

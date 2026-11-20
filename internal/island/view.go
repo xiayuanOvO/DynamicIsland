@@ -204,9 +204,10 @@ func (a *island) body(c *ui.Context, frame islandFrame) {
 		}
 	}
 	if clipboard > 0.5 {
+		interactive := a.expanded && a.clipboard.open && opacity >= 0.80 && clipboard >= 0.85
 		ui.Column(c.Key("clipboard-body")).Width(panelWidth-2).Shrink(0).Padding(0, 22, 20).
-			Opacity(opacity * animationPhase(clipboard, 0.5, 0.85)).IgnoreInput(!a.expanded || !a.clipboard.open || opacity < 0.80 || clipboard < 0.85).
-			Children(func() { a.clipboardView(c) })
+			Opacity(opacity * animationPhase(clipboard, 0.5, 0.85)).IgnoreInput(!interactive).
+			Children(func() { a.clipboardView(c, interactive, writeClipboardEntry) })
 		return
 	}
 	body := ui.Column(c.Key("body")).Width(panelWidth-2).Shrink(0).Padding(0, 22, 20).
@@ -408,6 +409,7 @@ func (a *island) shortcuts(c *ui.Context) {
 		if c.Shortcut(0, ui.KeyEscape) {
 			if a.clipboard.confirmClear {
 				a.clipboard.confirmClear = false
+				a.clipboard.focusSearch = true
 			} else {
 				a.clipboard.open = false
 			}

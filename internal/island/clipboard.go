@@ -65,6 +65,11 @@ type clipboardComponent struct {
 	openedByShortcut    bool
 	shortcutUnavailable bool
 	confirmClear        bool
+	query               string
+	focusSearch         bool
+	selected            clipboardEntryKey
+	pendingPaste        *clipboardEntry
+	pasteTarget         clipboardPasteTarget
 	loadFailed          bool
 	problem             string
 	stop                func()

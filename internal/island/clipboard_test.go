@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"image"
 	"image/color"
@@ -142,9 +143,31 @@ func TestClipboardImagePersistsAndCanBeCopiedAtOriginalSize(t *testing.T) {
 	if !reopened.clipboard.open || !reopened.clipboard.openedByShortcut || reopened.targetFrame().clipboard != 1 {
 		t.Fatal("the shortcut should open the clipboard history directly")
 	}
-	view := ui.NewTester(func(c *ui.Context) { reopened.body(c, reopened.targetFrame()) }, panelWidth, clipboardPanelHeight+20)
+	var copiedImage []byte
+	view := ui.NewTester(func(c *ui.Context) {
+		if reopened.clipboard.open {
+			reopened.clipboardView(c, true, func(data transfer.Data) error {
+				var err error
+				copiedImage, err = data.Read(transfer.PNG)
+				return err
+			})
+		}
+	}, panelWidth, clipboardPanelHeight)
 	if _, found := view.Find("复制 图片 320 × 180"); !found {
 		t.Fatal("the history did not render the image action and dimensions")
+	}
+	view.Type("图片")
+	if view.HasText("样本文字") {
+		t.Fatal("searching for images should filter out unrelated text entries")
+	}
+	view.Key(0, ui.KeyEnter)
+	if !bytes.Equal(copiedImage, bitmap) || reopened.clipboard.open {
+		t.Fatal("Enter should copy the selected image and close the panel")
+	}
+	reopened.openClipboard(true)
+	view.Frame()
+	if reopened.clipboard.query != "" {
+		t.Fatal("reopening the panel should start a new search")
 	}
 	if err := view.Click("删除记录 图片 320 × 180"); err != nil {
 		t.Fatal(err)
@@ -255,6 +278,97 @@ func TestClipboardPanelDeletesAndClearsSavedHistory(t *testing.T) {
 	view.Key(0, ui.KeyEscape)
 	if a.clipboard.open || !a.expanded {
 		t.Fatal("Escape should return to the expanded overview")
+	}
+}
+
+func TestClipboardSearchAndKeyboardPaste(t *testing.T) {
+	now := time.Now()
+	a := island{files: &shelf.Shelf{}, clipboard: clipboardComponent{clipboardState: clipboardState{
+		Recording: true,
+		Entries: []clipboardEntry{
+			{Text: "Alpha 第一条中文", CopiedAt: now},
+			{Text: "无关记录", CopiedAt: now},
+			{Text: "ALPHA\n第二条中文", CopiedAt: now},
+		},
+	}}}
+	a.openClipboard(true)
+	var copied []string
+	view := ui.NewTester(func(c *ui.Context) {
+		if a.clipboard.open {
+			a.clipboardView(c, true, func(data transfer.Data) error {
+				text, err := data.Read(transfer.Text)
+				copied = append(copied, string(text))
+				return err
+			})
+		}
+	}, panelWidth, clipboardPanelHeight)
+	if !view.Focused("搜索剪贴板历史") {
+		t.Fatal("opening history should focus search")
+	}
+	view.Type("ALPHA 中文")
+	_, excluded := view.Find("复制 无关记录")
+	if excluded || !view.HasText("Alpha 第一条中文") || !view.HasText("ALPHA…") {
+		t.Fatal("search should match all terms case-insensitively, including text past the preview")
+	}
+	view.Key(0, ui.KeyDown)
+	if a.clipboard.selected != a.clipboard.Entries[2].key() || !view.Focused("搜索剪贴板历史") {
+		t.Fatal("Down should select the next filtered entry while keeping search focused")
+	}
+	view.Key(0, ui.KeyUp)
+	if a.clipboard.selected != a.clipboard.Entries[0].key() {
+		t.Fatal("Up should return to the previous filtered entry")
+	}
+	view.Key(0, ui.KeyDown)
+	view.KeyDown(ui.KeyEnter)
+	view.KeyRepeat(0, ui.KeyEnter)
+	if len(copied) != 0 || !a.clipboard.open {
+		t.Fatal("holding Enter should leave focus in the panel until the key is released")
+	}
+	view.KeyUp(ui.KeyEnter)
+	if !slices.Equal(copied, []string{"ALPHA\n第二条中文"}) || a.expanded || a.clipboard.open {
+		t.Fatalf("Enter should copy the full selected entry exactly once and close the panel: %q", copied)
+	}
+}
+
+func TestClipboardSearchEmptyAndCopyFailure(t *testing.T) {
+	a := island{files: &shelf.Shelf{}, clipboard: clipboardComponent{clipboardState: clipboardState{
+		Recording: true,
+		Entries:   []clipboardEntry{{Text: "样本文字", CopiedAt: time.Now()}},
+	}}}
+	a.openClipboard(true)
+	attempts := 0
+	view := ui.NewTester(func(c *ui.Context) {
+		a.clipboardView(c, true, func(transfer.Data) error {
+			attempts++
+			return errors.New("test clipboard is busy")
+		})
+	}, panelWidth, clipboardPanelHeight)
+	view.Type("另一段文本")
+	view.Key(0, ui.KeyEnter)
+	if attempts != 0 || !view.HasText("未找到匹配记录") {
+		t.Fatal("Enter with no matching entries should do nothing")
+	}
+	view.Key(ui.Cmd, ui.KeyA)
+	view.Type("样本")
+	view.Key(0, ui.KeyEnter)
+	if attempts != 1 || !a.clipboard.open || !view.HasText("复制失败，可重试") {
+		t.Fatal("a clipboard write failure should keep the search and the panel open")
+	}
+}
+
+func TestClipboardKeyboardSelectionScrollsIntoView(t *testing.T) {
+	a := island{files: &shelf.Shelf{}, clipboard: clipboardComponent{clipboardState: clipboardState{Recording: true}}}
+	for i := range 12 {
+		a.clipboard.Entries = append(a.clipboard.Entries, clipboardEntry{Text: fmt.Sprintf("记录 %02d", i), CopiedAt: time.Now()})
+	}
+	a.openClipboard(true)
+	view := ui.NewTester(func(c *ui.Context) { a.clipboardView(c, true, nil) }, panelWidth, clipboardPanelHeight)
+	for range 11 {
+		view.Key(0, ui.KeyDown)
+	}
+	row, found := view.Find("复制 记录 11")
+	if a.clipboard.selected != a.clipboard.Entries[11].key() || !found || row.Y < 88 || row.Y+row.H > clipboardPanelHeight {
+		t.Fatalf("keyboard selection should scroll into the visible list: found=%t, row=%+v", found, row)
 	}
 }
 

@@ -46,13 +46,17 @@ func init() {
 	purego.RegisterLibFunc(&copyOnscreenWindows, cg, "CGWindowListCopyWindowInfo")
 }
 
+func foregroundApplicationPID() int32 {
+	workspace := objc.ID(objc.GetClass("NSWorkspace")).Send(sharedWorkspace)
+	front := workspace.Send(frontmostApplication)
+	return objc.Send[int32](front, processIdentifier)
+}
+
 func foregroundFullscreen() bool {
 	if copyOnscreenWindows == nil {
 		return false
 	}
-	workspace := objc.ID(objc.GetClass("NSWorkspace")).Send(sharedWorkspace)
-	front := workspace.Send(frontmostApplication)
-	pid := int(objc.Send[int32](front, processIdentifier))
+	pid := int(foregroundApplicationPID())
 	if pid <= 0 || pid == os.Getpid() {
 		return false
 	}

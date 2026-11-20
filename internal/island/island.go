@@ -212,6 +212,7 @@ func (a *island) setExpanded(expanded bool) {
 		a.todos.open = false
 		a.todos.draft, a.todos.leaving = nil, nil
 		a.clipboard.open, a.clipboard.confirmClear = false, false
+		a.clipboard.pendingPaste = nil
 	}
 	a.media.scrubbing = false
 	if expanded {
