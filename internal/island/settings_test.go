@@ -167,6 +167,52 @@ func TestUpdateActivityUsesOneRingWithoutText(t *testing.T) {
 	}
 }
 
+func TestLyricTransitionSettingCanBeChangedAndSaved(t *testing.T) {
+	a := island{statePath: filepath.Join(t.TempDir(), "shelf.json")}
+	if err := os.WriteFile(a.settingsPath(), []byte(`{"lyricTransition":99}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	settings, err := loadSettings(a.settingsPath())
+	if err != nil || settings.LyricTransition != lyricTransitionSlide {
+		t.Fatalf("saved unknown effect should fall back to slide, got %d, %v", settings.LyricTransition, err)
+	}
+	a.settings = settings
+	view := ui.NewTester(a.settingsView, settingsWidth, a.settingsHeight())
+	view.UseScreenReader()
+	for range 12 {
+		if view.Focused("上移") {
+			break
+		}
+		view.Key(0, ui.KeyTab)
+	}
+	if !view.Focused("上移") {
+		t.Fatal("the lyric transition setting was not reachable by Tab")
+	}
+	for style, label := range []string{"淡入", "缩放", "关闭"} {
+		view.Key(0, ui.KeyRight)
+		if !view.Focused(label) || a.settings.LyricTransition != style+1 {
+			t.Fatalf("Right should choose %s, got %d", label, a.settings.LyricTransition)
+		}
+	}
+	view.Advance(time.Second)
+	saved, err := loadSettings(a.settingsPath())
+	if err != nil || saved.LyricTransition != lyricTransitionNone {
+		t.Fatalf("transition setting did not persist, got %d, %v", saved.LyricTransition, err)
+	}
+	if err := view.Click("歌词显示"); err != nil {
+		t.Fatal(err)
+	}
+	if !a.settings.HideLyrics || view.HasText("歌词过渡") {
+		t.Fatal("the effect setting should be hidden when lyrics are off")
+	}
+	if err := view.Click("歌词显示"); err != nil {
+		t.Fatal(err)
+	}
+	if !view.HasText("歌词过渡") || a.settings.LyricTransition != lyricTransitionNone {
+		t.Fatal("showing lyrics should restore the effect setting and its selection")
+	}
+}
+
 func TestClearLyricCacheFromSettings(t *testing.T) {
 	cache := lyrics.NewCache(t.TempDir())
 	song := lyrics.Song{Title: "夜行列车", Artist: "林海风", Duration: 226}

@@ -15,11 +15,18 @@ import (
 )
 
 const (
-	lyricTransition    = 240 * time.Millisecond
-	lyricOverlayHeight = 120
-	lyricScrollDelay   = 500 * time.Millisecond
-	lyricScrollHold    = 250 * time.Millisecond
-	lyricScrollMaxRate = 280 // DIPs per second
+	lyricTransitionSlide = iota
+	lyricTransitionFade
+	lyricTransitionZoom
+	lyricTransitionNone
+)
+
+const (
+	lyricTransitionDuration = 240 * time.Millisecond
+	lyricOverlayHeight      = 120
+	lyricScrollDelay        = 500 * time.Millisecond
+	lyricScrollHold         = 250 * time.Millisecond
+	lyricScrollMaxRate      = 280 // DIPs per second
 )
 
 type lyricOverlay struct {
@@ -39,7 +46,8 @@ type lyricOverlay struct {
 	lineEndsAt     time.Time
 	scroll         lyricScroll
 	previousOffset float32
-	shiftedAt      time.Time
+	transitionAt   time.Time
+	transition     int
 	anchor         mygo.Rectangle
 	side           dockSide
 }
@@ -109,19 +117,25 @@ func (a *island) updateLyrics(c *ui.Context, frame islandFrame, width, height in
 			}
 		}
 	}
+	transition := a.settings.LyricTransition
+	transitionChanged := transition != overlay.transition
+	if transitionChanged {
+		overlay.transition, overlay.transitionAt = transition, time.Time{}
+	}
 	if song != overlay.song || index != overlay.index || rows != overlay.rows {
 		// Start from settled rows when advancing to the next visible line of the same song.
-		if song == overlay.song && index == overlay.index+1 && overlay.rows[1] != "" && rows[1] != "" &&
-			now.Sub(overlay.shiftedAt) >= lyricTransition {
-			overlay.outgoing, overlay.shiftedAt = overlay.rows[0], now
+		if !transitionChanged && transition != lyricTransitionNone && !c.Preferences().ReduceMotion &&
+			song == overlay.song && index == overlay.index+1 && overlay.rows[1] != "" && rows[1] != "" &&
+			now.Sub(overlay.transitionAt) >= lyricTransitionDuration {
+			overlay.outgoing, overlay.transitionAt = overlay.rows[0], now
 			overlay.previousOffset = overlay.scroll.offset(now)
 		} else {
-			overlay.outgoing, overlay.shiftedAt = "", time.Time{}
+			overlay.outgoing, overlay.transitionAt = "", time.Time{}
 		}
 		overlay.currentSince = now
 		overlay.scroll = lyricScroll{}
 		overlay.song, overlay.index, overlay.rows = song, index, rows
-	} else if anchor == overlay.anchor && side == overlay.side && lineEndsAt.Equal(overlay.lineEndsAt) {
+	} else if !transitionChanged && anchor == overlay.anchor && side == overlay.side && lineEndsAt.Equal(overlay.lineEndsAt) {
 		return
 	}
 	overlay.anchor, overlay.side, overlay.lineEndsAt = anchor, side, lineEndsAt
@@ -168,19 +182,30 @@ func lyricBounds(island, area mygo.Rectangle, side dockSide) mygo.Rectangle {
 func (o *lyricOverlay) view(c *ui.Context) {
 	c.SetTheme(theme)
 	c.Root().Background(ui.Transparent)
-	align := ui.Center
+	align, originX := ui.Center, float32(0.5)
 	if o.side == dockLeft {
-		align = ui.Start
+		align, originX = ui.Start, 0
 	} else if o.side == dockRight {
-		align = ui.End
+		align, originX = ui.End, 1
 	}
-	progress := float32(1)
+	if c.Direction() == ui.RightToLeft {
+		originX = 1 - originX
+	}
+	slide, fade, scale := float32(1), float32(1), float32(1)
 	now := c.Now()
 	reduceMotion := c.Preferences().ReduceMotion
-	if !o.shiftedAt.IsZero() && !reduceMotion {
-		elapsed := now.Sub(o.shiftedAt)
-		if elapsed < lyricTransition {
-			progress = ui.EaseOut(max(0, float32(elapsed)/float32(lyricTransition)))
+	if !o.transitionAt.IsZero() && !reduceMotion && o.transition != lyricTransitionNone {
+		elapsed := now.Sub(o.transitionAt)
+		if elapsed < lyricTransitionDuration {
+			progress := ui.EaseOut(max(0, float32(elapsed)/float32(lyricTransitionDuration)))
+			switch o.transition {
+			case lyricTransitionSlide:
+				slide = progress
+			case lyricTransitionFade:
+				fade = 0.6 + 0.4*progress
+			case lyricTransitionZoom:
+				scale = 0.84 + 0.16*progress
+			}
 			c.AnimationFrame()
 		}
 	}
@@ -197,8 +222,8 @@ func (o *lyricOverlay) view(c *ui.Context) {
 	width, height := c.Size()
 	textWidth := max(1, width-2*inset)
 	lines := [4]string{o.outgoing, o.rows[0], o.rows[1], o.rows[2]}
-	opacity := [4]float32{1 - progress, 1, 1, progress}
-	highlight := [4]float32{0, 1 - progress, progress, 0}
+	opacity := [4]float32{1 - slide, 1, fade, slide}
+	highlight := [4]float32{0, 1 - slide, slide, 0}
 	activeHeight := [4]float32{adjacentHeight, currentHeight, currentHeight, adjacentHeight}
 	for i := 1; i <= 2; i++ {
 		if lines[i] == "" || highlight[i] == 0 {
@@ -223,11 +248,14 @@ func (o *lyricOverlay) view(c *ui.Context) {
 			}
 			emphasis := highlight[i]
 			rowHeight := adjacentHeight + (activeHeight[i]-adjacentHeight)*emphasis
-			center := height/2 + before[i]*(1-progress) + after[i]*progress
+			center := height/2 + before[i]*(1-slide) + after[i]*slide
 			wrapped := activeHeight[i] > currentHeight && emphasis >= 0.6
 			size, weight := 14+(currentSize-14)*emphasis, 500+int((currentWeight-500)*emphasis)
 			top, lineHeight := center-rowHeight/2, min(extraLineHeight, rowHeight/2)
 			style := func(e ui.Element) ui.Element {
+				if i == 2 && scale != 1 {
+					e = e.Scale(scale, scale).TransformOrigin(originX, 0.5)
+				}
 				return e.Absolute().Left(inset).Right(inset).Top(top).
 					TextAlign(align).Opacity(opacity[i]).FontSize(size).FontWeight(weight).
 					TextColor(white.Alpha(0.58+0.42*emphasis)).

@@ -26,17 +26,19 @@ const (
 const (
 	settingsWidth           = 432
 	settingsControlWidth    = 236
+	settingsRowHeight       = 46
 	clipboardSettingsHeight = 128
 	cardPreviewInset        = 8
 	cardPreviewGap          = 12
 )
 
 type appSettings struct {
-	Mode           int         `json:"waveColorMode"`
-	Color          ui.Color    `json:"waveColor"`
-	HideLyrics     bool        `json:"hideLyrics,omitempty"`
-	WeatherCity    weatherCity `json:"weatherCity,omitzero"`
-	MediaCardStyle int         `json:"mediaCardStyle,omitempty"`
+	Mode            int         `json:"waveColorMode"`
+	Color           ui.Color    `json:"waveColor"`
+	HideLyrics      bool        `json:"hideLyrics,omitempty"`
+	LyricTransition int         `json:"lyricTransition,omitempty"`
+	WeatherCity     weatherCity `json:"weatherCity,omitzero"`
+	MediaCardStyle  int         `json:"mediaCardStyle,omitempty"`
 }
 
 func (s appSettings) waveColor(artwork ui.Color) ui.Color {
@@ -76,6 +78,9 @@ func loadSettings(path string) (appSettings, error) {
 	}
 	if settings.MediaCardStyle != mediaCardLargeCover {
 		settings.MediaCardStyle = mediaCardDefault
+	}
+	if settings.LyricTransition < lyricTransitionSlide || settings.LyricTransition > lyricTransitionNone {
+		settings.LyricTransition = lyricTransitionSlide
 	}
 	return settings, nil
 }
@@ -122,6 +127,9 @@ func saveStateFile(path string, data []byte) error {
 
 func (a *island) settingsHeight() int {
 	height := 415 + a.settings.cardHeight() + 2*cardPreviewInset + cardPreviewGap + clipboardSettingsHeight
+	if !a.settings.HideLyrics {
+		height += settingsRowHeight + 1
+	}
 	if a.settings.Mode == waveCustom {
 		height += 334
 	}
@@ -169,14 +177,14 @@ func settingsGroup(c *ui.Context, label string, children func()) {
 }
 
 func settingsRow(c *ui.Context) ui.Element {
-	return ui.Row(c).FillWidth().Height(46).Shrink(0).Padding(0, 14).Gap(12).AlignItems(ui.Center)
+	return ui.Row(c).FillWidth().Height(settingsRowHeight).Shrink(0).Padding(0, 14).Gap(12).AlignItems(ui.Center)
 }
 
 func (a *island) settingsView(c *ui.Context) {
 	c.SetTheme(theme)
 	c.Root().Background(ui.Hex("#f2f3f5"))
 	ui.Scroll(c.Key("settings")).Fill().Padding(16, 18).Gap(14).Children(func() {
-		var weatherChanged, lyricsChanged, cardStyleChanged, modeChanged, colorChanged bool
+		var weatherChanged, lyricsChanged, transitionChanged, cardStyleChanged, modeChanged, colorChanged bool
 		settingsGroup(c.Key("idle-settings"), "空闲", func() { weatherChanged = a.weatherSettings(c) })
 		settingsGroup(c.Key("clipboard-settings"), "剪贴板", func() { a.clipboardSettings(c) })
 		settingsGroup(c.Key("media-settings"), "媒体", func() {
@@ -202,6 +210,14 @@ func (a *island) settingsView(c *ui.Context) {
 					lyricsChanged = true
 				}
 			})
+			if !a.settings.HideLyrics {
+				divider()
+				settingsRow(c.Key("lyric-transition-settings")).Children(func() {
+					ui.Text(c, "歌词过渡").Grow(1).FontSize(13).TextColor(ink)
+					transitionChanged = ui.Segmented(c.Key("lyric-transition"), &a.settings.LyricTransition, "上移", "淡入", "缩放", "关闭").
+						FillEqually().Width(settingsControlWidth).Height(36).FontSize(12).Label("歌词过渡").Changed()
+				})
+			}
 			divider()
 			settingsRow(c.Key("lyric-cache")).Children(func() {
 				lyrics := &a.lyrics
@@ -263,7 +279,7 @@ func (a *island) settingsView(c *ui.Context) {
 				a.updateControl(c)
 			})
 		})
-		if (modeChanged || cardStyleChanged) && a.settingsWindow != nil {
+		if (modeChanged || cardStyleChanged || lyricsChanged) && a.settingsWindow != nil {
 			win := a.settingsWindow
 			win.Update(func() {
 				frame, content := win.Bounds(), win.ContentBounds()
@@ -276,7 +292,7 @@ func (a *island) settingsView(c *ui.Context) {
 				win.SetContentBounds(content)
 			})
 		}
-		if modeChanged || colorChanged || lyricsChanged || weatherChanged || cardStyleChanged {
+		if modeChanged || colorChanged || lyricsChanged || transitionChanged || weatherChanged || cardStyleChanged {
 			a.settingsSaveAt = c.Now().Add(300 * time.Millisecond)
 			if a.win != nil {
 				a.win.Invalidate()

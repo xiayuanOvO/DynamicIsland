@@ -46,22 +46,65 @@ func TestLyricOverlayWrapsOnlyCurrentLine(t *testing.T) {
 			checkHeight(beforeTo, false)
 
 			before := append([]byte(nil), view.Image().Pix...)
-			o.outgoing, o.shiftedAt = o.rows[0], view.Now()
+			o.outgoing, o.transitionAt = o.rows[0], view.Now()
 			o.rows = [3]string{test.from, test.to, longer + "后"}
 			view.Frame()
 			if !bytes.Equal(before, view.Image().Pix) {
 				t.Fatal("transition should start at the previous layout")
 			}
-			view.Advance(lyricTransition / 3)
+			view.Advance(lyricTransitionDuration / 3)
 			view.Frame()
 			if bounds(test.from).Y >= beforeFrom.Y || bounds(test.to).Y >= beforeTo.Y {
 				t.Fatal("both lines should move up during the transition")
 			}
-			view.Advance(lyricTransition)
+			view.Advance(lyricTransitionDuration)
 			view.Frame()
 			checkHeight(bounds(test.from), false)
 			checkHeight(bounds(test.to), test.toWraps)
 			checkHeight(bounds(o.rows[2]), false)
+		})
+	}
+}
+
+func TestLyricOverlayTransitionStyles(t *testing.T) {
+	tests := []struct {
+		name         string
+		style        int
+		reduceMotion bool
+		animates     bool
+	}{
+		{"fade", lyricTransitionFade, false, true},
+		{"zoom", lyricTransitionZoom, false, true},
+		{"no animation", lyricTransitionNone, false, false},
+		{"reduced motion with slide", lyricTransitionSlide, true, false},
+		{"reduced motion with fade", lyricTransitionFade, true, false},
+		{"reduced motion with zoom", lyricTransitionZoom, true, false},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			current := strings.Repeat("风把歌声带过安静的海面，", 5)
+			o := lyricOverlay{rows: [3]string{"落日照在窗上", current, "天色慢慢暗下来"}, side: dockRight, transition: test.style}
+			view := ui.NewTesterWith(o.view, 436, lyricOverlayHeight, ui.TesterOptions{
+				Preferences: ui.Preferences{ReduceMotion: test.reduceMotion},
+			})
+			settled := view.Image()
+			o.outgoing, o.transitionAt = "上一段歌声", view.Now()
+			view.Frame()
+			start := view.Image()
+			if changed := !bytes.Equal(settled.Pix, start.Pix); changed != test.animates {
+				t.Fatalf("initial frame changed = %t, want %t", changed, test.animates)
+			}
+			if !view.HasText(current) {
+				t.Fatal("the new lyric should be present from the first frame")
+			}
+			view.Advance(lyricTransitionDuration / 3)
+			if changed := !bytes.Equal(start.Pix, view.Image().Pix); changed != test.animates {
+				t.Fatalf("intermediate frame changed = %t, want %t", changed, test.animates)
+			}
+			view.Advance(lyricTransitionDuration)
+			if !bytes.Equal(settled.Pix, view.Image().Pix) {
+				t.Fatal("the lyric did not settle at its normal appearance")
+			}
 		})
 	}
 }
@@ -117,7 +160,7 @@ func TestLyricOverlayScrollsOverflowingSecondLine(t *testing.T) {
 				t.Fatal("scrolling should already be stopped before the next lyric")
 			}
 
-			o.outgoing, o.previousOffset, o.shiftedAt = o.rows[0], o.scroll.offset(view.Now()), view.Now()
+			o.outgoing, o.previousOffset, o.transitionAt = o.rows[0], o.scroll.offset(view.Now()), view.Now()
 			o.currentSince = view.Now()
 			o.lineEndsAt = view.Now().Add(4 * time.Second)
 			o.scroll = lyricScroll{}
