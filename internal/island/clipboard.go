@@ -68,6 +68,8 @@ type clipboardComponent struct {
 	query               string
 	focusSearch         bool
 	selected            clipboardEntryKey
+	hoverSelection      clipboardEntryKey
+	resumeHoverAt       time.Time
 	pendingPaste        *clipboardEntry
 	pasteTarget         clipboardPasteTarget
 	loadFailed          bool

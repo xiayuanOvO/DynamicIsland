@@ -396,6 +396,35 @@ func TestClipboardKeyboardSelectionScrollsIntoView(t *testing.T) {
 	}
 }
 
+func TestClipboardPointerSelectionStaysPutWhileScrolling(t *testing.T) {
+	a := island{files: &shelf.Shelf{}, clipboard: clipboardComponent{clipboardState: clipboardState{Recording: true}}}
+	for i := range 12 {
+		a.clipboard.Entries = append(a.clipboard.Entries, clipboardEntry{Text: fmt.Sprintf("记录 %02d", i), CopiedAt: time.Now()})
+	}
+	a.openClipboard(true)
+	view := ui.NewTester(func(c *ui.Context) { a.clipboardView(c, true, nil) }, panelWidth, clipboardPanelHeight)
+	first := a.clipboard.Entries[0].key()
+	view.Scroll(20, 125, 0, 106)
+	if a.clipboard.selected != first {
+		t.Fatal("a scroll event must not select the row at its pointer position")
+	}
+	view.Wheel(21, 125, 0, 53)
+	view.Advance(70 * time.Millisecond)
+	view.Move(22, 126)
+	if a.clipboard.selected != first {
+		t.Fatal("moving the mouse during a scrolling animation must not change the selection")
+	}
+	view.Advance(140 * time.Millisecond)
+	next, found := view.Find("复制 记录 04")
+	if !found {
+		t.Fatal("the target row should be visible after scrolling")
+	}
+	view.Move(next.X+20, next.Y+next.H/2)
+	if a.clipboard.selected != a.clipboard.Entries[4].key() {
+		t.Fatal("moving the mouse after scrolling should select the row under it")
+	}
+}
+
 func TestClipboardHistorySaveFailureLeavesEntriesIntact(t *testing.T) {
 	a := island{statePath: filepath.Join(t.TempDir(), "shelf.json")}
 	state := clipboardState{Entries: []clipboardEntry{{Text: "示例", CopiedAt: time.Now()}}}
