@@ -195,7 +195,9 @@ func (a *island) header(c *ui.Context, open float32) {
 func (a *island) body(c *ui.Context, frame islandFrame) {
 	opacity := frame.content
 	clipboard := frame.clipboard
-	if c.Preferences().ReduceMotion {
+	if !a.clipboard.Recording {
+		clipboard = 0
+	} else if c.Preferences().ReduceMotion {
 		clipboard = 0
 		if a.clipboard.open {
 			clipboard = 1
@@ -225,7 +227,7 @@ func (a *island) body(c *ui.Context, frame islandFrame) {
 		}
 		ui.Box(c.Key("tools")).FillWidth().Shrink(0).Children(func() {
 			a.todoCard(c, progress, frame)
-			if progress < 0.45 {
+			if a.clipboard.Recording && progress < 0.45 {
 				a.clipboardCard(c, 1-animationPhase(progress, 0, 0.45))
 			}
 		})

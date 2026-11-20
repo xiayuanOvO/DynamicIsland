@@ -13,10 +13,57 @@ import (
 const clipboardPanelHeight = 280
 
 func (a *island) openClipboard() {
+	if !a.clipboard.Recording {
+		return
+	}
 	a.todos.open = false
 	a.todos.draft, a.todos.leaving = nil, nil
 	a.clipboard.open = true
 	a.showPanel()
+}
+
+func (a *island) clipboardSettings(c *ui.Context) {
+	history := &a.clipboard
+	row := settingsRow(c.Key("clipboard-recording"))
+	row.Children(func() {
+		if history.loadFailed {
+			ui.Text(c, history.problem).Grow(1).FontSize(11).TextColor(ui.Hex("#a65b50"))
+			confirm := ui.Local(row, "confirm-reset", func() bool { return false })
+			if ui.Button(c.Key("reset-history"), "清空历史…").Height(40).Clicked() {
+				*confirm = true
+			}
+			if ui.AlertDialog(c, confirm, "清空剪贴板历史？", "", "清空历史", "取消") == 0 &&
+				a.saveClipboard(clipboardState{}) {
+				c.Announce("剪贴板历史已清空")
+			}
+			return
+		}
+		var label ui.Element
+		ui.Column(c).Grow(1).MinWidth(0).Gap(1).Children(func() {
+			label = ui.Text(c, "记录剪贴板").FontSize(13).TextColor(ink)
+			if history.problem != "" {
+				ui.Text(c, history.problem).FontSize(11).TextColor(ui.Hex("#a65b50"))
+			}
+		})
+		recording := history.Recording
+		if ui.Switch(c.Key("record"), &recording).LabelledBy(label).Changed() {
+			next := history.clipboardState
+			next.Recording = recording
+			if !a.saveClipboard(next) {
+				return
+			}
+			a.syncClipboardWatch()
+			if !recording {
+				history.open, history.confirmClear = false, false
+			}
+			if a.tray != nil {
+				a.tray.SetMenu(a.trayMenu())
+			}
+			if a.win != nil {
+				a.win.Invalidate()
+			}
+		}
+	})
 }
 
 func (a *island) clipboardCard(c *ui.Context, opacity float32) {
@@ -49,20 +96,9 @@ func (a *island) clipboardView(c *ui.Context) {
 				history.open, history.confirmClear = false, false
 			}
 			ui.Text(c, "剪贴板历史").Grow(1).FontSize(18).FontWeight(650).TextColor(ink)
-			if !history.confirmClear && (len(history.Entries) > 0 || history.loadFailed) &&
+			if !history.confirmClear && len(history.Entries) > 0 &&
 				ui.Button(c.Key("clear"), "清空历史").Height(40).Clicked() {
 				history.confirmClear = true
-			}
-		})
-		ui.Row(c).FillWidth().Height(40).Shrink(0).AlignItems(ui.Center).Children(func() {
-			label := ui.Text(c, "记录剪贴板").Grow(1).FontSize(13).TextColor(ink)
-			recording := history.Recording
-			if ui.Switch(c.Key("record"), &recording).LabelledBy(label).Disabled(history.loadFailed).Changed() {
-				next := history.clipboardState
-				next.Recording = recording
-				if a.saveClipboard(next) {
-					a.syncClipboardWatch()
-				}
 			}
 		})
 		if history.confirmClear {
@@ -82,9 +118,7 @@ func (a *island) clipboardView(c *ui.Context) {
 			})
 		} else if len(history.Entries) == 0 {
 			ui.Box(c).FillWidth().Grow(1).Center().Children(func() {
-				if !history.loadFailed {
-					ui.Text(c, "暂无剪贴板历史").FontSize(13).TextColor(muted)
-				}
+				ui.Text(c, "暂无剪贴板历史").FontSize(13).TextColor(muted)
 			})
 		} else {
 			ui.Scroll(c.Key("entries")).FillWidth().Grow(1).MinHeight(0).Gap(4).Children(func() {

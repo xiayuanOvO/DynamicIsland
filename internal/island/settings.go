@@ -24,10 +24,11 @@ const (
 )
 
 const (
-	settingsWidth        = 432
-	settingsControlWidth = 236
-	cardPreviewInset     = 8
-	cardPreviewGap       = 12
+	settingsWidth           = 432
+	settingsControlWidth    = 236
+	clipboardSettingsHeight = 82
+	cardPreviewInset        = 8
+	cardPreviewGap          = 12
 )
 
 type appSettings struct {
@@ -116,7 +117,7 @@ func saveJSON(path string, value any) error {
 }
 
 func (a *island) settingsHeight() int {
-	height := 415 + a.settings.cardHeight() + 2*cardPreviewInset + cardPreviewGap
+	height := 415 + a.settings.cardHeight() + 2*cardPreviewInset + cardPreviewGap + clipboardSettingsHeight
 	if a.settings.Mode == waveCustom {
 		height += 334
 	}
@@ -172,6 +173,7 @@ func (a *island) settingsView(c *ui.Context) {
 	ui.Scroll(c.Key("settings")).Fill().Padding(16, 18).Gap(14).Children(func() {
 		var weatherChanged, lyricsChanged, cardStyleChanged, modeChanged, colorChanged bool
 		settingsGroup(c.Key("idle-settings"), "空闲", func() { weatherChanged = a.weatherSettings(c) })
+		settingsGroup(c.Key("clipboard-settings"), "剪贴板", func() { a.clipboardSettings(c) })
 		settingsGroup(c.Key("media-settings"), "媒体", func() {
 			divider := func() {
 				ui.Box(c).AlignSelf(ui.Stretch).Height(1).Shrink(0).Margin(0, 14).Background(theme.Border)

@@ -130,11 +130,15 @@ func (a *island) start() {
 	a.watchFullscreen()
 }
 
-func (a *island) createTray() {
-	menu := mygo.NewMenu([]*mygo.MenuItem{
+func (a *island) trayMenu() *mygo.Menu {
+	items := []*mygo.MenuItem{
 		{Label: "显示灵动岛", Click: func(*mygo.MenuItem, *mygo.Window) { a.show() }},
 		{Label: "待办事项…", Click: func(*mygo.MenuItem, *mygo.Window) { a.openTodos() }},
-		{Label: "剪贴板历史…", Click: func(*mygo.MenuItem, *mygo.Window) { a.openClipboard() }},
+	}
+	if a.clipboard.Recording {
+		items = append(items, &mygo.MenuItem{ID: "clipboard-history", Label: "剪贴板历史…", Click: func(*mygo.MenuItem, *mygo.Window) { a.openClipboard() }})
+	}
+	return mygo.NewMenu(append(items, []*mygo.MenuItem{
 		{Label: "添加文件…", Click: func(*mygo.MenuItem, *mygo.Window) { a.show(); a.choose(false) }},
 		{Label: "添加文件夹…", Click: func(*mygo.MenuItem, *mygo.Window) { a.show(); a.choose(true) }},
 		mygo.Separator(),
@@ -143,10 +147,13 @@ func (a *island) createTray() {
 		mygo.Separator(),
 		{Label: "设置…", Click: func(*mygo.MenuItem, *mygo.Window) { a.openSettings() }},
 		{Label: "退出", Click: func(*mygo.MenuItem, *mygo.Window) { mygo.App.Quit() }},
-	})
+	}...))
+}
+
+func (a *island) createTray() {
 	icon := trayIcon()
 	tray, err := mygo.NewTray(mygo.TrayOptions{
-		ID: "dynamic-island", Icon: icon, IconIsTemplate: true, ToolTip: "灵动岛", Menu: menu,
+		ID: "dynamic-island", Icon: icon, IconIsTemplate: true, ToolTip: "灵动岛", Menu: a.trayMenu(),
 	})
 	if err != nil {
 		log.Printf("tray: %v", err)

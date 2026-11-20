@@ -91,7 +91,7 @@ func TestClipboardTextHonorsClipboardHistoryMarkers(t *testing.T) {
 
 func TestClipboardPanelDeletesAndClearsSavedHistory(t *testing.T) {
 	a := island{expanded: true, files: &shelf.Shelf{}, statePath: filepath.Join(t.TempDir(), "shelf.json")}
-	if !a.saveClipboard(clipboardState{Entries: []clipboardEntry{
+	if !a.saveClipboard(clipboardState{Recording: true, Entries: []clipboardEntry{
 		{Text: "样本文字 1", CopiedAt: time.Now()},
 		{Text: "样本文字 2", CopiedAt: time.Now()},
 	}}) {
