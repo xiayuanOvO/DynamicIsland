@@ -213,6 +213,49 @@ func TestLyricTransitionSettingCanBeChangedAndSaved(t *testing.T) {
 	}
 }
 
+func TestLyricStyleSettingsCanBeChangedAndSaved(t *testing.T) {
+	a := island{statePath: filepath.Join(t.TempDir(), "shelf.json")}
+	view := ui.NewTester(a.settingsView, settingsWidth, a.settingsHeight())
+	view.SetLocale("en-US")
+	for range 12 {
+		if view.Focused("歌词字号") {
+			break
+		}
+		view.Key(0, ui.KeyTab)
+	}
+	if !view.Focused("歌词字号") {
+		t.Fatal("the lyric size slider was not reachable by Tab")
+	}
+	view.Key(0, ui.KeyRight)
+	if got := a.settings.LyricStyle.fontSize(); got != lyricDefaultFontSize+1 {
+		t.Fatalf("Right should increase the font size by one, got %d", got)
+	}
+	view.Key(0, ui.KeyEnd)
+	view.Key(0, ui.KeyTab)
+	if !view.Focused("歌词高亮颜色") {
+		t.Fatal("the lyric color picker was not reachable by Tab")
+	}
+	view.Key(0, ui.KeyEnter)
+	if err := view.Click("Green"); err != nil {
+		t.Fatal(err)
+	}
+	view.Key(0, ui.KeyEscape)
+	view.Advance(time.Second)
+	saved, err := loadSettings(a.settingsPath())
+	green := ui.Hex("#22c55e")
+	if err != nil || saved.LyricStyle.fontSize() != lyricMaxFontSize || saved.LyricStyle.highlightColor() != green {
+		t.Fatalf("lyric style did not persist, got size %d and color %v, %v", saved.LyricStyle.fontSize(), saved.LyricStyle.highlightColor(), err)
+	}
+	if err := view.Click("恢复默认歌词颜色"); err != nil {
+		t.Fatal(err)
+	}
+	view.Advance(time.Second)
+	saved, err = loadSettings(a.settingsPath())
+	if err != nil || saved.LyricStyle.highlightColor() != white || saved.LyricStyle.fontSize() != lyricMaxFontSize {
+		t.Fatalf("reset should restore white and keep the chosen size, got %+v, %v", saved.LyricStyle, err)
+	}
+}
+
 func TestClearLyricCacheFromSettings(t *testing.T) {
 	cache := lyrics.NewCache(t.TempDir())
 	song := lyrics.Song{Title: "夜行列车", Artist: "林海风", Duration: 226}

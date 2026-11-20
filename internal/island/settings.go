@@ -30,13 +30,21 @@ const (
 	clipboardSettingsHeight = 128
 	cardPreviewInset        = 8
 	cardPreviewGap          = 12
+	settingsBackground      = "#f2f3f5"
 )
+
+var settingsTheme = func() *ui.Theme {
+	t := *theme
+	t.Background = ui.Hex(settingsBackground)
+	return &t
+}()
 
 type appSettings struct {
 	Mode            int         `json:"waveColorMode"`
 	Color           ui.Color    `json:"waveColor"`
 	HideLyrics      bool        `json:"hideLyrics,omitempty"`
 	LyricTransition int         `json:"lyricTransition,omitempty"`
+	LyricStyle      lyricStyle  `json:"lyricStyle,omitzero"`
 	WeatherCity     weatherCity `json:"weatherCity,omitzero"`
 	MediaCardStyle  int         `json:"mediaCardStyle,omitempty"`
 }
@@ -81,6 +89,9 @@ func loadSettings(path string) (appSettings, error) {
 	}
 	if settings.LyricTransition < lyricTransitionSlide || settings.LyricTransition > lyricTransitionNone {
 		settings.LyricTransition = lyricTransitionSlide
+	}
+	if settings.LyricStyle.FontSize < lyricMinFontSize || settings.LyricStyle.FontSize > lyricMaxFontSize {
+		settings.LyricStyle.FontSize = 0
 	}
 	return settings, nil
 }
@@ -128,7 +139,7 @@ func saveStateFile(path string, data []byte) error {
 func (a *island) settingsHeight() int {
 	height := 415 + a.settings.cardHeight() + 2*cardPreviewInset + cardPreviewGap + clipboardSettingsHeight
 	if !a.settings.HideLyrics {
-		height += settingsRowHeight + 1
+		height += 3 * (settingsRowHeight + 1)
 	}
 	if a.settings.Mode == waveCustom {
 		height += 334
@@ -144,7 +155,7 @@ func (a *island) openSettings() {
 			Title: "灵动岛设置", Content: ui.View(a.settingsView),
 			Width: settingsWidth, Height: min(a.settingsHeight(), area.Height-48), UseContentSize: true,
 			DisableResize: true, DisableMaximize: true, DisableFullScreen: true,
-			BackgroundColor: "#f2f3f5",
+			BackgroundColor: settingsBackground,
 		})
 		a.settingsWindow.OnClose(func(*mygo.CloseEvent) { a.saveSettings() })
 		a.settingsWindow.OnClosed(func() {
@@ -181,10 +192,11 @@ func settingsRow(c *ui.Context) ui.Element {
 }
 
 func (a *island) settingsView(c *ui.Context) {
-	c.SetTheme(theme)
-	c.Root().Background(ui.Hex("#f2f3f5"))
+	c.SetTheme(settingsTheme)
+	c.Root().Background(settingsTheme.Background)
 	ui.Scroll(c.Key("settings")).Fill().Padding(16, 18).Gap(14).Children(func() {
 		var weatherChanged, lyricsChanged, transitionChanged, cardStyleChanged, modeChanged, colorChanged bool
+		var lyricSizeChanged, lyricColorChanged bool
 		settingsGroup(c.Key("idle-settings"), "空闲", func() { weatherChanged = a.weatherSettings(c) })
 		settingsGroup(c.Key("clipboard-settings"), "剪贴板", func() { a.clipboardSettings(c) })
 		settingsGroup(c.Key("media-settings"), "媒体", func() {
@@ -211,6 +223,34 @@ func (a *island) settingsView(c *ui.Context) {
 				}
 			})
 			if !a.settings.HideLyrics {
+				style := &a.settings.LyricStyle
+				divider()
+				settingsRow(c.Key("lyric-size-settings")).Children(func() {
+					ui.Text(c, "歌词字号").Grow(1).FontSize(13).TextColor(ink).AccessHidden(true)
+					ui.Row(c).Width(settingsControlWidth).Gap(8).AlignItems(ui.Center).Children(func() {
+						size := float64(style.fontSize())
+						lyricSizeChanged = ui.Slider(c.Key("lyric-font-size"), &size, lyricMinFontSize, lyricMaxFontSize).
+							Step(1).Grow(1).Height(24).Label("歌词字号").Changed()
+						if lyricSizeChanged {
+							style.FontSize = int(size)
+						}
+						ui.Text(c, fmt.Sprint(style.fontSize())).Width(20).FontSize(12).TextAlign(ui.End).TextColor(muted).AccessHidden(true)
+					})
+				})
+				divider()
+				settingsRow(c.Key("lyric-color-settings")).Children(func() {
+					ui.Text(c, "歌词高亮颜色").Grow(1).FontSize(13).TextColor(ink).AccessHidden(true)
+					color := style.highlightColor()
+					if color != white && ui.Button(c.Key("reset-lyric-color"), "恢复默认").Height(36).FontSize(12).
+						Label("恢复默认歌词颜色").Clicked() {
+						style.Color, color = nil, white
+						lyricColorChanged = true
+					}
+					if ui.ColorWell(c.Key("lyric-highlight-color"), &color).Height(36).Label("歌词高亮颜色").Changed() {
+						style.Color = &color
+						lyricColorChanged = true
+					}
+				})
 				divider()
 				settingsRow(c.Key("lyric-transition-settings")).Children(func() {
 					ui.Text(c, "歌词过渡").Grow(1).FontSize(13).TextColor(ink)
@@ -292,7 +332,7 @@ func (a *island) settingsView(c *ui.Context) {
 				win.SetContentBounds(content)
 			})
 		}
-		if modeChanged || colorChanged || lyricsChanged || transitionChanged || weatherChanged || cardStyleChanged {
+		if modeChanged || colorChanged || lyricsChanged || transitionChanged || lyricSizeChanged || lyricColorChanged || weatherChanged || cardStyleChanged {
 			a.settingsSaveAt = c.Now().Add(300 * time.Millisecond)
 			if a.win != nil {
 				a.win.Invalidate()

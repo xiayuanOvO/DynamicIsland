@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
 )
 
@@ -107,6 +108,37 @@ func TestLyricOverlayTransitionStyles(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestLyricOverlayFitsLargeWrappedLyricsWithCustomColor(t *testing.T) {
+	current := strings.Repeat("风把歌声带过海面，", 7)
+	green := ui.RGB(24, 255, 86)
+	o := lyricOverlay{
+		rows:  [3]string{"窗外的天色", current, "海上的灯火"},
+		style: lyricStyle{FontSize: lyricMaxFontSize, Color: &green},
+	}
+	anchor := mygo.Rectangle{X: 400, Y: 10, Width: 200, Height: 40}
+	screen := mygo.Rectangle{Width: 1000, Height: 800}
+	bounds := lyricBounds(anchor, screen, dockNone, o.style.fontSize())
+	if bounds.Height <= lyricOverlayHeight {
+		t.Fatalf("large lyrics should get a taller window, got %+v", bounds)
+	}
+	view := ui.NewTester(o.view, bounds.Width, bounds.Height)
+	var bottom float32
+	for _, line := range o.rows {
+		r, ok := view.Find(line)
+		if !ok || r.Y < bottom || r.Y+r.H > float32(bounds.Height) {
+			t.Fatalf("line %q was clipped or overlapped: %+v", line, r)
+		}
+		bottom = r.Y + r.H
+	}
+	pixels := view.Image().Pix
+	for i := 0; i < len(pixels); i += 4 {
+		if pixels[i+1] > 200 && pixels[i] < 100 && pixels[i+2] < 140 {
+			return
+		}
+	}
+	t.Fatal("the wrapped current line did not render in the selected color")
 }
 
 func TestLyricOverlayScrollsOverflowingSecondLine(t *testing.T) {

@@ -24,10 +24,32 @@ const (
 const (
 	lyricTransitionDuration = 240 * time.Millisecond
 	lyricOverlayHeight      = 120
+	lyricDefaultFontSize    = 21
+	lyricMinFontSize        = 16
+	lyricMaxFontSize        = 28
 	lyricScrollDelay        = 500 * time.Millisecond
 	lyricScrollHold         = 250 * time.Millisecond
 	lyricScrollMaxRate      = 280 // DIPs per second
 )
+
+type lyricStyle struct {
+	FontSize int       `json:"fontSize,omitempty"`
+	Color    *ui.Color `json:"color,omitempty"`
+}
+
+func (s lyricStyle) fontSize() int {
+	if s.FontSize == 0 {
+		return lyricDefaultFontSize
+	}
+	return s.FontSize
+}
+
+func (s lyricStyle) highlightColor() ui.Color {
+	if s.Color == nil {
+		return white
+	}
+	return *s.Color
+}
 
 type lyricOverlay struct {
 	win            *mygo.Window
@@ -48,6 +70,7 @@ type lyricOverlay struct {
 	previousOffset float32
 	transitionAt   time.Time
 	transition     int
+	style          lyricStyle
 	anchor         mygo.Rectangle
 	side           dockSide
 }
@@ -120,6 +143,8 @@ func (a *island) updateLyrics(c *ui.Context, frame islandFrame, width, height in
 	}
 	transition := a.settings.LyricTransition
 	transitionChanged := transition != overlay.transition
+	styleChanged := overlay.style != a.settings.LyricStyle
+	overlay.style = a.settings.LyricStyle
 	if transitionChanged {
 		overlay.transition, overlay.transitionAt = transition, time.Time{}
 	}
@@ -136,7 +161,7 @@ func (a *island) updateLyrics(c *ui.Context, frame islandFrame, width, height in
 		overlay.currentSince = now
 		overlay.scroll = lyricScroll{}
 		overlay.song, overlay.index, overlay.rows = song, index, rows
-	} else if !transitionChanged && anchor == overlay.anchor && side == overlay.side && lineEndsAt.Equal(overlay.lineEndsAt) {
+	} else if !transitionChanged && !styleChanged && anchor == overlay.anchor && side == overlay.side && lineEndsAt.Equal(overlay.lineEndsAt) {
 		return
 	}
 	overlay.anchor, overlay.side, overlay.lineEndsAt = anchor, side, lineEndsAt
@@ -149,15 +174,16 @@ func (a *island) updateLyrics(c *ui.Context, frame islandFrame, width, height in
 			if overlay.side == dockNone {
 				display = mygo.Screen.DisplayMatching(overlay.anchor)
 			}
-			bounds = lyricBounds(overlay.anchor, display.WorkArea, overlay.side)
+			bounds = lyricBounds(overlay.anchor, display.WorkArea, overlay.side, overlay.style.fontSize())
 		}
 		a.placeOverlay(&overlay.win, bounds, "歌词", overlay.view)
 	})
 }
 
-func lyricBounds(island, area mygo.Rectangle, side dockSide) mygo.Rectangle {
+func lyricBounds(island, area mygo.Rectangle, side dockSide, fontSize int) mygo.Rectangle {
 	const gap = 10
-	width, height := min(436, area.Width), min(lyricOverlayHeight, area.Height)
+	width := min(436, area.Width)
+	height := min(int(math.Ceil(float64(lyricOverlayHeight*fontSize)/lyricDefaultFontSize)), area.Height)
 	x, y := island.X+(island.Width-width)/2, island.Y+island.Height+gap
 	switch side {
 	case dockLeft:
@@ -212,14 +238,13 @@ func (o *lyricOverlay) view(c *ui.Context) {
 	}
 
 	const (
-		inset           = 10
-		rowSpacing      = 28
-		adjacentHeight  = 22
-		currentHeight   = 30
-		extraLineHeight = 26
-		currentSize     = 21
-		currentWeight   = 700
+		inset         = 10
+		currentWeight = 700
 	)
+	currentSize := float32(o.style.fontSize())
+	fontScale := currentSize / lyricDefaultFontSize
+	rowSpacing, adjacentHeight, currentHeight, extraLineHeight := 28*fontScale, 22*fontScale, 30*fontScale, 26*fontScale
+	adjacentSize, highlightColor := 14*fontScale, o.style.highlightColor()
 	width, height := c.Size()
 	textWidth := max(1, width-2*inset)
 	lines := [4]string{o.outgoing, o.rows[0], o.rows[1], o.rows[2]}
@@ -251,7 +276,7 @@ func (o *lyricOverlay) view(c *ui.Context) {
 			rowHeight := adjacentHeight + (activeHeight[i]-adjacentHeight)*emphasis
 			center := height/2 + before[i]*(1-slide) + after[i]*slide
 			wrapped := activeHeight[i] > currentHeight && emphasis >= 0.6
-			size, weight := 14+(currentSize-14)*emphasis, 500+int((currentWeight-500)*emphasis)
+			size, weight := adjacentSize+(currentSize-adjacentSize)*emphasis, 500+int((currentWeight-500)*emphasis)
 			top, lineHeight := center-rowHeight/2, min(extraLineHeight, rowHeight/2)
 			style := func(e ui.Element) ui.Element {
 				if i == 2 && scale != 1 {
@@ -259,7 +284,7 @@ func (o *lyricOverlay) view(c *ui.Context) {
 				}
 				return e.Absolute().Left(inset).Right(inset).Top(top).
 					TextAlign(align).Opacity(opacity[i]).FontSize(size).FontWeight(weight).
-					TextColor(white.Alpha(0.58+0.42*emphasis)).
+					TextColor(white.Mix(highlightColor, emphasis).Alpha(0.58+0.42*emphasis)).
 					TextShadow(0, 1, 4+2*emphasis, ink.Alpha(0.9+0.05*emphasis))
 			}
 			if wrapped && !reduceMotion {
