@@ -44,6 +44,18 @@ func (c transitionCanvas) contentRect(r mygo.Rectangle) mygo.Rectangle {
 	return r
 }
 
+func (a *island) transitionCanvasBounds(current mygo.Rectangle, keepExpanded bool) mygo.Rectangle {
+	width := max(current.Width, int(a.animation.to.width))
+	height := max(current.Height, int(a.animation.to.height))
+	if keepExpanded {
+		// Resizing the backing surface can stretch the previous Metal frame.
+		// Reserve room for both pages while the island is expanded.
+		overviewHeight, _ := a.overviewHeights()
+		height = max(height, overviewHeight, panelHeaderHeight+20+clipboardPanelHeight)
+	}
+	return a.windowBounds(width, height)
+}
+
 type islandVelocity struct{ width, height, open, todo, editor, schedule, clipboard float32 }
 
 type islandAnimation struct {

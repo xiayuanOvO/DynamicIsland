@@ -315,16 +315,14 @@ func (a *island) applyWindowFrame(frame islandFrame, animated bool) {
 	bounds := a.windowBounds(int(frame.width), int(frame.height))
 	nativeBounds := bounds
 	usingCanvas := false
-	if animated && frame != a.animation.to && a.dock.side == dockNone {
+	keepExpandedCanvas := a.clipboard.Recording && a.animation.to.open == 1
+	if animated && (frame != a.animation.to || keepExpandedCanvas) && a.dock.side == dockNone {
 		starting := a.canvas.restore == nil
-		if starting && (a.animation.from.open != a.animation.to.open || a.animation.from.todo != a.animation.to.todo ||
+		if starting && (keepExpandedCanvas || a.animation.from.open != a.animation.to.open || a.animation.from.todo != a.animation.to.todo ||
 			a.animation.from.clipboard != a.animation.to.clipboard) {
 			a.canvas = startTransitionCanvas(a.win)
 			if a.canvas.restore != nil {
-				target := a.windowBounds(
-					max(a.canvas.bounds.Width, int(a.animation.to.width)),
-					max(a.canvas.bounds.Height, int(a.animation.to.height)),
-				)
+				target := a.transitionCanvasBounds(a.canvas.bounds, keepExpandedCanvas)
 				if a.canvas.bounds != target {
 					// Paint the current island at the larger backing size
 					// before starting the visible transition.
