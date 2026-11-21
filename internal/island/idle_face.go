@@ -87,7 +87,7 @@ func (a *island) drawIdleFace(c *ui.Context, slot ui.Element, opacity, offset fl
 				ball := a.windowBounds(int(a.shownFrame.width), int(a.shownFrame.height))
 				face.lookAt(now, ui.Point{
 					X: float32(cursor.X-ball.X-ball.Width/2) - offset,
-					Y: float32(cursor.Y - ball.Y - ball.Height/2 + 4),
+					Y: float32(cursor.Y - ball.Y - ball.Height/2),
 				})
 				c.After(time.Second / 30)
 			}
@@ -104,11 +104,11 @@ func (a *island) drawIdleFace(c *ui.Context, slot ui.Element, opacity, offset fl
 
 func paintIdleFace(p *ui.Painter, r ui.Rect, mood idleMood, amount, eyeHeight float32, gaze ui.Point) {
 	const ellipseKappa = 0.55228475
-	centerX, centerY := r.X+r.W/2, r.Y+r.H/2-4
+	centerX, centerY := r.X+r.W/2, r.Y+r.H/2
 	eyeColor := ui.RGB(48, 48, 48)
-	for index, offset := range [...]float32{-6.5, 6.5} {
+	for index, offset := range [...]float32{-8, 8} {
 		x, y := centerX+offset, centerY
-		radiusX := float32(4.5)
+		radiusX := float32(3)
 		upper, lower := eyeHeight/2, eyeHeight/2
 		var lowerCurve float32
 		switch mood {
@@ -132,14 +132,17 @@ func paintIdleFace(p *ui.Painter, r ui.Rect, mood idleMood, amount, eyeHeight fl
 
 		left, right := x-radiusX, x+radiusX
 		top, bottom := y-upper, y+lower
-		handleX, upperSide := radiusX*ellipseKappa, upper*ellipseKappa
-		lowerSide := lower*ellipseKappa + lowerCurve
+		upperCap, lowerCap := min(radiusX, upper), min(radiusX, lower)
+		upperY, lowerY := top+upperCap, bottom-lowerCap
+		handleX, upperSide := radiusX*ellipseKappa, upperCap*ellipseKappa
+		lowerSide := lowerCap*ellipseKappa + lowerCurve
 		var eye ui.Path
-		eye.MoveTo(left, y).
-			CubeTo(left, y-upperSide, x-handleX, top, x, top).
-			CubeTo(x+handleX, top, right, y-upperSide, right, y).
-			CubeTo(right, y+lowerSide, x+handleX, bottom, x, bottom).
-			CubeTo(x-handleX, bottom, left, y+lowerSide, left, y).
+		eye.MoveTo(left, upperY).
+			CubeTo(left, upperY-upperSide, x-handleX, top, x, top).
+			CubeTo(x+handleX, top, right, upperY-upperSide, right, upperY).
+			LineTo(right, lowerY).
+			CubeTo(right, lowerY+lowerSide, x+handleX, bottom, x, bottom).
+			CubeTo(x-handleX, bottom, left, lowerY+lowerSide, left, lowerY).
 			Close()
 		p.FillPath(&eye, eyeColor)
 	}
