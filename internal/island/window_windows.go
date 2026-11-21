@@ -7,6 +7,13 @@ import (
 	"github.com/egoist/mygo"
 )
 
+const (
+	gwlStyle     = ^uintptr(15) // GWL_STYLE (-16)
+	wsCaption    = 0x00c00000
+	wsThickFrame = 0x00040000
+	wsMaximize   = 0x01000000
+)
+
 var (
 	user32                = syscall.NewLazyDLL("user32.dll")
 	gdi32                 = syscall.NewLazyDLL("gdi32.dll")
@@ -15,7 +22,6 @@ var (
 	setWindowPos          = user32.NewProc("SetWindowPos")
 	getForegroundWindow   = user32.NewProc("GetForegroundWindow")
 	getShellWindow        = user32.NewProc("GetShellWindow")
-	isZoomed              = user32.NewProc("IsZoomed")
 	monitorFromWindow     = user32.NewProc("MonitorFromWindow")
 	getMonitorInfo        = user32.NewProc("GetMonitorInfoW")
 	dwmapi                = syscall.NewLazyDLL("dwmapi.dll")
@@ -36,8 +42,6 @@ func configureFloatingWindow(win *mygo.Window) {
 	// MyGo's frameless panels keep WS_CAPTION. Give these desktop overlays
 	// a popup frame while preserving their ownership and input styles.
 	const (
-		gwlStyle        = ^uintptr(15) // GWL_STYLE (-16)
-		wsCaption       = 0x00c00000
 		wsPopup         = 0x80000000
 		swpFrameChanged = 0x0020
 		swpNoSize       = 0x0001
@@ -141,9 +145,7 @@ func foregroundFullscreen() bool {
 	if hwnd == 0 || hwnd == shell {
 		return false
 	}
-	if maximized, _, _ := isZoomed.Call(hwnd); maximized != 0 {
-		return false
-	}
+	style, _, _ := getWindowLong.Call(hwnd, gwlStyle)
 	monitor, _, _ := monitorFromWindow.Call(hwnd, 0)
 	if monitor == 0 {
 		return false
@@ -166,8 +168,16 @@ func foregroundFullscreen() bool {
 			return false
 		}
 	}
-	return windowCoversDisplay(
+	return windowCoversWindowsDisplay(
 		mygo.Rectangle{X: int(window.left), Y: int(window.top), Width: int(window.right - window.left), Height: int(window.bottom - window.top)},
 		mygo.Rectangle{X: int(info.monitor.left), Y: int(info.monitor.top), Width: int(info.monitor.right - info.monitor.left), Height: int(info.monitor.bottom - info.monitor.top)},
+		style,
 	)
+}
+
+func windowCoversWindowsDisplay(window, display mygo.Rectangle, style uintptr) bool {
+	// Borderless fullscreen can retain WS_MAXIMIZE when entered from maximized.
+	// A maximized window with a frame can fill the display when the taskbar auto-hides.
+	framedMaximized := style&wsMaximize != 0 && style&(wsCaption|wsThickFrame) != 0
+	return !framedMaximized && windowCoversDisplay(window, display)
 }
