@@ -21,13 +21,13 @@ func TestIdleFaceEyes(t *testing.T) {
 		filled, clear []image.Point
 	}{
 		{"neutral", moodNeutral, false,
-			[]image.Point{{17, 14}, {33, 14}, {14, 17}, {14, 23}, {30, 17}, {30, 23}, {17, 26}, {33, 26}},
-			[]image.Point{{17, 13}, {33, 13}, {14, 14}, {30, 14}, {25, 20}, {17, 27}, {33, 27}}},
-		{"sleepy", moodSleepy, false, []image.Point{{17, 23}, {33, 23}}, []image.Point{{17, 20}, {33, 20}}},
-		{"bored", moodBored, false, []image.Point{{16, 17}, {32, 20}}, []image.Point{{32, 17}}},
-		{"happy", moodHappy, false, []image.Point{{17, 16}, {33, 16}}, []image.Point{{17, 20}, {33, 20}}},
-		{"looking", moodLooking, false, []image.Point{{19, 20}, {35, 20}}, []image.Point{{15, 20}}},
-		{"blink", moodNeutral, true, []image.Point{{17, 20}, {33, 20}}, []image.Point{{17, 18}, {33, 22}}},
+			[]image.Point{{19, 14}, {31, 14}, {16, 17}, {16, 23}, {28, 17}, {28, 23}, {21, 20}, {33, 20}, {19, 26}, {31, 26}},
+			[]image.Point{{19, 13}, {31, 13}, {16, 14}, {28, 14}, {15, 20}, {22, 20}, {27, 20}, {34, 20}, {19, 27}, {31, 27}}},
+		{"sleepy", moodSleepy, false, []image.Point{{19, 23}, {31, 23}}, []image.Point{{19, 20}, {31, 20}}},
+		{"bored", moodBored, false, []image.Point{{18, 17}, {30, 20}}, []image.Point{{30, 17}}},
+		{"happy", moodHappy, false, []image.Point{{19, 16}, {31, 16}}, []image.Point{{19, 20}, {31, 20}}},
+		{"looking", moodLooking, false, []image.Point{{21, 20}, {33, 20}}, []image.Point{{17, 20}}},
+		{"blink", moodNeutral, true, []image.Point{{19, 20}, {31, 20}}, []image.Point{{19, 18}, {31, 22}}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			a := island{files: &shelf.Shelf{}}
