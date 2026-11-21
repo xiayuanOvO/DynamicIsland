@@ -347,11 +347,7 @@ func (a *island) applyWindowFrame(frame islandFrame, animated bool) {
 	}
 	if a.win.Bounds() != nativeBounds {
 		a.resizing = true
-		if animated {
-			setAnimatedWindowBounds(a.win, nativeBounds)
-		} else {
-			a.win.SetBounds(nativeBounds)
-		}
+		setIslandWindowBounds(a.win, nativeBounds, animated)
 		a.resizing = false
 	}
 	if restore != nil {

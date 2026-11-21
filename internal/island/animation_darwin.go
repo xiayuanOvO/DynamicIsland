@@ -59,7 +59,20 @@ var (
 	cocoaSetFrameDisplay = objc.RegisterName("setFrame:display:")
 )
 
-func setAnimatedWindowBounds(win *mygo.Window, bounds mygo.Rectangle) {
+func setIslandWindowBounds(win *mygo.Window, bounds mygo.Rectangle, animated bool) {
+	window := objc.ID(win.NativeHandle())
+	content := objc.Send[objc.ID](window, cocoaContentView)
+	views := objc.Send[objc.ID](content, cocoaSubviews)
+	for i := range objc.Send[uint](views, cocoaCount) {
+		view := objc.Send[objc.ID](views, cocoaObjectAt, i)
+		if anchorMetalContents(objc.Send[objc.ID](view, cocoaLayer)) {
+			break
+		}
+	}
+	if !animated {
+		win.SetBounds(bounds)
+		return
+	}
 	// Keep AppKit from forcing a synchronous display at the new size.
 	// MyGo's view resize event and display link schedule the paint.
 	screens := objc.Send[objc.ID](objc.ID(objc.GetClass("NSScreen")), cocoaScreens)
@@ -69,7 +82,7 @@ func setAnimatedWindowBounds(win *mygo.Window, bounds mygo.Rectangle) {
 		x: float64(bounds.X), y: screen.height - float64(bounds.Y+bounds.Height),
 		width: float64(bounds.Width), height: float64(bounds.Height),
 	}
-	objc.Send[objc.ID](objc.ID(win.NativeHandle()), cocoaSetFrameDisplay, frame, false)
+	objc.Send[objc.ID](window, cocoaSetFrameDisplay, frame, false)
 }
 
 var (
@@ -83,6 +96,9 @@ var (
 	cocoaMask            = objc.RegisterName("autoresizingMask")
 	cocoaSetMask         = objc.RegisterName("setAutoresizingMask:")
 	cocoaLayer           = objc.RegisterName("layer")
+	cocoaSublayers       = objc.RegisterName("sublayers")
+	cocoaContentsFlipped = objc.RegisterName("contentsAreFlipped")
+	cocoaSetGravity      = objc.RegisterName("setContentsGravity:")
 	cocoaLayerMask       = objc.RegisterName("mask")
 	cocoaSetLayerMask    = objc.RegisterName("setMask:")
 	cocoaGeometryFlipped = objc.RegisterName("isGeometryFlipped")
@@ -96,6 +112,27 @@ var (
 	cocoaRetain          = objc.RegisterName("retain")
 	cocoaRelease         = objc.RegisterName("release")
 )
+
+func anchorMetalContents(parent objc.ID) bool {
+	layers := objc.Send[objc.ID](parent, cocoaSublayers)
+	metal := objc.GetClass("CAMetalLayer")
+	for i := range objc.Send[uint](layers, cocoaCount) {
+		layer := objc.Send[objc.ID](layers, cocoaObjectAt, i)
+		if metal == 0 || !objc.Send[bool](layer, cocoaIsKindOf, metal) {
+			continue
+		}
+		// Keep the last drawable at its original scale and aligned to the
+		// island's top center until MyGo presents one at the new size.
+		gravity := "top"
+		if objc.Send[bool](layer, cocoaContentsFlipped) {
+			gravity = "bottom"
+		}
+		value := objc.Send[objc.ID](objc.ID(objc.GetClass("NSString")), objc.RegisterName("stringWithUTF8String:"), gravity)
+		objc.Send[objc.ID](layer, cocoaSetGravity, value)
+		return true
+	}
+	return false
+}
 
 func islandWindowMaterial(content objc.ID) (view, radiusTarget objc.ID) {
 	views := objc.Send[objc.ID](content, cocoaSubviews)
