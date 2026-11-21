@@ -19,7 +19,7 @@ import (
 func TestIdleCapsuleStatus(t *testing.T) {
 	a := island{files: &shelf.Shelf{}}
 	a.idle.weather = idleWeather{condition: "局部多云伴有阵雨", temperature: -100, icon: weatherRainIcon}
-	a.idle.weatherUntil = time.Now().Add(time.Minute)
+	a.idle.forecastUntil = time.Now().Add(time.Minute)
 	a.battery.readings = []battery.Reading{
 		{ID: "computer", Name: "本机", Kind: battery.Computer, Percent: 84, Charging: true},
 		{ID: "mouse", Name: "鼠标", Kind: battery.Mouse, Percent: battery.UnknownPercent},
@@ -64,11 +64,23 @@ func TestIdleCapsuleStatus(t *testing.T) {
 	if !hasClock || clock.X+clock.W != a.shownFrame.width-idleCapsulePadding || !view.HasText("本机") || view.HasText("耳机 左耳") {
 		t.Fatalf("the clock should keep its place while more batteries make room: %+v, %v", clock, view.Texts())
 	}
-	a.shownFrame.width = float32(width)
-	view.SetSize(width, idleCapsuleHeight)
+	a.setExpanded(true)
+	a.shownFrame = a.targetFrame()
+	view.SetSize(int(a.shownFrame.width), int(a.shownFrame.height))
 	view.Advance(2 * time.Minute)
-	if view.HasText("-100°C") || !view.HasText(view.Now().Format("15:04")) || !view.HasText("本机") {
-		t.Fatalf("expired weather should give way to the clock and battery: %v", view.Texts())
+	a.setExpanded(false)
+	a.shownFrame = a.targetFrame()
+	a.idle.reading = true
+	a.battery.reading = true
+	view.SetSize(width, idleCapsuleHeight)
+	if !view.HasText("-100°C") || !view.HasText("本机") || !view.HasText(view.Now().Format("15:04")) {
+		t.Fatalf("the capsule should show its cached status while refreshing after a mode change: %v", view.Texts())
+	}
+	a.idle.weather.temperature = 18
+	a.idle.reading = false
+	view.Frame()
+	if !view.HasText("18°C") || view.HasText("-100°C") {
+		t.Fatalf("the capsule should display the refreshed temperature: %v", view.Texts())
 	}
 
 	view.ClickAt(device.X+device.W/2, device.Y+device.H/2)
@@ -169,7 +181,7 @@ func TestFetchIdleWeatherTomorrowRain(t *testing.T) {
 		wantRain bool
 	}{{19, false}, {20, true}, {21, false}, {22, true}} {
 		now := time.Date(2026, time.November, test.day, 12, 0, 0, 0, time.Local)
-		info := idleInfo{weather: weather, weatherUntil: now.Add(time.Hour)}
+		info := idleInfo{weather: weather, forecastUntil: now.Add(time.Hour)}
 		if info.showsTomorrowRain(now) != test.wantRain {
 			t.Errorf("November %d: want rain reminder = %t, got forecast %v", test.day, test.wantRain, weather.rainDates)
 		}
@@ -182,7 +194,7 @@ func TestIdleCapsuleRainReminder(t *testing.T) {
 	now := time.Now()
 	a.idle.weather = idleWeather{condition: "晴", temperature: -100, icon: weatherSunIcon,
 		rainDates: []string{now.AddDate(0, 0, 1).Format(time.DateOnly)}}
-	a.idle.weatherUntil = now.Add(time.Hour)
+	a.idle.forecastUntil = now.Add(time.Hour)
 	a.shownFrame = a.targetFrame()
 	if a.shownFrame.width != baseWidth+idleRainReminderWidth {
 		t.Fatalf("rain reminder should widen the capsule: %.0f to %.0f", baseWidth, a.shownFrame.width)
@@ -206,7 +218,7 @@ func TestIdleCapsuleRainReminder(t *testing.T) {
 	a.settings.IdleItems[3].Hidden = true
 	beforeMidnight := view.Now()
 	midnight := time.Date(beforeMidnight.Year(), beforeMidnight.Month(), beforeMidnight.Day()+1, 0, 0, 0, 0, beforeMidnight.Location())
-	a.idle.weatherUntil = midnight.Add(time.Hour)
+	a.idle.forecastUntil = midnight.Add(time.Hour)
 	view.Frame()
 	if !view.HasText("明日有雨") {
 		t.Fatalf("the reminder should appear with the clock hidden: %v", view.Texts())

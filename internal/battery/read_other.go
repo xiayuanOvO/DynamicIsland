@@ -4,4 +4,4 @@ package battery
 
 import "context"
 
-func Read(context.Context) []Reading { return nil }
+func Read(context.Context) Snapshot { return Snapshot{} }

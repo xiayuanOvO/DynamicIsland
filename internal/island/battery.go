@@ -48,10 +48,10 @@ func (a *island) updateBattery(c *ui.Context) {
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		readings := battery.Read(ctx)
+		snapshot := battery.Read(ctx)
 		a.win.Update(func() {
 			b.reading = false
-			b.readings = readings
+			b.readings = snapshot.Merge(b.readings)
 			b.refreshAt = time.Now().Add(30 * time.Second)
 		})
 	}()

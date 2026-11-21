@@ -15,32 +15,33 @@ import (
 	"github.com/egoist/mygo"
 )
 
-func Read(ctx context.Context) []Reading {
-	var readings []Reading
+func Read(ctx context.Context) Snapshot {
+	var snapshot Snapshot
 	if output, err := exec.CommandContext(ctx, "/usr/bin/pmset", "-g", "batt").Output(); err == nil {
+		snapshot.computer = []Reading{}
 		if computer, ok := parseMacBattery(string(output)); ok {
-			readings = append(readings, computer)
+			snapshot.computer = append(snapshot.computer, computer)
 		}
 	}
 	probe, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
 	output, err := exec.CommandContext(probe, "/usr/sbin/system_profiler", "SPBluetoothDataType", "-json").Output()
 	if err != nil {
-		return readings
+		return snapshot
 	}
 	registry, _ := exec.CommandContext(ctx, "/usr/sbin/ioreg", "-a", "-r", "-l", "-k", "BatteryPercent", "-d", "1").Output()
-	connected := parseBluetoothBatteries(output, registryBatteries(registry))
-	targets := bluetoothProbeTargets(connected)
+	snapshot.bluetooth = parseBluetoothBatteries(output, registryBatteries(registry))
+	targets := bluetoothProbeTargets(snapshot.bluetooth)
 	if len(targets) == 0 {
-		return append(readings, connected...)
+		return snapshot
 	}
 	resources, err := mygo.App.Path(mygo.PathResources)
 	if err == nil {
 		if output, err := exec.CommandContext(ctx, filepath.Join(resources, "bluetooth-battery"), slices.Sorted(maps.Keys(targets))...).Output(); err == nil {
-			connected = mergeBluetoothProbe(connected, targets, output)
+			snapshot.bluetooth = mergeBluetoothProbe(snapshot.bluetooth, targets, output)
 		}
 	}
-	return append(readings, connected...)
+	return snapshot
 }
 
 func parseMacBattery(output string) (Reading, bool) {
@@ -73,10 +74,10 @@ func parseBluetoothBatteries(output []byte, registry map[string]int) []Reading {
 			Connected []map[string]device `json:"device_connected"`
 		} `json:"SPBluetoothDataType"`
 	}
-	if json.Unmarshal(output, &report) != nil {
+	if json.Unmarshal(output, &report) != nil || report.Controllers == nil {
 		return nil
 	}
-	var readings []Reading
+	readings := []Reading{}
 	seen := make(map[string]bool)
 	for _, controller := range report.Controllers {
 		for _, entry := range controller.Connected {

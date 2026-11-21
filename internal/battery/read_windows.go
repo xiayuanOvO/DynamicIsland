@@ -9,14 +9,24 @@ import (
 
 var getSystemPowerStatus = windows.NewLazySystemDLL("kernel32.dll").NewProc("GetSystemPowerStatus")
 
-func Read(context.Context) []Reading {
+func Read(context.Context) Snapshot {
+	const charging, noBattery, unknownStatus = 8, 128, 255
 	var status struct {
 		acLine, flags, percent, saver byte
 		remaining, fullLifetime       uint32
 	}
 	ok, _, _ := getSystemPowerStatus.Call(uintptr(unsafe.Pointer(&status)))
-	if ok == 0 || status.percent > 100 || (status.flags != 255 && status.flags&128 != 0) {
-		return nil
+	if ok == 0 {
+		return Snapshot{}
 	}
-	return []Reading{{ID: "computer", Name: "本机", Kind: Computer, Percent: int(status.percent), Charging: status.flags != 255 && status.flags&8 != 0}}
+	if status.flags != unknownStatus && status.flags&noBattery != 0 {
+		return Snapshot{computer: []Reading{}}
+	}
+	if status.percent > 100 {
+		return Snapshot{}
+	}
+	return Snapshot{computer: []Reading{{
+		ID: "computer", Name: "本机", Kind: Computer, Percent: int(status.percent),
+		Charging: status.flags != unknownStatus && status.flags&charging != 0,
+	}}}
 }

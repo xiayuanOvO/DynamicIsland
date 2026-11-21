@@ -52,7 +52,10 @@ func TestBluetoothBatteries(t *testing.T) {
 	if got := parseBluetoothBatteries(output, ioreg); !slices.Equal(got, want) {
 		t.Fatalf("got %+v\nwant %+v", got, want)
 	}
-	if got := parseBluetoothBatteries([]byte(`{"SPBluetoothDataType":[{}]}`), ioreg); len(got) != 0 {
-		t.Fatalf("got readings for disconnected devices: %+v", got)
+	if got := parseBluetoothBatteries([]byte(`{"SPBluetoothDataType":[{}]}`), ioreg); got == nil || len(got) != 0 {
+		t.Fatalf("a successful report with no connected devices should be empty: %+v", got)
+	}
+	if got := parseBluetoothBatteries([]byte(`{}`), ioreg); got != nil {
+		t.Fatalf("a missing Bluetooth report should be treated as unavailable: %+v", got)
 	}
 }

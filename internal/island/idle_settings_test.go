@@ -15,7 +15,7 @@ func TestIdleDisplaySettingsReorderHideAndSave(t *testing.T) {
 	a := island{files: &shelf.Shelf{}, statePath: filepath.Join(t.TempDir(), "shelf.json")}
 	a.battery.readings = []battery.Reading{{ID: "computer", Name: "本机", Kind: battery.Computer, Percent: 80}}
 	a.idle.weather = idleWeather{condition: "晴", temperature: 19, icon: weatherSunIcon}
-	a.idle.weatherUntil = time.Now().Add(time.Hour)
+	a.idle.forecastUntil = time.Now().Add(time.Hour)
 	originalWidth := a.targetFrame().width
 	view := ui.NewTester(a.settingsView, settingsWidth, settingsHeight)
 	face, hasFace := view.Find("表情")

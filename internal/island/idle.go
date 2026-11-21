@@ -32,10 +32,10 @@ const (
 )
 
 type idleInfo struct {
-	weather      idleWeather
-	weatherUntil time.Time
-	refreshAt    time.Time
-	reading      bool
+	weather       idleWeather
+	forecastUntil time.Time
+	refreshAt     time.Time
+	reading       bool
 }
 
 type idleWeather struct {
@@ -46,7 +46,7 @@ type idleWeather struct {
 }
 
 func (i idleInfo) showsTomorrowRain(now time.Time) bool {
-	return now.Before(i.weatherUntil) && len(i.weather.rainDates) > 0 &&
+	return now.Before(i.forecastUntil) && len(i.weather.rainDates) > 0 &&
 		slices.Contains(i.weather.rainDates, now.AddDate(0, 0, 1).Format(time.DateOnly))
 }
 
@@ -100,7 +100,7 @@ func (a *island) updateIdleWeather(c *ui.Context) {
 			now := time.Now()
 			info.refreshAt = now.Add(5 * time.Minute)
 			if err == nil {
-				info.weather, info.weatherUntil = weather, now.Add(2*time.Hour)
+				info.weather, info.forecastUntil = weather, now.Add(2*time.Hour)
 				info.refreshAt = now.Add(30 * time.Minute)
 			}
 		})
@@ -143,12 +143,12 @@ func (a *island) idleCapsule(c *ui.Context, opacity float32) {
 					if rainReminder {
 						itemWidth += idleRainReminderWidth
 					}
-					if now.Before(a.idle.weatherUntil) && len(weather.rainDates) > 0 {
+					if now.Before(a.idle.forecastUntil) && len(weather.rainDates) > 0 {
 						midnight := time.Date(now.Year(), now.Month(), now.Day()+1, 0, 0, 0, 0, now.Location())
-						c.After(min(midnight.Sub(now), a.idle.weatherUntil.Sub(now)))
+						c.After(min(midnight.Sub(now), a.idle.forecastUntil.Sub(now)))
 					}
 					ui.Row(c.Key(item.ID)).Width(float32(itemWidth)).Shrink(0).AlignItems(ui.Center).Justify(ui.Center).Gap(3).Children(func() {
-						if weather.condition != "" && now.Before(a.idle.weatherUntil) {
+						if weather.condition != "" {
 							ui.Icon(c.Key("condition"), weather.icon).Size(14, 14).Shrink(0).TextColor(c.Theme().Text).
 								Role(ui.RoleImage).Label(weather.condition)
 							ui.Text(c.Key("temperature"), fmt.Sprintf("%d°C", weather.temperature)).Shrink(0).SingleLine()

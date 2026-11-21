@@ -196,7 +196,7 @@ func (a *island) weatherSettings(c *ui.Context) bool {
 		return false
 	}
 	a.settings.WeatherCity = selected
-	a.idle.weather, a.idle.weatherUntil, a.idle.refreshAt = idleWeather{}, time.Time{}, time.Time{}
+	a.idle.weather, a.idle.forecastUntil, a.idle.refreshAt = idleWeather{}, time.Time{}, time.Time{}
 	if a.win != nil {
 		a.win.Invalidate()
 	}
