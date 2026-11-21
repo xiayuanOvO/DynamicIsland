@@ -12,7 +12,7 @@ const (
 
 const (
 	settingsBackgroundLight = "#f5f6f8"
-	settingsBackgroundDark  = "#1b1f26"
+	settingsBackgroundDark  = "#181715"
 )
 
 var (
@@ -25,11 +25,11 @@ var (
 func islandTheme(dark bool) *ui.Theme {
 	if dark {
 		t := ui.DarkTheme()
-		t.Text, t.TextMuted, t.Accent = ui.Hex("#f1f3f6"), ui.Hex("#b7c0cd"), ui.Hex("#a7c6e7")
-		t.AccentHover, t.AccentPressed, t.AccentText = ui.Hex("#bfd6ef"), ui.Hex("#95b8df"), ui.Hex("#18232f")
+		t.Text, t.TextMuted, t.Accent = ui.Hex("#f5efe7"), ui.Hex("#c2b9ae"), ui.Hex("#e1c8a4")
+		t.AccentHover, t.AccentPressed, t.AccentText = ui.Hex("#f1dbbe"), ui.Hex("#cdb187"), ui.Hex("#2b2118")
 		t.InactiveAccent = t.Accent
-		t.Surface, t.SurfaceHover, t.SurfacePressed = ui.Hex("#303843"), ui.Hex("#3c4654"), ui.Hex("#49576a")
-		t.Border, t.Focus = ui.Hex("#536071"), t.Accent
+		t.Surface, t.SurfaceHover, t.SurfacePressed = ui.Hex("#302b27"), ui.Hex("#3f362e"), ui.Hex("#51463b")
+		t.Border, t.Focus, t.Selection = ui.Hex("#585047"), t.Accent, t.Accent.Alpha(0.33)
 		t.Background = ui.Transparent
 		t.FontSize, t.Radius = 13, 10
 		return t
@@ -63,10 +63,10 @@ var lightColors = appearanceColors{
 }
 
 var darkColors = appearanceColors{
-	glass: ui.Hex("#414a58"), eyes: ui.Hex("#f5f5f5"), problem: ui.Hex("#f3ad9f"),
+	glass: ui.Hex("#403a35"), eyes: ui.Hex("#fffaf2"), problem: ui.Hex("#f3ad9f"),
 	lowBattery: ui.Hex("#ff9da3"), charging: ui.Hex("#91d7af"),
-	sidebar: ui.Hex("#222831"), settingsCard: ui.Hex("#252b35"),
-	mediaPreview: ui.Hex("#1b1f26"), popup: ui.Hex("#2b323d"),
+	sidebar: ui.Hex("#201e1c"), settingsCard: ui.Hex("#26221e"),
+	mediaPreview: ui.Hex(settingsBackgroundDark), popup: ui.Hex("#302c28"),
 }
 
 func colorsFor(dark bool) *appearanceColors {

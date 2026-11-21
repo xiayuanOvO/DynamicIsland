@@ -77,8 +77,8 @@ func TestDarkIdleCapsuleHasLightEyes(t *testing.T) {
 		capsule.Children(func() { a.header(c, 0) })
 	}, int(a.shownFrame.width), idleCapsuleHeight, scale)
 	background := img.RGBAAt(25*scale, 20*scale)
-	if background.A != 255 || background.R >= 65 || background.G >= 65 || background.B >= 75 {
-		t.Fatalf("the capsule should have a dark background, got %v", background)
+	if background.A != 255 || background.R >= 54 || background.R <= background.B {
+		t.Fatalf("the capsule should have a warm charcoal background, got %v", background)
 	}
 	for _, x := range []int{19, 31} {
 		if eye := img.RGBAAt(x*scale, 20*scale); eye.R < 230 || eye.G < 230 || eye.B < 230 {

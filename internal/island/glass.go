@@ -23,10 +23,10 @@ func glassSurface(c *ui.Context, element ui.Element, vibrant, over, movingGlass 
 	}
 	switch {
 	case c.Theme().Dark && vibrant:
-		base := ui.Hex("#242933")
-		backdrop.Gradient(base.Alpha(0.90), base.Alpha(0.86), 155)
+		base := ui.Hex("#171512")
+		backdrop.Gradient(base.Alpha(0.92), base.Alpha(0.88), 155)
 	case c.Theme().Dark:
-		backdrop.Gradient(ui.Hex("#2c323c"), ui.Hex("#1b1f26"), 155)
+		backdrop.Gradient(ui.Hex("#211e1b"), ui.Hex("#131210"), 155)
 	case runtime.GOOS == "windows" && vibrant:
 		backdrop.Gradient(white.Alpha(0.70), white.Alpha(0.62), 155)
 	case vibrant:
@@ -49,7 +49,7 @@ func glassSurface(c *ui.Context, element ui.Element, vibrant, over, movingGlass 
 	}
 	edge, middle, bottom, shine := white.Alpha(0.76), white.Alpha(0.24), white.Alpha(0.54), white.Alpha(0.48)
 	if c.Theme().Dark {
-		rim := ui.Hex("#677384")
+		rim := ui.Hex("#61584d")
 		edge, middle, bottom, shine = rim, rim.Alpha(0.4), rim.Alpha(0.7), rim.Alpha(0.18)
 	}
 	if over {
@@ -72,7 +72,7 @@ func paintFrost(p *ui.Painter, r ui.Rect) {
 	radius := islandCornerRadius(r.H)
 	light := white.Alpha(0.18)
 	if p.Theme().Dark {
-		light = white.Alpha(0.055)
+		light = white.Alpha(0.04)
 	}
 	p.Clip(r, radius, func() {
 		p.FillRadialGradient(r, ui.RadialGradient{
