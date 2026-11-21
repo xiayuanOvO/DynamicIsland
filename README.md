@@ -12,7 +12,7 @@ macOS 和 Windows 默认开启「设置 → 应用 → 全屏时隐藏灵动岛�
 
 空闲胶囊用环形进度显示设备电量，展开后可查看百分比和完整设备列表。闪电表示正在充电。macOS 显示本机电池和已连接的蓝牙设备。系统缺少读数时，打包版会尝试读取标准蓝牙电池服务（如 ROG Keris Wireless AimPoint）或 OPPO Enco Free4 的电量服务，首次使用可能需要允许蓝牙访问。左右耳和充电盒有独立读数时会分别显示。未知电量在空闲胶囊里显示为虚线环，展开后显示「—」。Windows 显示本机电池。
 
-空闲胶囊通过图标和温度显示天气。天气默认按网络 IP 估算位置。可在「设置 → 空闲 → 天气城市」搜索并选择城市，或恢复自动定位。搜索结果以行政区区分同名城市，天气无法获取时继续显示时间。 [天气数据由 wttr.in 提供](https://github.com/chubin/wttr.in) · [城市搜索由 Open-Meteo 提供](https://open-meteo.com/en/docs/geocoding-api) · [城市数据来自 GeoNames](https://www.geonames.org/) · [城市数据许可 CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)
+空闲胶囊通过图标和温度显示天气。按设备日期判断，明天任一时段预报有雨时，会在温度旁显示「明日有雨」。隐藏天气项目时也会隐藏提醒。天气默认按网络 IP 估算位置。可在「设置 → 空闲 → 天气城市」搜索并选择城市，或恢复自动定位。搜索结果以行政区区分同名城市，天气无法获取时继续显示时间。 [天气数据由 wttr.in 提供](https://github.com/chubin/wttr.in) · [城市搜索由 Open-Meteo 提供](https://open-meteo.com/en/docs/geocoding-api) · [城市数据来自 GeoNames](https://www.geonames.org/) · [城市数据许可 CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)
 
 ## 运行和构建
 

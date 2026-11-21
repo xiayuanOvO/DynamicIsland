@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"strings"
 	"testing"
 	"time"
 
@@ -89,41 +88,112 @@ func TestIdleCapsuleStatus(t *testing.T) {
 
 func TestFetchIdleWeatherIcons(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_, _ = io.WriteString(w, r.URL.Query().Get("weather"))
+		query := r.URL.Query()
+		fmt.Fprintf(w, `{"current_condition":[{"temp_C":"-3","weatherCode":%q,%q:[{"value":%q}]}]}`,
+			query.Get("code"), query.Get("field"), query.Get("condition"))
 	}))
 	t.Cleanup(server.Close)
 	for _, test := range []struct {
-		response string
-		icon     *ui.SVG
+		condition, code, field string
+		icon                   *ui.SVG
 	}{
-		{"晴|-3°C|113", weatherSunIcon},
-		{"Partly cloudy|-3°C|116", weatherPartlyCloudyIcon},
-		{"多云|-3°C|119", weatherPartlyCloudyIcon},
-		{"阴|-3°C|122", weatherCloudIcon},
-		{"阵雨|-3°C|353", weatherRainIcon},
-		{"暴雪|-3°C|230", weatherSnowIcon},
-		{"雷阵雨|-3°C|386", weatherThunderIcon},
-		{"冻雾|-3°C|260", weatherFogIcon},
-		{"Smoky haze|-3°C|149", weatherFogIcon},
-		{"局部多云伴有阵雨|-3°C", weatherRainIcon},
-		{"未知天气|-3°C|999", weatherUnknownIcon},
+		{"晴", "113", "lang_zh-cn", weatherSunIcon},
+		{"Partly cloudy", "116", "weatherDesc", weatherPartlyCloudyIcon},
+		{"多云", "119", "lang_zh-cn", weatherPartlyCloudyIcon},
+		{"阴", "122", "lang_zh-cn", weatherCloudIcon},
+		{"阵雨", "353", "lang_zh-cn", weatherRainIcon},
+		{"暴雪", "230", "lang_zh-cn", weatherSnowIcon},
+		{"雷阵雨", "386", "lang_zh-cn", weatherThunderIcon},
+		{"冻雾", "260", "lang_zh-cn", weatherFogIcon},
+		{"Smoky haze", "149", "weatherDesc", weatherFogIcon},
+		{"局部多云伴有阵雨", "", "lang_xx", weatherRainIcon},
+		{"未知天气", "999", "lang_zh-cn", weatherUnknownIcon},
 	} {
-		t.Run(test.response, func(t *testing.T) {
-			weather, err := fetchIdleWeather(context.Background(), server.URL+"?weather="+url.QueryEscape(test.response))
+		t.Run(test.condition, func(t *testing.T) {
+			query := url.Values{"condition": {test.condition}, "code": {test.code}, "field": {test.field}}
+			weather, err := fetchIdleWeather(context.Background(), server.URL+"?"+query.Encode())
 			if err != nil {
 				t.Fatal(err)
 			}
-			condition, _, _ := strings.Cut(test.response, "|")
-			if weather.condition != condition || weather.temperature != -3 || weather.icon != test.icon {
-				t.Fatalf("unexpected weather or icon for %s: %+v", test.response, weather)
+			if weather.condition != test.condition || weather.temperature != -3 || weather.icon != test.icon || len(weather.rainDates) > 0 {
+				t.Fatalf("unexpected weather or icon for %s: %+v", test.condition, weather)
 			}
 		})
 	}
 }
 
+func TestFetchIdleWeatherTomorrowRain(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, `{
+			"current_condition":[{"temp_C":"12","weatherCode":"113","lang_zh-cn":[{"value":"晴"}]}],
+			"weather":[
+				{"date":"2026-11-22","hourly":[{"weatherCode":"227"},{"weatherCode":"200"},{"weatherCode":"392"}]},
+				{"date":"2026-11-21","hourly":[{"weatherCode":"113"},{"weatherCode":"386"}]},
+				{"date":"2026-11-23","hourly":[{"weatherCode":"296"},{"weatherCode":"353"}]}
+			]
+		}`)
+	}))
+	t.Cleanup(server.Close)
+	weather, err := fetchIdleWeather(context.Background(), server.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, test := range []struct {
+		day      int
+		wantRain bool
+	}{{19, false}, {20, true}, {21, false}, {22, true}} {
+		now := time.Date(2026, time.November, test.day, 12, 0, 0, 0, time.Local)
+		info := idleInfo{weather: weather, weatherUntil: now.Add(time.Hour)}
+		if info.showsTomorrowRain(now) != test.wantRain {
+			t.Errorf("November %d: want rain reminder = %t, got forecast %v", test.day, test.wantRain, weather.rainDates)
+		}
+	}
+}
+
+func TestIdleCapsuleRainReminder(t *testing.T) {
+	a := island{files: &shelf.Shelf{}}
+	baseWidth := a.targetFrame().width
+	now := time.Now()
+	a.idle.weather = idleWeather{condition: "晴", temperature: -100, icon: weatherSunIcon,
+		rainDates: []string{now.AddDate(0, 0, 1).Format(time.DateOnly)}}
+	a.idle.weatherUntil = now.Add(time.Hour)
+	a.shownFrame = a.targetFrame()
+	if a.shownFrame.width != baseWidth+idleRainReminderWidth {
+		t.Fatalf("rain reminder should widen the capsule: %.0f to %.0f", baseWidth, a.shownFrame.width)
+	}
+	view := ui.NewTester(func(c *ui.Context) { a.header(c, a.shownFrame.open) }, int(a.shownFrame.width), idleCapsuleHeight)
+	reminder, hasReminder := view.Find("明日有雨")
+	temp, hasTemp := view.Find("-100°C")
+	clock, hasClock := view.Find(view.Now().Format("15:04"))
+	if !hasReminder || !hasTemp || !hasClock || temp.X+temp.W > reminder.X || reminder.X+reminder.W > clock.X {
+		t.Fatalf("temperature, reminder and clock should fit in one row: %+v, %+v, %+v, %v", temp, reminder, clock, view.Texts())
+	}
+
+	a.settings.IdleItems = a.settings.idleItems()
+	a.settings.IdleItems[1].Hidden = true
+	view.Frame()
+	if view.HasText("明日有雨") || view.HasText("-100°C") {
+		t.Fatalf("hiding weather should hide the reminder and temperature: %v", view.Texts())
+	}
+	a.settings.IdleItems[1].Hidden = false
+	a.settings.IdleItems[0].Hidden = true
+	a.settings.IdleItems[3].Hidden = true
+	beforeMidnight := view.Now()
+	midnight := time.Date(beforeMidnight.Year(), beforeMidnight.Month(), beforeMidnight.Day()+1, 0, 0, 0, 0, beforeMidnight.Location())
+	a.idle.weatherUntil = midnight.Add(time.Hour)
+	view.Frame()
+	if !view.HasText("明日有雨") {
+		t.Fatalf("the reminder should appear with the clock hidden: %v", view.Texts())
+	}
+	view.Advance(midnight.Sub(view.Now()))
+	if view.HasText("明日有雨") || !view.HasText("-100°C") {
+		t.Fatalf("the reminder should clear at midnight while current weather remains: %v", view.Texts())
+	}
+}
+
 func TestIdleCapsuleLimitsBatteryCountAndTucksOnDock(t *testing.T) {
 	a := island{files: &shelf.Shelf{}}
-	base, _ := a.idleCapsuleMetrics(a.settings.idleItems())
+	base, _ := a.idleCapsuleMetrics(a.settings.idleItems(), false)
 	maxBatteries := (panelWidth - base) / idleBatteryStep
 	for i := 0; i <= maxBatteries; i++ {
 		a.battery.readings = append(a.battery.readings, battery.Reading{

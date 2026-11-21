@@ -2,10 +2,12 @@ package island
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -15,17 +17,18 @@ import (
 
 const (
 	idleWeatherBase     = "https://wttr.in/"
-	idleWeatherQuery    = "?format=%25C%7C%25t%7C%25i&lang=zh-cn&m"
+	idleWeatherQuery    = "?format=j1&lang=zh-cn&m"
 	idleWeatherEndpoint = idleWeatherBase + idleWeatherQuery
 
-	idleCapsulePadding   = 10
-	idleCapsuleGap       = 2
-	idleCapsuleHeight    = 40
-	idleFaceWidth        = 30
-	idleWeatherWidth     = 66
-	idleClockWidth       = 42
-	idleBatteryItemWidth = 26
-	idleBatteryStep      = idleBatteryItemWidth + idleCapsuleGap
+	idleCapsulePadding    = 10
+	idleCapsuleGap        = 2
+	idleCapsuleHeight     = 40
+	idleFaceWidth         = 30
+	idleWeatherWidth      = 66
+	idleRainReminderWidth = 60
+	idleClockWidth        = 42
+	idleBatteryItemWidth  = 26
+	idleBatteryStep       = idleBatteryItemWidth + idleCapsuleGap
 )
 
 type idleInfo struct {
@@ -39,6 +42,12 @@ type idleWeather struct {
 	condition   string
 	temperature int
 	icon        *ui.SVG
+	rainDates   []string
+}
+
+func (i idleInfo) showsTomorrowRain(now time.Time) bool {
+	return now.Before(i.weatherUntil) && len(i.weather.rainDates) > 0 &&
+		slices.Contains(i.weather.rainDates, now.AddDate(0, 0, 1).Format(time.DateOnly))
 }
 
 func (a *island) showsIdleCapsule() bool {
@@ -46,11 +55,11 @@ func (a *island) showsIdleCapsule() bool {
 }
 
 func (a *island) idleCapsuleWidth() int {
-	base, batteries := a.idleCapsuleMetrics(a.settings.idleItems())
+	base, batteries := a.idleCapsuleMetrics(a.settings.idleItems(), a.idle.showsTomorrowRain(time.Now()))
 	return max(compactHeight, base+batteries*idleBatteryStep)
 }
 
-func (a *island) idleCapsuleMetrics(items idleItemSettings) (baseWidth, batteries int) {
+func (a *island) idleCapsuleMetrics(items idleItemSettings, rainReminder bool) (baseWidth, batteries int) {
 	baseWidth = 2*idleCapsulePadding - idleCapsuleGap
 	for _, item := range items {
 		if item.Hidden {
@@ -60,6 +69,9 @@ func (a *island) idleCapsuleMetrics(items idleItemSettings) (baseWidth, batterie
 			batteries = len(a.battery.readings)
 		} else {
 			baseWidth += idleItemSpecs[item.ID].width + idleCapsuleGap
+			if item.ID == idleItemWeather && rainReminder {
+				baseWidth += idleRainReminderWidth
+			}
 		}
 	}
 	return baseWidth, min(batteries, (panelWidth-baseWidth)/idleBatteryStep)
@@ -97,7 +109,13 @@ func (a *island) updateIdleWeather(c *ui.Context) {
 
 func (a *island) idleCapsule(c *ui.Context, opacity float32) {
 	items := a.settings.idleItems()
-	base, batteries := a.idleCapsuleMetrics(items)
+	now := c.Now()
+	rainReminder := a.idle.showsTomorrowRain(now)
+	base, batteries := a.idleCapsuleMetrics(items, rainReminder)
+	if rainReminder && a.shownFrame.width < float32(base) {
+		rainReminder = false
+		base, batteries = a.idleCapsuleMetrics(items, false)
+	}
 	targetWidth := max(compactHeight, base+batteries*idleBatteryStep)
 	minimumWidth := max(compactHeight, base)
 	available := min(float32(targetWidth), max(float32(minimumWidth), a.shownFrame.width))
@@ -107,7 +125,6 @@ func (a *island) idleCapsule(c *ui.Context, opacity float32) {
 	// Keep the trailing item aligned while more battery indicators come into view.
 	left := max(0, (a.shownFrame.width-available)/2) + available - width
 	x := left + (width-contentWidth)/2 + idleCapsulePadding
-	now := c.Now()
 	ui.Row(c.Key("idle-status")).Absolute().Left(left).Top(0).Size(width, idleCapsuleHeight).
 		Opacity(opacity).IgnoreInput(true).AlignItems(ui.Center).Justify(ui.Center).Gap(idleCapsuleGap).
 		FontSize(13).FontWeight(600).FontFeatures("tnum").TextColor(ink).Padding(0, idleCapsulePadding).
@@ -116,16 +133,28 @@ func (a *island) idleCapsule(c *ui.Context, opacity float32) {
 				if item.Hidden {
 					continue
 				}
+				itemWidth := idleItemSpecs[item.ID].width
 				switch item.ID {
 				case idleItemFace:
 					slot := ui.Box(c.Key(item.ID)).Size(idleFaceWidth, idleCapsuleHeight).Shrink(0)
 					a.drawIdleFace(c, slot, opacity, x+idleFaceWidth/2-a.shownFrame.width/2)
 				case idleItemWeather:
-					ui.Row(c.Key(item.ID)).Width(idleWeatherWidth).Shrink(0).AlignItems(ui.Center).Justify(ui.Center).Gap(3).Children(func() {
-						if weather := a.idle.weather; weather.condition != "" && now.Before(a.idle.weatherUntil) {
+					weather := a.idle.weather
+					if rainReminder {
+						itemWidth += idleRainReminderWidth
+					}
+					if now.Before(a.idle.weatherUntil) && len(weather.rainDates) > 0 {
+						midnight := time.Date(now.Year(), now.Month(), now.Day()+1, 0, 0, 0, 0, now.Location())
+						c.After(min(midnight.Sub(now), a.idle.weatherUntil.Sub(now)))
+					}
+					ui.Row(c.Key(item.ID)).Width(float32(itemWidth)).Shrink(0).AlignItems(ui.Center).Justify(ui.Center).Gap(3).Children(func() {
+						if weather.condition != "" && now.Before(a.idle.weatherUntil) {
 							ui.Icon(c.Key("condition"), weather.icon).Size(14, 14).Shrink(0).TextColor(ink).
 								Role(ui.RoleImage).Label(weather.condition)
 							ui.Text(c.Key("temperature"), fmt.Sprintf("%d°C", weather.temperature)).Shrink(0).SingleLine()
+						}
+						if rainReminder {
+							ui.Text(c.Key("rain-reminder"), "明日有雨").Width(idleRainReminderWidth).Shrink(0).TextAlign(ui.Center).SingleLine()
 						}
 					})
 				case idleItemBattery:
@@ -142,7 +171,7 @@ func (a *island) idleCapsule(c *ui.Context, opacity float32) {
 					c.After(now.Truncate(time.Minute).Add(time.Minute).Sub(now))
 					ui.Text(c.Key(item.ID), now.Format("15:04")).Width(idleClockWidth).Shrink(0).TextAlign(ui.End).SingleLine()
 				}
-				x += float32(idleItemSpecs[item.ID].width + idleCapsuleGap)
+				x += float32(itemWidth + idleCapsuleGap)
 			}
 		})
 }
@@ -160,21 +189,55 @@ func fetchIdleWeather(ctx context.Context, endpoint string) (idleWeather, error)
 	if resp.StatusCode != http.StatusOK {
 		return idleWeather{}, fmt.Errorf("weather HTTP %d", resp.StatusCode)
 	}
-	data, err := io.ReadAll(io.LimitReader(resp.Body, 256))
-	if err != nil {
+	type description struct{ Value string }
+	var payload struct {
+		Current []struct {
+			Temperature string        `json:"temp_C"`
+			Code        string        `json:"weatherCode"`
+			Chinese     []description `json:"lang_zh-cn"`
+			Localized   []description `json:"lang_xx"`
+			Description []description `json:"weatherDesc"`
+		} `json:"current_condition"`
+		Forecast []struct {
+			Date   string `json:"date"`
+			Hourly []struct {
+				Code string `json:"weatherCode"`
+			} `json:"hourly"`
+		} `json:"weather"`
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 128<<10)).Decode(&payload); err != nil {
 		return idleWeather{}, err
 	}
-	condition, rest, found := strings.Cut(strings.TrimSpace(string(data)), "|")
-	reading, rawCode, _ := strings.Cut(rest, "|")
-	condition = strings.TrimSpace(condition)
-	number, celsius := strings.CutSuffix(strings.TrimSpace(reading), "°C")
-	temperature, err := strconv.Atoi(number)
-	if !found || condition == "" || len(condition) > 96 || strings.ContainsAny(condition, "\n\r\t") ||
-		!celsius || err != nil || temperature < -100 || temperature > 80 {
+	if len(payload.Current) == 0 {
 		return idleWeather{}, errors.New("invalid weather response")
 	}
-	code, _ := strconv.Atoi(strings.TrimSpace(rawCode))
-	return idleWeather{condition: condition, temperature: temperature, icon: idleWeatherIcon(code, condition)}, nil
+	current := payload.Current[0]
+	var condition string
+	for _, descriptions := range [][]description{current.Chinese, current.Localized, current.Description} {
+		if len(descriptions) > 0 {
+			condition = strings.TrimSpace(descriptions[0].Value)
+			if condition != "" {
+				break
+			}
+		}
+	}
+	temperature, err := strconv.Atoi(strings.TrimSpace(current.Temperature))
+	if condition == "" || len(condition) > 96 || strings.ContainsAny(condition, "\n\r\t") ||
+		err != nil || temperature < -100 || temperature > 80 {
+		return idleWeather{}, errors.New("invalid weather response")
+	}
+	code, _ := strconv.Atoi(strings.TrimSpace(current.Code))
+	weather := idleWeather{condition: condition, temperature: temperature, icon: idleWeatherIcon(code, condition)}
+	for _, day := range payload.Forecast {
+		for _, hour := range day.Hourly {
+			code, _ := strconv.Atoi(hour.Code)
+			if idleWeatherIcon(code, "") == weatherRainIcon || code == 386 || code == 389 {
+				weather.rainDates = append(weather.rainDates, day.Date)
+				break
+			}
+		}
+	}
+	return weather, nil
 }
 
 func idleWeatherIcon(code int, condition string) *ui.SVG {
