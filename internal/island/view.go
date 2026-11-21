@@ -127,12 +127,12 @@ func (a *island) header(c *ui.Context, open float32) {
 	if a.expanded {
 		header.DragWindow().Cursor(ui.CursorGrab)
 	} else {
-		header.HandleInput(a.capsuleInput).Cursor(ui.CursorGrab)
+		header.HandleInput(a.capsuleInput).Cursor(ui.CursorPointer).Focusable().Role(ui.RoleButton).Label("展开灵动岛")
 		press := a.press
-		if press != nil && press.released {
+		// MyGo can deliver the release a frame before it reports the click.
+		if _, held := header.PressedButton(); press != nil && press.released && !held {
 			a.press = nil
 		}
-		header.Cursor(ui.CursorPointer).Focusable().Role(ui.RoleButton).Label("展开灵动岛")
 		if header.Clicked() && (press == nil || (press.released && !press.moved)) {
 			a.setExpanded(true)
 		}

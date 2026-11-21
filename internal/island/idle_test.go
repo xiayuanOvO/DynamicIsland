@@ -86,6 +86,32 @@ func TestIdleCapsuleStatus(t *testing.T) {
 	}
 }
 
+func TestIdleCapsuleDragDoesNotOpen(t *testing.T) {
+	for _, test := range []struct {
+		name     string
+		releaseX float32
+	}{
+		{"final movement on release", 51},
+		{"return to the starting point", 20},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			a := island{files: &shelf.Shelf{}}
+			a.shownFrame = a.targetFrame()
+			view := ui.NewTester(func(c *ui.Context) { a.header(c, 0) }, int(a.shownFrame.width), idleCapsuleHeight)
+			view.Press(20, 20)
+			view.Move(50, 20)
+			view.Release(test.releaseX, 20)
+			if a.expanded {
+				t.Fatal("releasing a drag should leave the island collapsed")
+			}
+			view.ClickAt(test.releaseX, 20)
+			if !a.expanded {
+				t.Fatal("a separate click after a drag should expand the island")
+			}
+		})
+	}
+}
+
 func TestFetchIdleWeatherIcons(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		query := r.URL.Query()
