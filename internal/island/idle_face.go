@@ -11,6 +11,8 @@ import (
 
 type idleMood uint8
 
+const idleEyeHeight float32 = 16.5
+
 const (
 	moodNeutral idleMood = iota
 	moodSleepy
@@ -41,7 +43,8 @@ func (f *idleFaceState) lookAt(now time.Time, delta ui.Point) {
 
 func (a *island) drawIdleFace(c *ui.Context, height, open, offset float32) {
 	face := &a.face
-	eyeHeight, amount := float32(13), float32(0)
+	const closedEyeHeight = 2
+	eyeHeight, amount := idleEyeHeight, float32(0)
 	if open == 0 && !a.expanded && !a.moving {
 		const closeTime, openTime = 72 * time.Millisecond, 128 * time.Millisecond
 		now := c.Now()
@@ -53,10 +56,10 @@ func (a *island) drawIdleFace(c *ui.Context, height, open, offset float32) {
 		case elapsed < 0:
 			c.After(-elapsed)
 		case elapsed < closeTime:
-			eyeHeight -= 11 * ui.EaseInOut(float32(elapsed)/float32(closeTime))
+			eyeHeight -= (idleEyeHeight - closedEyeHeight) * ui.EaseInOut(float32(elapsed)/float32(closeTime))
 			c.AnimationFrame()
 		default:
-			eyeHeight = 2 + 11*ui.EaseInOut(float32(elapsed-closeTime)/float32(openTime))
+			eyeHeight = closedEyeHeight + (idleEyeHeight-closedEyeHeight)*ui.EaseInOut(float32(elapsed-closeTime)/float32(openTime))
 			c.AnimationFrame()
 		}
 
@@ -101,50 +104,43 @@ func (a *island) drawIdleFace(c *ui.Context, height, open, offset float32) {
 }
 
 func paintIdleFace(p *ui.Painter, r ui.Rect, mood idleMood, amount, eyeHeight float32, gaze ui.Point) {
-	if amount == 0 {
-		mood = moodNeutral
-	}
+	const ellipseKappa = 0.55228475
 	centerX, centerY := r.X+r.W/2, r.Y+r.H/2-4
-	stroke := ink.Alpha(0.76)
-	for index, offset := range [...]float32{-6.5, 6.5} {
+	for index, offset := range [...]float32{-6.8, 6.8} {
 		x, y := centerX+offset, centerY
-		width, height, opacity := float32(7), eyeHeight, float32(1)
+		radiusX := float32(4.75)
+		upper, lower := eyeHeight/2, eyeHeight/2
+		var lowerCurve float32
 		switch mood {
 		case moodSleepy:
-			height *= 1 - 0.72*amount
-			y += 1.4 * amount
+			upper -= eyeHeight * 0.445 * amount
+			lower -= eyeHeight * 0.27 * amount
+			y += 2 * amount
 		case moodBored:
-			height *= 1 - (0.52+0.16*float32(index))*amount
+			upper -= eyeHeight * (0.23 + 0.16*float32(index)) * amount
 			x -= 0.8 * amount
-			y += 1.1 * amount
 		case moodHappy:
-			opacity -= amount
-			var eyebrow ui.Path
-			eyebrow.MoveTo(x-3, y+1).QuadTo(x, y-5, x+3, y+1)
-			p.StrokePath(&eyebrow, 1.6, stroke.Alpha(amount))
+			upper -= eyeHeight * 0.14 * amount
+			lower -= eyeHeight * 0.62 * amount
+			// Lift the bottom through the center while keeping the tips rounded.
+			lowerCurve = eyeHeight * 0.19 * amount
 		case moodLooking:
-			x += gaze.X * 1.8 * amount
-			y += gaze.Y * 1.4 * amount
-			width += 0.8 * amount
+			x += gaze.X * 2.5 * amount
+			y += gaze.Y * 2.0 * amount
+			radiusX += 0.4 * amount
 		}
-		height = max(1.6, height)
-		eye := ui.Rect{X: x - width/2, Y: y - height/2, W: width, H: height}
-		p.Stroke(eye, stroke.Alpha(opacity), min(width/2, height/2), 1.5)
-		if mood == moodLooking && height >= 5 {
-			p.Fill(ui.Rect{X: x - 0.9 + gaze.X*1.25, Y: y - 0.9 + gaze.Y*height*0.22, W: 1.8, H: 1.8}, stroke.Alpha(amount), 0.9)
-		}
-	}
 
-	mouth := stroke.Alpha(amount)
-	switch mood {
-	case moodSleepy:
-		height := 2 + 4*amount
-		p.Stroke(ui.Rect{X: centerX - 2.3, Y: centerY + 9, W: 4.6, H: height}, mouth, min(2.3, height/2), 1.3)
-	case moodBored:
-		p.Line(centerX-2.5, centerY+11, centerX+2.5, centerY+11, 1.4, mouth)
-	case moodHappy:
-		var smile ui.Path
-		smile.MoveTo(centerX-4.6, centerY+8.5).QuadTo(centerX, centerY+15.5, centerX+4.6, centerY+8.5)
-		p.StrokePath(&smile, 1.5, mouth)
+		left, right := x-radiusX, x+radiusX
+		top, bottom := y-upper, y+lower
+		handleX, upperSide := radiusX*ellipseKappa, upper*ellipseKappa
+		lowerSide := lower*ellipseKappa + lowerCurve
+		var eye ui.Path
+		eye.MoveTo(left, y).
+			CubeTo(left, y-upperSide, x-handleX, top, x, top).
+			CubeTo(x+handleX, top, right, y-upperSide, right, y).
+			CubeTo(right, y+lowerSide, x+handleX, bottom, x, bottom).
+			CubeTo(x-handleX, bottom, left, y+lowerSide, left, y).
+			Close()
+		p.FillPath(&eye, ui.RGB(0, 0, 0))
 	}
 }
