@@ -10,132 +10,117 @@ import (
 	"strings"
 	"time"
 
-	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
 )
 
 const (
-	idleInfoWidth       = 148
 	idleWeatherBase     = "https://wttr.in/"
 	idleWeatherQuery    = "?format=%25C%7C%25t&lang=zh-cn&m"
 	idleWeatherEndpoint = idleWeatherBase + idleWeatherQuery
+
+	idleCapsulePadding   = 12
+	idleCapsuleGap       = 4
+	idleFaceWidth        = 36
+	idleWeatherWidth     = 76
+	idleBatteryItemWidth = 32
+	idleCapsuleBaseWidth = 2*idleCapsulePadding + idleFaceWidth + idleCapsuleGap + idleWeatherWidth
+	idleMaxBatteries     = (panelWidth - idleCapsuleBaseWidth) / (idleBatteryItemWidth + idleCapsuleGap)
 )
 
 type idleInfo struct {
-	win          *mygo.Window
-	anchor       mygo.Rectangle
-	align        ui.Align
-	weather      string
+	weather      idleWeather
 	weatherUntil time.Time
 	refreshAt    time.Time
 	reading      bool
 }
 
-func (a *island) showsIdleInfo() bool {
-	return !a.expanded && a.compactIdle()
+type idleWeather struct {
+	condition   string
+	temperature int
 }
 
-func (a *island) updateIdleInfo(c *ui.Context, frame islandFrame, width, height int) {
+func (a *island) showsIdleCapsule() bool {
+	return !a.expanded && a.dock.side == dockNone && a.compactIdle()
+}
+
+func (a *island) idleCapsuleWidth() int {
+	return idleCapsuleBaseWidth + min(idleMaxBatteries, len(a.battery.readings))*(idleBatteryItemWidth+idleCapsuleGap)
+}
+
+func (a *island) updateIdleWeather(c *ui.Context) {
 	info := &a.idle
-	var anchor mygo.Rectangle
-	if a.showsIdleInfo() && frame.open == 0 && a.win.IsVisible() {
-		anchor = a.windowBounds(width, height)
-		now := c.Now()
-		if !info.reading {
-			if delay := info.refreshAt.Sub(now); delay > 0 {
-				c.After(delay)
-			} else {
-				info.reading = true
-				city := a.settings.WeatherCity
-				go func() {
-					ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
-					defer cancel()
-					weather, err := fetchIdleWeather(ctx, city.weatherEndpoint())
-					a.win.Update(func() {
-						info.reading = false
-						if city != a.settings.WeatherCity {
-							return
-						}
-						now := time.Now()
-						info.refreshAt = now.Add(5 * time.Minute)
-						if err == nil {
-							info.weather, info.weatherUntil = weather, now.Add(2*time.Hour)
-							info.refreshAt = now.Add(30 * time.Minute)
-						}
-						if info.win != nil {
-							info.win.Invalidate()
-						}
-					})
-				}()
-			}
-		}
-	}
-	if anchor == info.anchor {
+	if !a.showsIdleCapsule() || !a.win.IsVisible() || info.reading {
 		return
 	}
-	info.anchor = anchor
-	a.win.Update(func() {
-		var bounds mygo.Rectangle
-		if info.anchor.Width > 0 && a.win.IsVisible() && a.showsIdleInfo() {
-			display := a.dock.display
-			if a.dock.side == dockNone {
-				display = mygo.Screen.DisplayMatching(info.anchor)
-			}
-			bounds, info.align = idleInfoBounds(info.anchor, display.WorkArea)
-		}
-		a.placeOverlay(&info.win, bounds, "时间与天气", info.view)
-	})
-}
-
-func idleInfoBounds(ball, area mygo.Rectangle) (mygo.Rectangle, ui.Align) {
-	const gap = 10
-	align := ui.Start
-	rightStart := max(ball.X+ball.Width+gap, area.X)
-	leftEnd := min(ball.X-gap, area.X+area.Width)
-	rightSpace, leftSpace := area.X+area.Width-rightStart, leftEnd-area.X
-	x, width := rightStart, min(idleInfoWidth, rightSpace)
-	if rightSpace < 96 && leftSpace > rightSpace {
-		width = min(idleInfoWidth, leftSpace)
-		x, align = leftEnd-width, ui.End
+	if delay := info.refreshAt.Sub(c.Now()); delay > 0 {
+		c.After(delay)
+		return
 	}
-	height := min(compactHeight, area.Height)
-	y := min(max(ball.Y+(ball.Height-height)/2, area.Y), area.Y+area.Height-height)
-	return mygo.Rectangle{X: x, Y: y, Width: width, Height: height}, align
+	info.reading = true
+	city := a.settings.WeatherCity
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+		defer cancel()
+		weather, err := fetchIdleWeather(ctx, city.weatherEndpoint())
+		a.win.Update(func() {
+			info.reading = false
+			if city != a.settings.WeatherCity {
+				return
+			}
+			now := time.Now()
+			info.refreshAt = now.Add(5 * time.Minute)
+			if err == nil {
+				info.weather, info.weatherUntil = weather, now.Add(2*time.Hour)
+				info.refreshAt = now.Add(30 * time.Minute)
+			}
+		})
+	}()
 }
 
-func (i *idleInfo) view(c *ui.Context) {
-	c.SetTheme(theme)
-	c.Root().Background(ui.Transparent)
+func (a *island) idleCapsule(c *ui.Context, opacity float32) {
+	width := float32(a.idleCapsuleWidth())
+	left := max(0, (a.shownFrame.width-width)/2)
+	eyeOffset := left + idleCapsulePadding + idleFaceWidth/2 - a.shownFrame.width/2
+	a.drawIdleFace(c, compactHeight, 1-opacity, eyeOffset)
 	now := c.Now()
 	c.After(now.Truncate(time.Minute).Add(time.Minute).Sub(now))
-	ui.Column(c.Key("idle-info")).Fill().Padding(2, 4).Justify(ui.Center).Children(func() {
-		ui.Text(c.Key("clock"), now.Format("15:04")).FillWidth().FontSize(22).FontWeight(650).
-			FontFeatures("tnum").SingleLine().TextAlign(i.align).TextColor(white).
-			TextShadow(0, 1, 6, ink.Alpha(0.95))
-		if i.weather != "" && now.Before(i.weatherUntil) {
-			ui.Text(c.Key("weather"), i.weather).FillWidth().FontSize(11.5).FontWeight(500).
-				SingleLine().Ellipsis("…").TextAlign(i.align).TextColor(white.Alpha(0.86)).
-				TextShadow(0, 1, 5, ink.Alpha(0.92))
+	ui.Row(c.Key("idle-status")).Absolute().Left(left).Top(0).Size(width, compactHeight).
+		Opacity(opacity).IgnoreInput(true).AlignItems(ui.Center).Gap(idleCapsuleGap).
+		Padding(0, idleCapsulePadding, 0, idleCapsulePadding+idleFaceWidth+idleCapsuleGap).Children(func() {
+		ui.Column(c.Key("idle-clock-and-weather")).Width(idleWeatherWidth).Shrink(0).Children(func() {
+			ui.Text(c.Key("clock"), now.Format("15:04")).FontSize(16).FontWeight(650).
+				FontFeatures("tnum").SingleLine().TextColor(ink)
+			if weather := a.idle.weather; weather.condition != "" && now.Before(a.idle.weatherUntil) {
+				ui.Row(c.Key("weather")).FillWidth().Gap(4).Children(func() {
+					ui.Text(c.Key("condition"), weather.condition).FontSize(11).FontWeight(500).
+						MinWidth(0).Shrink(1).SingleLine().Ellipsis("…").TextColor(ink)
+					ui.Text(c.Key("temperature"), fmt.Sprintf("%d°C", weather.temperature)).FontSize(11).FontWeight(500).
+						Shrink(0).SingleLine().TextColor(ink)
+				})
+			}
+		})
+		for _, reading := range a.battery.readings[:min(idleMaxBatteries, len(a.battery.readings))] {
+			batteryIndicator(c, reading, true)
 		}
 	})
 }
 
-func fetchIdleWeather(ctx context.Context, endpoint string) (string, error) {
+func fetchIdleWeather(ctx context.Context, endpoint string) (idleWeather, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
-		return "", err
+		return idleWeather{}, err
 	}
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return "", err
+		return idleWeather{}, err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("weather HTTP %d", resp.StatusCode)
+		return idleWeather{}, fmt.Errorf("weather HTTP %d", resp.StatusCode)
 	}
 	data, err := io.ReadAll(io.LimitReader(resp.Body, 256))
 	if err != nil {
-		return "", err
+		return idleWeather{}, err
 	}
 	condition, reading, found := strings.Cut(strings.TrimSpace(string(data)), "|")
 	condition = strings.TrimSpace(condition)
@@ -143,7 +128,7 @@ func fetchIdleWeather(ctx context.Context, endpoint string) (string, error) {
 	temperature, err := strconv.Atoi(number)
 	if !found || condition == "" || len(condition) > 96 || strings.ContainsAny(condition, "\n\r\t") ||
 		!celsius || err != nil || temperature < -100 || temperature > 80 {
-		return "", errors.New("invalid weather response")
+		return idleWeather{}, errors.New("invalid weather response")
 	}
-	return fmt.Sprintf("%s %d°C", condition, temperature), nil
+	return idleWeather{condition: condition, temperature: temperature}, nil
 }

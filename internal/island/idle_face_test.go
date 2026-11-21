@@ -12,6 +12,7 @@ import (
 
 func TestIdleFaceEyes(t *testing.T) {
 	const scale = 4
+	const dx = idleCapsulePadding + idleFaceWidth/2 - compactHeight/2
 	eye := color.RGBA{48, 48, 48, 255}
 	background := color.RGBA{240, 240, 240, 255}
 	for _, test := range []struct {
@@ -29,6 +30,7 @@ func TestIdleFaceEyes(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			a := island{files: &shelf.Shelf{}}
+			a.shownFrame = a.targetFrame()
 			img := ui.Render(func(c *ui.Context) {
 				c.Root().Background(ui.RGB(240, 240, 240))
 				now := c.Now()
@@ -40,20 +42,20 @@ func TestIdleFaceEyes(t *testing.T) {
 					a.face.blinkAt = now.Add(-72 * time.Millisecond)
 				}
 				a.header(c, 0)
-			}, compactHeight, compactHeight, scale)
+			}, int(a.shownFrame.width), compactHeight, scale)
 
 			for _, p := range test.filled {
-				if got := img.RGBAAt(p.X*scale, p.Y*scale); got != eye {
+				if got := img.RGBAAt((p.X+dx)*scale, p.Y*scale); got != eye {
 					t.Errorf("eye at %v = %v, want %v", p, got, eye)
 				}
 			}
 			for _, p := range test.clear {
-				if got := img.RGBAAt(p.X*scale, p.Y*scale); got != background {
+				if got := img.RGBAAt((p.X+dx)*scale, p.Y*scale); got != background {
 					t.Errorf("background at %v = %v, want %v", p, got, background)
 				}
 			}
 			for y := 31 * scale; y < 39*scale; y++ {
-				for x := 20 * scale; x < 32*scale; x++ {
+				for x := (20 + dx) * scale; x < (32+dx)*scale; x++ {
 					if got := img.RGBAAt(x, y); got != background {
 						t.Fatalf("unexpected mark below the eyes at (%d, %d): %v", x, y, got)
 					}

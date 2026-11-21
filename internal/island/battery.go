@@ -37,7 +37,8 @@ var (
 
 func (a *island) updateBattery(c *ui.Context) {
 	b := &a.battery
-	if !battery.Supported || !a.expanded || a.todos.open || a.clipboard.open || !a.win.IsVisible() || b.reading {
+	showOverview := a.expanded && !a.todos.open && !a.clipboard.open
+	if !battery.Supported || (!showOverview && !a.showsIdleCapsule()) || !a.win.IsVisible() || b.reading {
 		return
 	}
 	if delay := b.refreshAt.Sub(c.Now()); delay > 0 {
@@ -72,79 +73,96 @@ func (a *island) batteryRow(c *ui.Context) {
 	ui.ScrollHorizontal(c.Key("battery-row")).FillWidth().Height(batteryRowHeight).Shrink(0).
 		Margin(0, 0, batteryRowGap).AlignItems(ui.Start).Gap(4).Label("设备电量").Children(func() {
 		for _, reading := range a.battery.readings {
-			name := reading.Name
-			display, value := "—", "电量未知"
-			known := reading.Percent != battery.UnknownPercent
-			if known {
-				display = fmt.Sprintf("%d%%", reading.Percent)
-				value = display
-			}
-			icon := batteryIcon
-			switch reading.Kind {
-			case battery.Computer:
-				icon = computerIcon
-			case battery.Mouse:
-				icon = mouseIcon
-			case battery.Keyboard:
-				icon = keyboardIcon
-			case battery.Trackpad:
-				icon = trackpadIcon
-			case battery.Headphones:
-				icon = headphonesIcon
-			}
-			switch reading.Part {
-			case battery.Left:
-				icon, name, display = earbudIcon, name+" 左耳", "左 "+display
-			case battery.Right:
-				icon, name, display = earbudIcon, name+" 右耳", "右 "+display
-			case battery.Case:
-				icon, name, display = batteryCaseIcon, name+" 充电盒", "盒 "+display
-			}
-			color := ink
-			if reading.Charging {
-				color = chargeGreen
-				value += " · 充电中"
-			} else if known && reading.Percent <= 20 {
-				color = batteryLow
-			}
-			item := ui.Column(c.Key(reading.ID)).Size(50, 44).Shrink(0).Gap(2).AlignItems(ui.Center).
-				Label(name).Value(value)
-			if known {
-				item.Role(ui.RoleMeter).Range(0, 100, float64(reading.Percent))
-			} else {
-				item.Role(ui.RoleText).Label(name + " · " + value)
-			}
-			item.Children(func() {
-				ui.Box(c).Size(28, 28).Shrink(0).Center().AccessHidden(true).
-					Draw(func(p *ui.Painter, r ui.Rect) {
-						const radius, stroke = 11.5, 2.25
-						cx, cy := r.X+r.W/2, r.Y+r.H/2
-						var ring ui.Path
-						p.StrokePath(ring.Circle(cx, cy, radius), stroke, ink.Alpha(0.19))
-						if reading.Percent == 100 {
-							p.StrokePath(&ring, stroke, color)
-						} else if reading.Percent > 0 {
-							var arc ui.Path
-							arc.MoveTo(cx, cy-radius)
-							steps := int(math.Ceil(float64(reading.Percent) * 0.48))
-							for i := 1; i <= steps; i++ {
-								angle := 2 * math.Pi * float64(reading.Percent*i) / float64(100*steps)
-								arc.LineTo(cx+radius*float32(math.Sin(angle)), cy-radius*float32(math.Cos(angle)))
-							}
-							p.StrokePath(&arc, stroke, color)
-						}
-					}).Children(func() {
-					ui.Icon(c, icon).Size(14, 14).TextColor(ink).IgnoreInput(true)
-					if reading.Charging {
-						ui.Box(c).Absolute().Right(-1).Bottom(0).Size(12, 12).Radius(6).
-							Background(chargeGreen).Border(1, white).Center().IgnoreInput(true).Children(func() {
-							ui.Icon(c, chargingIcon).Size(9, 9).TextColor(white)
-						})
+			batteryIndicator(c, reading, false)
+		}
+	})
+}
+
+func batteryIndicator(c *ui.Context, reading battery.Reading, compact bool) {
+	var itemWidth, ringSize, iconSize, stroke float32 = 50, 28, 14, 2.25
+	if compact {
+		itemWidth, ringSize, iconSize, stroke = idleBatteryItemWidth, 24, 12, 1.9
+	}
+	radius := ringSize/2 - 2.5
+	name := reading.Name
+	display, value := "—", "电量未知"
+	known := reading.Percent != battery.UnknownPercent
+	if known {
+		display = fmt.Sprintf("%d%%", reading.Percent)
+		value = display
+	}
+	icon := batteryIcon
+	switch reading.Kind {
+	case battery.Computer:
+		icon = computerIcon
+	case battery.Mouse:
+		icon = mouseIcon
+	case battery.Keyboard:
+		icon = keyboardIcon
+	case battery.Trackpad:
+		icon = trackpadIcon
+	case battery.Headphones:
+		icon = headphonesIcon
+	}
+	switch reading.Part {
+	case battery.Left:
+		icon, name, display = earbudIcon, name+" 左耳", "左 "+display
+	case battery.Right:
+		icon, name, display = earbudIcon, name+" 右耳", "右 "+display
+	case battery.Case:
+		icon, name, display = batteryCaseIcon, name+" 充电盒", "盒 "+display
+	}
+	color := ink
+	if reading.Charging {
+		color = chargeGreen
+		value += " · 充电中"
+	} else if known && reading.Percent <= 20 {
+		color = batteryLow
+	}
+	item := ui.Column(c.Key(reading.ID)).Size(itemWidth, 44).Shrink(0).Gap(2).AlignItems(ui.Center).
+		Label(name).Value(value)
+	if compact {
+		item.Justify(ui.Center)
+	}
+	if known {
+		item.Role(ui.RoleMeter).Range(0, 100, float64(reading.Percent))
+	} else {
+		item.Role(ui.RoleText).Label(name + " · " + value)
+	}
+	item.Children(func() {
+		ui.Box(c).Size(ringSize, ringSize).Shrink(0).Center().AccessHidden(true).
+			Draw(func(p *ui.Painter, r ui.Rect) {
+				cx, cy := r.X+r.W/2, r.Y+r.H/2
+				var ring ui.Path
+				ring.Circle(cx, cy, radius)
+				if compact && !known {
+					ring.Dash(0, 2, 2)
+				}
+				p.StrokePath(&ring, stroke, ink.Alpha(0.19))
+				if reading.Percent == 100 {
+					p.StrokePath(&ring, stroke, color)
+				} else if reading.Percent > 0 {
+					var arc ui.Path
+					arc.MoveTo(cx, cy-radius)
+					steps := int(math.Ceil(float64(reading.Percent) * 0.48))
+					for i := 1; i <= steps; i++ {
+						angle := 2 * math.Pi * float64(reading.Percent*i) / float64(100*steps)
+						arc.LineTo(cx+radius*float32(math.Sin(angle)), cy-radius*float32(math.Cos(angle)))
 					}
+					p.StrokePath(&arc, stroke, color)
+				}
+			}).Children(func() {
+			ui.Icon(c, icon).Size(iconSize, iconSize).TextColor(ink).IgnoreInput(true)
+			if reading.Charging {
+				ui.Box(c).Absolute().Right(-1).Bottom(0).Size(12, 12).Radius(6).
+					Background(chargeGreen).Border(1, white).Center().IgnoreInput(true).Children(func() {
+					ui.Icon(c, chargingIcon).Size(9, 9).TextColor(white)
 				})
-				ui.Text(c, display).FontSize(11).FontWeight(600).FontFeatures("tnum").SingleLine().
-					TextColor(color).AccessHidden(true).IgnoreInput(true)
-			})
+			}
+		})
+		if !compact {
+			ui.Text(c, display).FontSize(11).FontWeight(600).FontFeatures("tnum").SingleLine().
+				TextColor(color).AccessHidden(true).IgnoreInput(true)
 		}
 	})
 }

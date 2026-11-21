@@ -129,8 +129,10 @@ func (a *island) targetFrame() islandFrame {
 		return frame
 	}
 	width := float32(compactWidth)
-	if a.dock.side != dockNone || a.compactIdle() {
+	if a.dock.side != dockNone {
 		width = compactHeight
+	} else if a.compactIdle() {
+		width = float32(a.idleCapsuleWidth())
 	} else if a.media.track.Playing && a.media.track.Title != "" {
 		width = compactMediaWidth
 	}

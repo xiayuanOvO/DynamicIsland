@@ -69,12 +69,12 @@ func (a *island) view(c *ui.Context) {
 	a.updateMedia(c)
 	a.updateWave(c)
 	a.updateBattery(c)
+	a.updateIdleWeather(c)
 	if !a.dragging && !a.moving {
 		a.animation.retarget(a.targetFrame(), c.Now())
 		a.scheduleWindowFrame(time.Now().Add(windowFrameInterval))
 	}
 	a.updateLyrics(c, frame, w, h)
-	a.updateIdleInfo(c, frame, w, h)
 	root.ContextMenu(a.menu)
 	root.Children(func() {
 		a.header(c, frame.open)
@@ -133,8 +133,14 @@ func (a *island) header(c *ui.Context, open float32) {
 	}
 	header.Children(func() {
 		if idleFace {
-			a.drawIdleFace(c, compactHeight, 1-compactAlpha, offset)
-		} else if compactAlpha > 0 && playing {
+			if docked {
+				a.drawIdleFace(c, compactHeight, 1-compactAlpha, offset)
+			} else {
+				a.idleCapsule(c, compactAlpha)
+			}
+			return
+		}
+		if compactAlpha > 0 && playing {
 			const coverSize, timeWidth = 34, 42
 			mediaWidth, waveInset, bandsPerBar := float32(compactMediaWidth-20), float32(51), 4
 			if docked {

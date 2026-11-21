@@ -257,11 +257,7 @@ func (a *island) hideWindows() {
 	if a.lyrics.win != nil {
 		a.lyrics.win.Hide()
 	}
-	a.idle.anchor = mygo.Rectangle{}
 	a.face = idleFaceState{}
-	if a.idle.win != nil {
-		a.idle.win.Hide()
-	}
 	a.media.stopWave()
 	a.win.Hide()
 }
