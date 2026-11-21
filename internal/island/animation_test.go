@@ -6,7 +6,22 @@ import (
 
 	"dynamicisland/internal/nowplaying"
 	"dynamicisland/internal/shelf"
+	"github.com/egoist/mygo/ui"
 )
+
+func TestTransitionGlassCoversCanvasBeyondCapsule(t *testing.T) {
+	img := ui.Render(func(c *ui.Context) {
+		c.Root().Background(ui.Transparent)
+		capsule := ui.Box(c).Absolute().Left(91).Top(0).Size(246, idleCapsuleHeight).
+			Radius(islandCornerRadius(idleCapsuleHeight)).Clip()
+		glassSurface(c, capsule, true, false, true)
+	}, panelWidth, 154, 1)
+	before := img.RGBAAt(panelWidth/2, idleCapsuleHeight-1)
+	after := img.RGBAAt(panelWidth/2, idleCapsuleHeight+1)
+	if after.A == 0 || max(before.A, after.A)-min(before.A, after.A) > 3 {
+		t.Fatalf("the glass tint should continue past the previous capsule edge: above %v, below %v", before, after)
+	}
+}
 
 func TestIdleCapsuleHeightAnimation(t *testing.T) {
 	a := island{files: &shelf.Shelf{}}

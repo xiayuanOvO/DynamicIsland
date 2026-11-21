@@ -48,7 +48,7 @@ func (a *island) view(c *ui.Context) {
 		hovered = pointerOverWindow(a.win, root.Hovered())
 	}
 	_, over := ui.DataDragOver(root, fileDrop)
-	glassSurface(root, a.hasWindowBackdrop || c.Vibrancy(), over, a.canvas.restore != nil)
+	glassSurface(c, root, a.hasWindowBackdrop || c.Vibrancy(), over, a.canvas.restore != nil)
 	if drop, ok := ui.DropData(root, fileDrop); ok {
 		paths, err := drop.Data.Files()
 		if err != nil || len(paths) == 0 {

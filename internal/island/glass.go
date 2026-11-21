@@ -38,22 +38,28 @@ func islandCornerRadius(height float32) float32 {
 	return min(windowRadius, height/2)
 }
 
-func glassSurface(element ui.Element, vibrant, over, movingGlass bool) {
+func glassSurface(c *ui.Context, element ui.Element, vibrant, over, movingGlass bool) {
+	backdrop := element
+	if movingGlass {
+		// The native mask can move before the next Metal frame arrives.
+		// Paint past the current capsule so it can't expose an untinted band.
+		backdrop = c.Root()
+	}
 	switch {
 	case runtime.GOOS == "windows" && vibrant:
-		element.Gradient(white.Alpha(0.70), white.Alpha(0.62), 155)
+		backdrop.Gradient(white.Alpha(0.70), white.Alpha(0.62), 155)
 	case vibrant:
 		// The system blurs the desktop. A light wash preserves its colors.
-		element.Gradient(white.Alpha(0.20), white.Alpha(0.07), 155)
+		backdrop.Gradient(white.Alpha(0.20), white.Alpha(0.07), 155)
 	case runtime.GOOS == "windows":
-		element.Gradient(ui.Hex("#eceef1"), ui.Hex("#bfc4cb"), 155)
+		backdrop.Gradient(ui.Hex("#eceef1"), ui.Hex("#bfc4cb"), 155)
 	default:
-		element.Gradient(ui.Hex("#f2f3f5"), ui.Hex("#e7e9ed"), 155)
+		backdrop.Gradient(ui.Hex("#f2f3f5"), ui.Hex("#e7e9ed"), 155)
 	}
 	// Keep the same content inset when the native glass draws the rim.
 	element.BorderWidth(0.75)
 	if runtime.GOOS != "windows" || !vibrant {
-		element.Draw(paintFrost)
+		backdrop.Draw(paintFrost)
 	}
 	if movingGlass && !over {
 		// The native glass rim follows the mask. A rim in the last Metal

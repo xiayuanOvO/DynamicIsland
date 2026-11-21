@@ -19,7 +19,7 @@ func TestWindowsGlassSurface(t *testing.T) {
 			img := ui.Render(func(c *ui.Context) {
 				c.Root().Background(ui.Transparent)
 				surface := ui.Box(c).Fill().Radius(windowRadius).Clip()
-				glassSurface(surface, test.backdrop, false, false)
+				glassSurface(c, surface, test.backdrop, false, false)
 			}, width, height, 1)
 			alpha := img.RGBAAt(width/2, height/2).A
 			if test.backdrop {
