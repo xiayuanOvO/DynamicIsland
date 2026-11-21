@@ -4,6 +4,7 @@
   "macos": {
     "entitlements": "native/macos/macos.entitlements",
     "infoPlist": {
+      "LSUIElement": true,
       "NSAudioCaptureUsageDescription": "灵动岛读取系统音频的实时电平，用于显示播放波形。",
       "NSBluetoothAlwaysUsageDescription": "灵动岛读取已连接蓝牙设备的电量。",
       "NSAppleEventsUsageDescription": "灵动岛需要读取 Apple Music 的曲目信息，并在你使用播放控件时控制播放。"

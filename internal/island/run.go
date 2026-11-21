@@ -4,6 +4,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"dynamicisland/internal/lyrics"
@@ -18,6 +19,9 @@ func Run(appIcon []byte) {
 	}
 	if !mygo.App.RequestSingleInstanceLock() {
 		return
+	}
+	if runtime.GOOS == "darwin" {
+		mygo.App.SetActivationPolicy(mygo.ActivationPolicyAccessory)
 	}
 	config, err := os.UserConfigDir()
 	if err != nil {
@@ -60,7 +64,7 @@ func Run(appIcon []byte) {
 		})
 	})
 	mygo.App.WhenReady(func() {
-		if !mygo.App.IsPackaged() {
+		if runtime.GOOS != "darwin" && !mygo.App.IsPackaged() {
 			if err := mygo.App.Dock.SetIcon(appIcon); err != nil {
 				log.Printf("app icon: %v", err)
 			}
