@@ -50,7 +50,8 @@ func checkDesktopBackdrop() error {
 					Transparent: true, DisableShadow: true, BackgroundColor: "#00000000",
 					Content: ui.View(func(c *ui.Context) {
 						c.Root().Background(ui.Transparent)
-						surface := ui.Box(c).Fill().Radius(windowRadius).Clip()
+						_, height := c.Size()
+						surface := ui.Box(c).Fill().Radius(islandCornerRadius(height)).Clip()
 						glassSurface(surface, backdrop, false, false)
 					}),
 				})
@@ -58,7 +59,12 @@ func checkDesktopBackdrop() error {
 				backdrop = configureWindowGlass(win, windowRadius)
 				win.ShowInactive()
 				win.Invalidate()
-				frames := [...]mygo.Size{{Width: 200, Height: compactHeight}, {Width: panelWidth, Height: 170}, {Width: compactHeight, Height: compactHeight}}
+				frames := [...]mygo.Size{
+					{Width: idleCapsuleBaseWidth, Height: idleCapsuleHeight},
+					{Width: 200, Height: compactHeight},
+					{Width: panelWidth, Height: 170},
+					{Width: compactHeight, Height: compactHeight},
+				}
 				go func() {
 					defer mygo.App.Quit()
 					for _, size := range frames {

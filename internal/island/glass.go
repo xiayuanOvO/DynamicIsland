@@ -34,6 +34,10 @@ func islandTheme() *ui.Theme {
 	return t
 }
 
+func islandCornerRadius(height float32) float32 {
+	return min(windowRadius, height/2)
+}
+
 func glassSurface(element ui.Element, vibrant, over, movingGlass bool) {
 	switch {
 	case runtime.GOOS == "windows" && vibrant:
@@ -71,14 +75,15 @@ func glassSurface(element ui.Element, vibrant, over, movingGlass bool) {
 }
 
 func paintFrost(p *ui.Painter, r ui.Rect) {
-	p.Clip(r, windowRadius, func() {
+	radius := islandCornerRadius(r.H)
+	p.Clip(r, radius, func() {
 		p.FillRadialGradient(r, ui.RadialGradient{
 			Center: ui.Point{X: 0.12, Y: 0.02}, Radius: r.W * 0.9,
 			Stops: []ui.GradientStop{
 				{Color: white.Alpha(0.18), At: 0},
 				{Color: ui.Transparent, At: 1},
 			},
-		}, windowRadius)
+		}, radius)
 		// A small stationary texture avoids a perfectly flat digital surface.
 		for y := r.Y; y < r.Y+r.H; y += 128 {
 			for x := r.X; x < r.X+r.W; x += 128 {

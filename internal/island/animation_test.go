@@ -2,10 +2,26 @@ package island
 
 import (
 	"testing"
+	"time"
 
 	"dynamicisland/internal/nowplaying"
 	"dynamicisland/internal/shelf"
 )
+
+func TestIdleCapsuleHeightAnimation(t *testing.T) {
+	a := island{files: &shelf.Shelf{}}
+	a.expanded = true
+	from := a.targetFrame()
+	a.expanded = false
+	to := a.targetFrame()
+	now := time.Unix(0, 0)
+	animation := islandAnimation{from: from, to: from, started: now}
+	animation.retarget(to, now)
+	frame, _ := animation.sample(now.Add(animation.duration - time.Millisecond))
+	if frame.aligned().height != idleCapsuleHeight {
+		t.Fatalf("the animation should approach the shorter idle height before it settles, got %.2f", frame.height)
+	}
+}
 
 func TestClipboardAndOverviewShareCanvasBounds(t *testing.T) {
 	for _, fileCount := range []int{0, cardColumns * maxCardRows} {

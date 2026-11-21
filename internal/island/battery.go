@@ -79,9 +79,9 @@ func (a *island) batteryRow(c *ui.Context) {
 }
 
 func batteryIndicator(c *ui.Context, reading battery.Reading, compact bool) {
-	var itemWidth, ringSize, iconSize, stroke float32 = 50, 28, 14, 2.25
+	var itemWidth, itemHeight, ringSize, iconSize, stroke float32 = 50, 44, 28, 14, 2.25
 	if compact {
-		itemWidth, ringSize, iconSize, stroke = idleBatteryItemWidth, 24, 12, 1.9
+		itemWidth, itemHeight, ringSize, iconSize, stroke = idleBatteryItemWidth, 24, 24, 12, 1.9
 	}
 	radius := ringSize/2 - 2.5
 	name := reading.Name
@@ -119,7 +119,7 @@ func batteryIndicator(c *ui.Context, reading battery.Reading, compact bool) {
 	} else if known && reading.Percent <= 20 {
 		color = batteryLow
 	}
-	item := ui.Column(c.Key(reading.ID)).Size(itemWidth, 44).Shrink(0).Gap(2).AlignItems(ui.Center).
+	item := ui.Column(c.Key(reading.ID)).Size(itemWidth, itemHeight).Shrink(0).Gap(2).AlignItems(ui.Center).
 		Label(name).Value(value)
 	if compact {
 		item.Justify(ui.Center)

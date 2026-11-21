@@ -132,7 +132,7 @@ func (a *island) targetFrame() islandFrame {
 	if a.dock.side != dockNone {
 		width = compactHeight
 	} else if a.compactIdle() {
-		width = float32(a.idleCapsuleWidth())
+		return islandFrame{width: float32(a.idleCapsuleWidth()), height: idleCapsuleHeight}
 	} else if a.media.track.Playing && a.media.track.Title != "" {
 		width = compactMediaWidth
 	}
@@ -193,7 +193,7 @@ func (m *islandAnimation) sample(now time.Time) (islandFrame, islandVelocity) {
 	content := animationPhase(open, 0.20, 0.85)
 	return islandFrame{
 		width:     max(compactHeight, width),
-		height:    max(compactHeight-4, height),
+		height:    max(idleCapsuleHeight, height),
 		open:      min(1, max(0, open)),
 		content:   content,
 		todo:      min(1, max(0, todo)),

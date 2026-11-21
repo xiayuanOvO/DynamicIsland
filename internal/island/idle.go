@@ -20,11 +20,14 @@ const (
 
 	idleCapsulePadding   = 12
 	idleCapsuleGap       = 4
+	idleCapsuleHeight    = 40
 	idleFaceWidth        = 36
-	idleWeatherWidth     = 76
+	idleWeatherWidth     = 60
+	idleClockWidth       = 48
 	idleBatteryItemWidth = 32
-	idleCapsuleBaseWidth = 2*idleCapsulePadding + idleFaceWidth + idleCapsuleGap + idleWeatherWidth
-	idleMaxBatteries     = (panelWidth - idleCapsuleBaseWidth) / (idleBatteryItemWidth + idleCapsuleGap)
+	idleCapsuleBaseWidth = 2*idleCapsulePadding + idleFaceWidth + idleWeatherWidth + idleClockWidth + 2*idleCapsuleGap
+	idleBatteryStep      = idleBatteryItemWidth + idleCapsuleGap
+	idleMaxBatteries     = (panelWidth - idleCapsuleBaseWidth) / idleBatteryStep
 )
 
 type idleInfo struct {
@@ -45,7 +48,7 @@ func (a *island) showsIdleCapsule() bool {
 }
 
 func (a *island) idleCapsuleWidth() int {
-	return idleCapsuleBaseWidth + min(idleMaxBatteries, len(a.battery.readings))*(idleBatteryItemWidth+idleCapsuleGap)
+	return idleCapsuleBaseWidth + min(idleMaxBatteries, len(a.battery.readings))*idleBatteryStep
 }
 
 func (a *island) updateIdleWeather(c *ui.Context) {
@@ -79,30 +82,29 @@ func (a *island) updateIdleWeather(c *ui.Context) {
 }
 
 func (a *island) idleCapsule(c *ui.Context, opacity float32) {
-	width := float32(a.idleCapsuleWidth())
+	width := min(float32(a.idleCapsuleWidth()), max(idleCapsuleBaseWidth, a.shownFrame.width))
+	batteries := int((width - idleCapsuleBaseWidth) / idleBatteryStep)
 	left := max(0, (a.shownFrame.width-width)/2)
 	eyeOffset := left + idleCapsulePadding + idleFaceWidth/2 - a.shownFrame.width/2
-	a.drawIdleFace(c, compactHeight, 1-opacity, eyeOffset)
+	a.drawIdleFace(c, idleCapsuleHeight, 1-opacity, eyeOffset)
 	now := c.Now()
 	c.After(now.Truncate(time.Minute).Add(time.Minute).Sub(now))
-	ui.Row(c.Key("idle-status")).Absolute().Left(left).Top(0).Size(width, compactHeight).
+	ui.Row(c.Key("idle-status")).Absolute().Left(left).Top(0).Size(width, idleCapsuleHeight).
 		Opacity(opacity).IgnoreInput(true).AlignItems(ui.Center).Gap(idleCapsuleGap).
 		Padding(0, idleCapsulePadding, 0, idleCapsulePadding+idleFaceWidth+idleCapsuleGap).Children(func() {
-		ui.Column(c.Key("idle-clock-and-weather")).Width(idleWeatherWidth).Shrink(0).Children(func() {
-			ui.Text(c.Key("clock"), now.Format("15:04")).FontSize(16).FontWeight(650).
-				FontFeatures("tnum").SingleLine().TextColor(ink)
+		ui.Row(c.Key("weather")).Width(idleWeatherWidth).Shrink(0).AlignItems(ui.Center).Gap(4).Children(func() {
 			if weather := a.idle.weather; weather.condition != "" && now.Before(a.idle.weatherUntil) {
-				ui.Row(c.Key("weather")).FillWidth().AlignItems(ui.Center).Gap(4).Children(func() {
-					ui.Icon(c.Key("condition"), weather.icon).Size(14, 14).Shrink(0).TextColor(ink).
-						Role(ui.RoleImage).Label(weather.condition)
-					ui.Text(c.Key("temperature"), fmt.Sprintf("%d°C", weather.temperature)).FontSize(11).FontWeight(500).
-						Shrink(0).SingleLine().TextColor(ink)
-				})
+				ui.Icon(c.Key("condition"), weather.icon).Size(14, 14).Shrink(0).TextColor(ink).
+					Role(ui.RoleImage).Label(weather.condition)
+				ui.Text(c.Key("temperature"), fmt.Sprintf("%d°C", weather.temperature)).FontSize(12).FontWeight(500).
+					Shrink(0).SingleLine().TextColor(ink)
 			}
 		})
-		for _, reading := range a.battery.readings[:min(idleMaxBatteries, len(a.battery.readings))] {
+		for _, reading := range a.battery.readings[:batteries] {
 			batteryIndicator(c, reading, true)
 		}
+		ui.Text(c.Key("clock"), now.Format("15:04")).Width(idleClockWidth).Grow(1).Shrink(0).TextAlign(ui.End).
+			FontSize(14).FontWeight(650).FontFeatures("tnum").SingleLine().TextColor(ink)
 	})
 }
 

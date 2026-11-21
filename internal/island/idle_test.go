@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -18,7 +19,7 @@ import (
 
 func TestIdleCapsuleStatus(t *testing.T) {
 	a := island{files: &shelf.Shelf{}}
-	a.idle.weather = idleWeather{condition: "局部多云伴有阵雨", temperature: -12, icon: weatherRainIcon}
+	a.idle.weather = idleWeather{condition: "局部多云伴有阵雨", temperature: -100, icon: weatherRainIcon}
 	a.idle.weatherUntil = time.Now().Add(time.Minute)
 	a.battery.readings = []battery.Reading{
 		{ID: "computer", Name: "本机", Kind: battery.Computer, Percent: 84, Charging: true},
@@ -27,27 +28,44 @@ func TestIdleCapsuleStatus(t *testing.T) {
 	}
 	a.shownFrame = a.targetFrame()
 	width := int(a.shownFrame.width)
-	view := ui.NewTester(func(c *ui.Context) { a.header(c, a.shownFrame.open) }, width, compactHeight)
+	if a.shownFrame.height != idleCapsuleHeight || a.shownFrame.height >= compactHeight {
+		t.Fatalf("idle capsule height = %.0f, want %d", a.shownFrame.height, idleCapsuleHeight)
+	}
+	view := ui.NewTester(func(c *ui.Context) { a.header(c, a.shownFrame.open) }, width, idleCapsuleHeight)
 	weather, hasWeather := view.Find(a.idle.weather.condition)
-	temp, hasTemp := view.Find("-12°C")
+	temp, hasTemp := view.Find("-100°C")
 	device, hasDevice := view.Find("本机")
 	leftEar, hasEar := view.Find("耳机 左耳")
-	if !hasWeather || !hasTemp || !hasDevice || !hasEar || !view.HasText("鼠标 · 电量未知") || !view.HasText(view.Now().Format("15:04")) {
+	clock, hasClock := view.Find(view.Now().Format("15:04"))
+	if !hasWeather || !hasTemp || !hasDevice || !hasEar || !hasClock || !view.HasText("鼠标 · 电量未知") {
 		t.Fatalf("missing capsule status: %v", view.Texts())
 	}
 	if weather.W != 14 || weather.H != 14 || weather.X+weather.W > temp.X {
 		t.Fatalf("weather icon should fit to the left of the temperature: icon %+v, temperature %+v", weather, temp)
 	}
-	if temp.X+temp.W > device.X || leftEar.X+leftEar.W > float32(width) {
-		t.Fatalf("weather or battery indicators overlap or overflow: temperature %+v, battery %+v, left ear %+v", temp, device, leftEar)
+	if temp.X+temp.W > device.X || leftEar.X+leftEar.W > clock.X || clock.X+clock.W != float32(width-idleCapsulePadding) {
+		t.Fatalf("clock should be to the right of weather and batteries: temperature %+v, battery %+v, left ear %+v, clock %+v", temp, device, leftEar, clock)
+	}
+	for _, box := range []ui.Rect{weather, temp, device, leftEar, clock} {
+		if math.Abs(float64(box.Y+box.H/2-idleCapsuleHeight/2)) > 1 {
+			t.Fatalf("weather, batteries and clock should share one row: %+v", box)
+		}
 	}
 	for _, label := range []string{"84%", "左 100%", "—"} {
 		if _, shown := view.Find(label); shown {
 			t.Errorf("the compact battery indicator should omit %q", label)
 		}
 	}
+	a.shownFrame.width = idleCapsuleBaseWidth + idleBatteryStep + 10
+	view.SetSize(int(a.shownFrame.width), idleCapsuleHeight)
+	clock, hasClock = view.Find(view.Now().Format("15:04"))
+	if !hasClock || clock.X+clock.W != a.shownFrame.width-idleCapsulePadding || !view.HasText("本机") || view.HasText("耳机 左耳") {
+		t.Fatalf("the clock should keep its place while more batteries make room: %+v, %v", clock, view.Texts())
+	}
+	a.shownFrame.width = float32(width)
+	view.SetSize(width, idleCapsuleHeight)
 	view.Advance(2 * time.Minute)
-	if view.HasText("-12°C") || !view.HasText(view.Now().Format("15:04")) || !view.HasText("本机") {
+	if view.HasText("-100°C") || !view.HasText(view.Now().Format("15:04")) || !view.HasText("本机") {
 		t.Fatalf("expired weather should give way to the clock and battery: %v", view.Texts())
 	}
 
@@ -111,15 +129,15 @@ func TestIdleCapsuleLimitsBatteryCountAndTucksOnDock(t *testing.T) {
 	if a.shownFrame.width <= compactHeight || a.shownFrame.width > panelWidth {
 		t.Fatalf("idle capsule width = %.0f, want a capsule that fits within the panel width", a.shownFrame.width)
 	}
-	view := ui.NewTester(func(c *ui.Context) { a.header(c, a.shownFrame.open) }, int(a.shownFrame.width), compactHeight)
+	view := ui.NewTester(func(c *ui.Context) { a.header(c, a.shownFrame.open) }, int(a.shownFrame.width), idleCapsuleHeight)
 	if !view.HasText(fmt.Sprintf("设备 %d", idleMaxBatteries-1)) || view.HasText(fmt.Sprintf("设备 %d", idleMaxBatteries)) {
 		t.Fatalf("battery indicators should be limited to %d: %v", idleMaxBatteries, view.Texts())
 	}
 
 	a.dock.side = dockRight
 	a.shownFrame = a.targetFrame()
-	if a.shownFrame.width != compactHeight {
-		t.Fatalf("docked capsule width = %.0f, want %d", a.shownFrame.width, compactHeight)
+	if a.shownFrame.width != compactHeight || a.shownFrame.height != compactHeight {
+		t.Fatalf("docked capsule size = %.0fx%.0f, want %dx%d", a.shownFrame.width, a.shownFrame.height, compactHeight, compactHeight)
 	}
 	view.SetSize(compactHeight, compactHeight)
 	if !view.HasText("空闲表情") || view.HasText("设备 0") || view.HasText(view.Now().Format("15:04")) {

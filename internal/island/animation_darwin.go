@@ -97,60 +97,81 @@ var (
 	cocoaRelease         = objc.RegisterName("release")
 )
 
-func startTransitionCanvas(win *mygo.Window) transitionCanvas {
-	content := objc.Send[objc.ID](objc.ID(win.NativeHandle()), cocoaContentView)
+func islandWindowMaterial(content objc.ID) (view, radiusTarget objc.ID) {
 	views := objc.Send[objc.ID](content, cocoaSubviews)
-	layer := objc.Send[objc.ID](content, cocoaLayer)
-	if layer == 0 {
-		return transitionCanvas{}
-	}
 	glass, visualEffect := objc.GetClass("NSGlassEffectView"), objc.GetClass("NSVisualEffectView")
 	for i := range objc.Send[uint](views, cocoaCount) {
 		effect := objc.Send[objc.ID](views, cocoaObjectAt, i)
-		if !(glass != 0 && objc.Send[bool](effect, cocoaIsKindOf, glass)) && !objc.Send[bool](effect, cocoaIsKindOf, visualEffect) {
-			continue
+		if glass != 0 && objc.Send[bool](effect, cocoaIsKindOf, glass) {
+			return effect, effect
 		}
-		mask := objc.Send[uint](effect, cocoaMask)
-		// Mask both the glass and the last submitted Metal frame. They can
-		// reach the compositor on different refreshes during a transition.
-		originalMask := objc.Send[objc.ID](layer, cocoaLayerMask)
-		objc.Send[objc.ID](originalMask, cocoaRetain)
-		clip := objc.Send[objc.ID](objc.ID(objc.GetClass("CALayer")), cocoaLayer)
-		objc.Send[objc.ID](clip, cocoaRetain)
-		black := objc.Send[objc.ID](objc.ID(objc.GetClass("NSColor")), cocoaBlackColor)
-		objc.Send[objc.ID](clip, cocoaSetColor, objc.Send[objc.ID](black, cocoaCGColor))
-		objc.Send[objc.ID](clip, cocoaSetCorner, float64(windowRadius))
-		transaction := objc.ID(objc.GetClass("CATransaction"))
-		flipped := objc.Send[bool](layer, cocoaGeometryFlipped)
-		objc.Send[objc.ID](effect, cocoaSetMask, 0)
-		return transitionCanvas{
-			bounds: win.Bounds(),
-			reshape: func(r mygo.Rectangle, height int) {
-				rect := cocoaWindowRect{
-					x: float64(r.X), y: float64(height - r.Y - r.Height),
-					width: float64(r.Width), height: float64(r.Height),
-				}
-				objc.Send[objc.ID](transaction, cocoaBegin)
-				objc.Send[objc.ID](transaction, cocoaDisableActions, true)
-				objc.Send[objc.ID](effect, cocoaSetFrame, rect)
-				if flipped {
-					rect.y = float64(r.Y)
-				}
-				objc.Send[objc.ID](clip, cocoaSetFrame, rect)
-				objc.Send[objc.ID](layer, cocoaSetLayerMask, clip)
-				objc.Send[objc.ID](transaction, cocoaCommit)
-			},
-			restore: func() {
-				objc.Send[objc.ID](transaction, cocoaBegin)
-				objc.Send[objc.ID](transaction, cocoaDisableActions, true)
-				objc.Send[objc.ID](effect, cocoaSetFrame, objc.Send[cocoaWindowRect](content, cocoaBounds))
-				objc.Send[objc.ID](effect, cocoaSetMask, mask)
-				objc.Send[objc.ID](layer, cocoaSetLayerMask, originalMask)
-				objc.Send[objc.ID](originalMask, cocoaRelease)
-				objc.Send[objc.ID](clip, cocoaRelease)
-				objc.Send[objc.ID](transaction, cocoaCommit)
-			},
+		if objc.Send[bool](effect, cocoaIsKindOf, visualEffect) {
+			return effect, objc.Send[objc.ID](effect, cocoaLayer)
 		}
 	}
-	return transitionCanvas{}
+	return 0, 0
+}
+
+func setIslandWindowCornerRadius(win *mygo.Window, radius float32) {
+	content := objc.Send[objc.ID](objc.ID(win.NativeHandle()), cocoaContentView)
+	_, material := islandWindowMaterial(content)
+	transaction := objc.ID(objc.GetClass("CATransaction"))
+	objc.Send[objc.ID](transaction, cocoaBegin)
+	objc.Send[objc.ID](transaction, cocoaDisableActions, true)
+	objc.Send[objc.ID](objc.Send[objc.ID](content, cocoaLayer), cocoaSetCorner, float64(radius))
+	objc.Send[objc.ID](material, cocoaSetCorner, float64(radius))
+	objc.Send[objc.ID](transaction, cocoaCommit)
+}
+
+func startTransitionCanvas(win *mygo.Window) transitionCanvas {
+	content := objc.Send[objc.ID](objc.ID(win.NativeHandle()), cocoaContentView)
+	layer := objc.Send[objc.ID](content, cocoaLayer)
+	effect, material := islandWindowMaterial(content)
+	if layer == 0 || effect == 0 {
+		return transitionCanvas{}
+	}
+	mask := objc.Send[uint](effect, cocoaMask)
+	// Mask both the glass and the last submitted Metal frame. They can
+	// reach the compositor on different refreshes during a transition.
+	originalMask := objc.Send[objc.ID](layer, cocoaLayerMask)
+	objc.Send[objc.ID](originalMask, cocoaRetain)
+	clip := objc.Send[objc.ID](objc.ID(objc.GetClass("CALayer")), cocoaLayer)
+	objc.Send[objc.ID](clip, cocoaRetain)
+	black := objc.Send[objc.ID](objc.ID(objc.GetClass("NSColor")), cocoaBlackColor)
+	objc.Send[objc.ID](clip, cocoaSetColor, objc.Send[objc.ID](black, cocoaCGColor))
+	transaction := objc.ID(objc.GetClass("CATransaction"))
+	flipped := objc.Send[bool](layer, cocoaGeometryFlipped)
+	objc.Send[objc.ID](effect, cocoaSetMask, 0)
+	return transitionCanvas{
+		bounds: win.Bounds(),
+		reshape: func(r mygo.Rectangle, height int) {
+			rect := cocoaWindowRect{
+				x: float64(r.X), y: float64(height - r.Y - r.Height),
+				width: float64(r.Width), height: float64(r.Height),
+			}
+			radius := float64(islandCornerRadius(float32(r.Height)))
+			objc.Send[objc.ID](transaction, cocoaBegin)
+			objc.Send[objc.ID](transaction, cocoaDisableActions, true)
+			objc.Send[objc.ID](layer, cocoaSetCorner, radius)
+			objc.Send[objc.ID](material, cocoaSetCorner, radius)
+			objc.Send[objc.ID](clip, cocoaSetCorner, radius)
+			objc.Send[objc.ID](effect, cocoaSetFrame, rect)
+			if flipped {
+				rect.y = float64(r.Y)
+			}
+			objc.Send[objc.ID](clip, cocoaSetFrame, rect)
+			objc.Send[objc.ID](layer, cocoaSetLayerMask, clip)
+			objc.Send[objc.ID](transaction, cocoaCommit)
+		},
+		restore: func() {
+			objc.Send[objc.ID](transaction, cocoaBegin)
+			objc.Send[objc.ID](transaction, cocoaDisableActions, true)
+			objc.Send[objc.ID](effect, cocoaSetFrame, objc.Send[cocoaWindowRect](content, cocoaBounds))
+			objc.Send[objc.ID](effect, cocoaSetMask, mask)
+			objc.Send[objc.ID](layer, cocoaSetLayerMask, originalMask)
+			objc.Send[objc.ID](originalMask, cocoaRelease)
+			objc.Send[objc.ID](clip, cocoaRelease)
+			objc.Send[objc.ID](transaction, cocoaCommit)
+		},
+	}
 }

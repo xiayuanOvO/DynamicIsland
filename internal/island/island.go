@@ -86,7 +86,7 @@ func (a *island) start() {
 	options := mygo.WindowOptions{
 		Title: "灵动岛", Content: ui.View(a.view),
 		X: a.centerX - int(frame.width)/2, Y: a.top,
-		Width: int(frame.width), Height: int(frame.height), MinWidth: compactHeight, MinHeight: compactHeight - 4,
+		Width: int(frame.width), Height: int(frame.height), MinWidth: compactHeight, MinHeight: idleCapsuleHeight,
 		Frameless: true, Transparent: true, Panel: true, AlwaysOnTop: true,
 		Hidden: true, SkipTaskbar: true, DisableResize: true, DisableMaximize: true,
 		DisableMinimize: true, DisableFullScreen: true, CornerRadius: windowRadius,
@@ -98,6 +98,9 @@ func (a *island) start() {
 		options.DisableShadow = true
 	}
 	a.win = mygo.NewWindow(options)
+	if radius := islandCornerRadius(frame.height); radius < windowRadius {
+		setIslandWindowCornerRadius(a.win, radius)
+	}
 	configureFloatingWindow(a.win)
 	a.wakeWindowDisplayLink = startWindowDisplayLink(a)
 	a.media.adapter = nowplaying.Adapter()
@@ -352,6 +355,9 @@ func (a *island) applyWindowFrame(frame islandFrame, animated bool) {
 	if restore != nil {
 		restore()
 		a.win.SetInputRegion(nil)
+	}
+	if radius := islandCornerRadius(frame.height); !usingCanvas && (restore != nil || radius != islandCornerRadius(previous.height)) {
+		setIslandWindowCornerRadius(a.win, radius)
 	}
 }
 

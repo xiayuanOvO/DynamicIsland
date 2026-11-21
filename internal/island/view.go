@@ -31,7 +31,7 @@ func (a *island) view(c *ui.Context) {
 	c.Root().Background(ui.Transparent)
 	frame := a.shownFrame
 	w, h := int(frame.width), int(frame.height)
-	root := ui.Column(c.Key("island")).MinWidth(0).MinHeight(0).Radius(windowRadius).Clip()
+	root := ui.Column(c.Key("island")).MinWidth(0).MinHeight(0).Radius(islandCornerRadius(frame.height)).Clip()
 	hovered := false
 	if a.canvas.restore != nil {
 		width, height := c.Size()
@@ -106,11 +106,16 @@ func (a *island) hover(c *ui.Context, hovered bool) {
 }
 
 func (a *island) header(c *ui.Context, open float32) {
-	height := compactHeight + (panelHeaderHeight-compactHeight)*open
 	docked := a.dock.side != dockNone
+	idle := a.compactIdle()
+	height := float32(compactHeight)
+	if idle && !docked {
+		height = idleCapsuleHeight
+	}
+	height += (panelHeaderHeight - height) * open
 	offset := -float32(a.dock.side) * (dockTuck / 2.0) * (1 - open)
 	compactAlpha := 1 - animationPhase(open, 0, 0.6)
-	idleFace := compactAlpha > 0 && a.compactIdle()
+	idleFace := compactAlpha > 0 && idle
 	track := a.media.track
 	playing := track.Playing && track.Title != ""
 	if !idleFace {

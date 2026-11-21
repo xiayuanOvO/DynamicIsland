@@ -9,3 +9,5 @@ func startWindowDisplayLink(*island) func() { return nil }
 func setAnimatedWindowBounds(win *mygo.Window, bounds mygo.Rectangle) { win.SetBounds(bounds) }
 
 func startTransitionCanvas(*mygo.Window) transitionCanvas { return transitionCanvas{} }
+
+func setIslandWindowCornerRadius(*mygo.Window, float32) {}

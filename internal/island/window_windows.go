@@ -104,13 +104,14 @@ func configureWindowGlass(win *mygo.Window, radius int) bool {
 		if dpi == 0 {
 			dpi = 96
 		}
-		diameter := uintptr(radius*2) * dpi / 96
-		shape := [3]int32{rect.right - rect.left, rect.bottom - rect.top, int32(diameter)}
+		width, height := rect.right-rect.left, rect.bottom-rect.top
+		diameter := min(uintptr(radius*2)*dpi/96, uintptr(min(width, height)))
+		shape := [3]int32{width, height, int32(diameter)}
 		if shape == lastWindowShape {
 			return
 		}
 		if resizeBackdrop != nil {
-			resizeBackdrop(float32(shape[0]), float32(shape[1]), float32(radius)*float32(dpi)/96)
+			resizeBackdrop(float32(width), float32(height), float32(diameter)/2)
 		}
 		// The composition visual supplies the antialiased outline.
 		// Leave two device pixels around it for the GDI hit area.
