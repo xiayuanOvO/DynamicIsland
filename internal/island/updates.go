@@ -174,6 +174,7 @@ func (a *island) offerUpdate(update *mygo.Update) {
 			if result.Button == 0 {
 				u.interactive = true
 				a.downloadUpdate(update)
+				a.settingsPage = settingsPageApp
 				a.openSettings()
 			} else {
 				a.finishUpdate(updateIdle, updateInterval)
@@ -239,10 +240,6 @@ func (a *island) updateFailed(message string, err error) {
 
 func (a *island) updateControl(c *ui.Context) {
 	u := &a.updates
-	if u.announcement != "" {
-		c.Announce(u.announcement)
-		u.announcement = ""
-	}
 	switch {
 	case u.phase == updateChecking && u.interactive, u.phase == updateDownloading:
 		checking := u.phase == updateChecking

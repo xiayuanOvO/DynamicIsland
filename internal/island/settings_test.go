@@ -13,6 +13,52 @@ import (
 	"github.com/egoist/mygo/ui"
 )
 
+func TestSettingsSidebarNavigationAndSave(t *testing.T) {
+	a := island{statePath: filepath.Join(t.TempDir(), "shelf.json")}
+	const height = 360
+	view := ui.NewTester(a.settingsView, settingsWidth, height)
+	if a.settingsPage != settingsPageIdle || !view.HasText("显示表情") || view.HasText("音乐卡片预览") {
+		t.Fatalf("settings should initially show the idle page: %v", view.Texts())
+	}
+	view.Key(0, ui.KeyTab)
+	view.Key(0, ui.KeyDown)
+	if a.settingsPage != settingsPageMedia || !view.HasText("音乐卡片预览") || view.HasText("显示表情") {
+		t.Fatalf("Down should open the media page from the sidebar: %v", view.Texts())
+	}
+	sidebar, found := view.Find("设置分类")
+	if !found {
+		t.Fatal("the settings category sidebar is missing")
+	}
+	view.Scroll(settingsSidebarWidth+100, height-30, 0, 460)
+	view.Advance(300 * time.Millisecond)
+	if moved, ok := view.Find("设置分类"); !ok || moved != sidebar || !view.HasText("律动配色模式") {
+		t.Fatalf("scrolling the media page should leave the sidebar fixed: %v", view.Texts())
+	}
+	for _, page := range []struct{ label, id, setting string }{
+		{"剪贴板", settingsPageClipboard, "记录剪贴板"},
+		{"应用", settingsPageApp, "检查更新"},
+		{"空闲", settingsPageIdle, "显示表情"},
+	} {
+		if err := view.Click(page.label); err != nil {
+			t.Fatal(err)
+		}
+		if a.settingsPage != page.id || !view.HasText(page.setting) {
+			t.Fatalf("clicking %s did not open its settings: %v", page.label, view.Texts())
+		}
+	}
+	if err := view.Click("显示表情"); err != nil {
+		t.Fatal(err)
+	}
+	if err := view.Click("应用"); err != nil {
+		t.Fatal(err)
+	}
+	view.Advance(time.Second)
+	saved, err := loadSettings(a.settingsPath())
+	if err != nil || saved.showsIdleItem(idleItemFace) || a.settingsPage != settingsPageApp {
+		t.Fatalf("switching pages dropped a pending setting change: %+v, %v", saved.idleItems(), err)
+	}
+}
+
 func TestFullscreenHidingSettingCanBeChangedAndSaved(t *testing.T) {
 	a := island{statePath: filepath.Join(t.TempDir(), "shelf.json")}
 	for _, existing := range []bool{false, true} {
@@ -29,7 +75,8 @@ func TestFullscreenHidingSettingCanBeChangedAndSaved(t *testing.T) {
 	}
 
 	const label = "全屏时隐藏灵动岛"
-	view := ui.NewTester(a.settingsView, settingsWidth, a.settingsHeight())
+	a.settingsPage = settingsPageApp
+	view := ui.NewTester(a.settingsView, settingsWidth, settingsHeight)
 	view.UseScreenReader()
 	if _, ok := view.Find(label); ok != supportsFullscreenHiding {
 		t.Fatalf("fullscreen setting availability = %v, want %v", ok, supportsFullscreenHiding)
@@ -64,7 +111,8 @@ func TestClipboardSettingTogglesHistoryEntrypoints(t *testing.T) {
 			a.clipboard.stop()
 		}
 	})
-	settings := ui.NewTester(a.settingsView, settingsWidth, a.settingsHeight())
+	a.settingsPage = settingsPageClipboard
+	settings := ui.NewTester(a.settingsView, settingsWidth, settingsHeight)
 	islandView := ui.NewTester(func(c *ui.Context) { a.body(c, a.targetFrame()) }, panelWidth, clipboardPanelHeight+20)
 	for _, enabled := range []bool{false, true, false, true} {
 		if a.clipboard.Recording != enabled {
@@ -113,7 +161,8 @@ func TestClipboardSettingsRecoversUnreadableHistory(t *testing.T) {
 		t.Fatal(err)
 	}
 	a.loadClipboard()
-	view := ui.NewTester(a.settingsView, settingsWidth, a.settingsHeight())
+	a.settingsPage = settingsPageClipboard
+	view := ui.NewTester(a.settingsView, settingsWidth, settingsHeight)
 	if !view.HasText("剪贴板历史读取失败") {
 		t.Fatal("settings should report the unreadable history")
 	}
@@ -134,7 +183,8 @@ func TestClipboardSettingsRecoversUnreadableHistory(t *testing.T) {
 
 func TestClipboardShortcutCanBeRecordedAndSavedFromSettings(t *testing.T) {
 	a := newTestClipboard(t, false)
-	view := ui.NewTester(a.settingsView, settingsWidth, a.settingsHeight())
+	a.settingsPage = settingsPageClipboard
+	view := ui.NewTester(a.settingsView, settingsWidth, settingsHeight)
 	defaultLabel, newLabel := "Alt + Shift + V", "Ctrl + Shift + K"
 	if runtime.GOOS == "darwin" {
 		defaultLabel, newLabel = "Option + Shift + V", "Control + Shift + K"
@@ -220,7 +270,8 @@ func TestLyricTransitionSettingCanBeChangedAndSaved(t *testing.T) {
 		t.Fatalf("saved unknown effect should fall back to slide, got %d, %v", settings.LyricTransition, err)
 	}
 	a.settings = settings
-	view := ui.NewTester(a.settingsView, settingsWidth, a.settingsHeight())
+	a.settingsPage = settingsPageMedia
+	view := ui.NewTester(a.settingsView, settingsWidth, settingsHeight)
 	view.UseScreenReader()
 	for range 12 {
 		if view.Focused("上移") {
@@ -258,7 +309,8 @@ func TestLyricTransitionSettingCanBeChangedAndSaved(t *testing.T) {
 
 func TestLyricStyleSettingsCanBeChangedAndSaved(t *testing.T) {
 	a := island{statePath: filepath.Join(t.TempDir(), "shelf.json")}
-	view := ui.NewTester(a.settingsView, settingsWidth, a.settingsHeight())
+	a.settingsPage = settingsPageMedia
+	view := ui.NewTester(a.settingsView, settingsWidth, settingsHeight)
 	view.SetLocale("en-US")
 	for range 12 {
 		if view.Focused("歌词字号") {
@@ -309,12 +361,13 @@ func TestClearLyricCacheFromSettings(t *testing.T) {
 	}
 	a := island{lyrics: lyricOverlay{diskCache: cache, cache: map[lyrics.Song]lyrics.Lines{song: lines, other: lines}, song: song}}
 	a.refreshLyricCacheSize()
-	view := ui.NewTester(a.settingsView, settingsWidth, a.settingsHeight())
+	a.settingsPage = settingsPageMedia
+	view := ui.NewTester(a.settingsView, settingsWidth, settingsHeight)
 	view.UseScreenReader()
 	if !view.HasText("< 0.01 MB") {
 		t.Fatalf("expected small cache size in MB: %v", view.Texts())
 	}
-	for range 12 + len(defaultIdleItems) {
+	for range 12 {
 		if view.Focused("清理缓存") {
 			break
 		}

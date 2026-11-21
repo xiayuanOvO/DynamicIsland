@@ -17,7 +17,7 @@ func TestIdleDisplaySettingsReorderHideAndSave(t *testing.T) {
 	a.idle.weather = idleWeather{condition: "晴", temperature: 19, icon: weatherSunIcon}
 	a.idle.weatherUntil = time.Now().Add(time.Hour)
 	originalWidth := a.targetFrame().width
-	view := ui.NewTester(a.settingsView, settingsWidth, a.settingsHeight())
+	view := ui.NewTester(a.settingsView, settingsWidth, settingsHeight)
 	face, hasFace := view.Find("表情")
 	clock, hasClock := view.Find("时间")
 	if !hasFace || !hasClock || face.Y >= clock.Y {

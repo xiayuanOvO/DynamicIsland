@@ -81,6 +81,7 @@ func (a *island) clipboardSettings(c *ui.Context) {
 		}
 	})
 	if !history.loadFailed {
+		settingsDivider(c)
 		a.clipboardShortcutSettings(c)
 	}
 }

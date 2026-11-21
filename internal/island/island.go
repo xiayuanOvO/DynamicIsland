@@ -72,6 +72,7 @@ type island struct {
 	updates            appUpdates
 	citySearch         weatherCitySearch
 	idleSettingsList   ui.ListState
+	settingsPage       string
 	settingsWindow     *mygo.Window
 	settingsSaveAt     time.Time
 	settingsSaveFailed bool
