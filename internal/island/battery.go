@@ -108,7 +108,7 @@ func (a *island) batteryRow(c *ui.Context) {
 				color = batteryLow
 			}
 			item := ui.Column(c.Key(reading.ID)).Size(50, 44).Shrink(0).Gap(2).AlignItems(ui.Center).
-				Label(name).Value(value).Tooltip(name + " · " + value)
+				Label(name).Value(value)
 			if known {
 				item.Role(ui.RoleMeter).Range(0, 100, float64(reading.Percent))
 			} else {
