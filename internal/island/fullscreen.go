@@ -1,41 +1,48 @@
 package island
 
 import (
+	"runtime"
 	"time"
 
 	"github.com/egoist/mygo"
 )
 
+const supportsFullscreenHiding = runtime.GOOS == "darwin" || runtime.GOOS == "windows"
+
 func (a *island) watchFullscreen() {
+	if !supportsFullscreenHiding {
+		return
+	}
 	done := make(chan struct{})
 	mygo.App.OnWillQuit(func(*mygo.QuitEvent) { close(done) })
-	check := func() {
-		active := foregroundFullscreen()
-		if a.fullscreen == active {
-			return
-		}
-		a.fullscreen = active
-		if active {
-			a.hideWindows()
-		} else if !a.hiddenByUser {
-			a.media.refreshAt = time.Time{}
-			a.win.ShowInactive()
-			a.win.Invalidate()
-		}
-	}
-	check()
+	a.syncFullscreenVisibility()
 	go func() {
 		tick := time.NewTicker(400 * time.Millisecond)
 		defer tick.Stop()
 		for {
 			select {
 			case <-tick.C:
-				mygo.RunOnMain(check)
+				mygo.RunOnMain(a.syncFullscreenVisibility)
 			case <-done:
 				return
 			}
 		}
 	}()
+}
+
+func (a *island) syncFullscreenVisibility() {
+	hidden := a.settings.HideInFullscreen && foregroundFullscreen()
+	if a.hiddenForFullscreen == hidden {
+		return
+	}
+	a.hiddenForFullscreen = hidden
+	if hidden {
+		a.hideWindows()
+	} else if !a.hiddenByUser {
+		a.media.refreshAt = time.Time{}
+		a.win.ShowInactive()
+		a.win.Invalidate()
+	}
 }
 
 func windowCoversDisplay(window, display mygo.Rectangle) bool {

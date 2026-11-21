@@ -338,7 +338,7 @@ func (a *island) useClipboardEntry(c *ui.Context, entry clipboardEntry, paste bo
 	a.setExpanded(false)
 	if win := a.win; win != nil {
 		win.Update(func() {
-			if a.expanded || a.hiddenByUser || a.fullscreen {
+			if a.expanded || a.hiddenByUser || a.hiddenForFullscreen {
 				return
 			}
 			pasteReady := target.restore(win)

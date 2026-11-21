@@ -13,6 +13,49 @@ import (
 	"github.com/egoist/mygo/ui"
 )
 
+func TestFullscreenHidingSettingCanBeChangedAndSaved(t *testing.T) {
+	a := island{statePath: filepath.Join(t.TempDir(), "shelf.json")}
+	for _, existing := range []bool{false, true} {
+		if existing {
+			if err := os.WriteFile(a.settingsPath(), []byte(`{"hideLyrics":true}`), 0600); err != nil {
+				t.Fatal(err)
+			}
+		}
+		settings, err := loadSettings(a.settingsPath())
+		if err != nil || !settings.HideInFullscreen {
+			t.Fatalf("fullscreen hiding should default to on, got %v, %v", settings.HideInFullscreen, err)
+		}
+		a.settings = settings
+	}
+
+	const label = "全屏时隐藏灵动岛"
+	view := ui.NewTester(a.settingsView, settingsWidth, a.settingsHeight())
+	view.UseScreenReader()
+	if _, ok := view.Find(label); ok != supportsFullscreenHiding {
+		t.Fatalf("fullscreen setting availability = %v, want %v", ok, supportsFullscreenHiding)
+	}
+	if !supportsFullscreenHiding {
+		return
+	}
+	for range 20 {
+		if view.Focused(label) {
+			break
+		}
+		view.Key(0, ui.KeyTab)
+	}
+	if !view.Focused(label) {
+		t.Fatal("the fullscreen hiding switch was not reachable by Tab")
+	}
+	for _, enabled := range []bool{false, true} {
+		view.Key(0, ui.KeySpace)
+		view.Advance(time.Second)
+		saved, err := loadSettings(a.settingsPath())
+		if err != nil || a.settings.HideInFullscreen != enabled || saved.HideInFullscreen != enabled || !saved.HideLyrics {
+			t.Fatalf("switching fullscreen hiding to %v did not preserve the expected settings: %+v, %v", enabled, saved, err)
+		}
+	}
+}
+
 func TestClipboardSettingTogglesHistoryEntrypoints(t *testing.T) {
 	a := newTestClipboard(t, false, "样本文字")
 	a.expanded = true

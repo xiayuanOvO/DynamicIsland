@@ -45,7 +45,7 @@ type island struct {
 	idle                  idleInfo
 	face                  idleFaceState
 	expanded              bool
-	fullscreen            bool
+	hiddenForFullscreen   bool
 	hiddenByUser          bool
 	dragging              bool
 	busy                  int
@@ -87,7 +87,7 @@ func (a *island) start() {
 		X: a.centerX - int(frame.width)/2, Y: a.top,
 		Width: int(frame.width), Height: int(frame.height), MinWidth: compactHeight, MinHeight: compactHeight - 4,
 		Frameless: true, Transparent: true, Panel: true, AlwaysOnTop: true,
-		SkipTaskbar: true, DisableResize: true, DisableMaximize: true,
+		Hidden: true, SkipTaskbar: true, DisableResize: true, DisableMaximize: true,
 		DisableMinimize: true, DisableFullScreen: true, CornerRadius: windowRadius,
 		BackgroundColor: "#00000000", Vibrancy: mygo.VibrancyGlass,
 	}
@@ -95,7 +95,6 @@ func (a *island) start() {
 		// The Windows backdrop is clipped inside the composition tree.
 		options.Vibrancy = mygo.VibrancyNone
 		options.DisableShadow = true
-		options.Hidden = true
 	}
 	a.win = mygo.NewWindow(options)
 	configureFloatingWindow(a.win)
@@ -104,9 +103,6 @@ func (a *island) start() {
 	a.startPreviews()
 	a.win.SetActiveAppearance(true)
 	a.hasWindowBackdrop = configureWindowGlass(a.win, windowRadius)
-	if options.Hidden {
-		a.win.Show()
-	}
 	a.win.OnMove(a.windowMoved)
 	a.win.OnBlur(a.clipboardWindowBlurred)
 	mygo.Screen.OnDisplaysChanged(a.recenter)
@@ -142,6 +138,9 @@ func (a *island) start() {
 	a.watchClipboardExpiry()
 	a.watchTodoReminders()
 	a.watchFullscreen()
+	if !a.hiddenForFullscreen {
+		a.win.ShowInactive()
+	}
 }
 
 func (a *island) trayMenu() *mygo.Menu {
@@ -274,7 +273,7 @@ func (a *island) hideWindows() {
 
 func (a *island) show() {
 	a.hiddenByUser = false
-	if a.fullscreen {
+	if a.hiddenForFullscreen {
 		return
 	}
 	a.win.Show()
@@ -284,12 +283,12 @@ func (a *island) show() {
 
 func (a *island) showPanel() {
 	a.hiddenByUser = false
-	if a.win != nil && !a.win.IsVisible() && !a.fullscreen {
+	if a.win != nil && !a.win.IsVisible() && !a.hiddenForFullscreen {
 		a.show()
 		return
 	}
 	a.setExpanded(true)
-	if a.win != nil && !a.fullscreen {
+	if a.win != nil && !a.hiddenForFullscreen {
 		a.win.Update(a.win.Focus)
 	}
 }

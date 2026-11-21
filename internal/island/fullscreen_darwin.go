@@ -84,10 +84,23 @@ func foregroundFullscreen() bool {
 			Width: int(math.Round(rect.Width)), Height: int(math.Round(rect.Height)),
 		}
 		for _, display := range displays {
-			if windowCoversDisplay(bounds, display.Bounds) {
+			if windowCoversMacDisplay(bounds, display) {
 				return true
 			}
 		}
 	}
 	return false
+}
+
+func windowCoversMacDisplay(window mygo.Rectangle, display mygo.Display) bool {
+	screen, work := display.Bounds, display.WorkArea
+	// On notched displays AppKit can start a fullscreen window a few points
+	// below the safe area. The work area then spans the other three edges.
+	const fullscreenTopGap = 8
+	if work.Y > screen.Y && work.X == screen.X && work.Width == screen.Width &&
+		work.Y+work.Height == screen.Y+screen.Height && window.Y > work.Y && window.Y <= work.Y+fullscreenTopGap {
+		screen.Height -= window.Y - screen.Y
+		screen.Y = window.Y
+	}
+	return windowCoversDisplay(window, screen)
 }

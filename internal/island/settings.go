@@ -40,13 +40,14 @@ var settingsTheme = func() *ui.Theme {
 }()
 
 type appSettings struct {
-	Mode            int         `json:"waveColorMode"`
-	Color           ui.Color    `json:"waveColor"`
-	HideLyrics      bool        `json:"hideLyrics,omitempty"`
-	LyricTransition int         `json:"lyricTransition,omitempty"`
-	LyricStyle      lyricStyle  `json:"lyricStyle,omitzero"`
-	WeatherCity     weatherCity `json:"weatherCity,omitzero"`
-	MediaCardStyle  int         `json:"mediaCardStyle,omitempty"`
+	Mode             int         `json:"waveColorMode"`
+	Color            ui.Color    `json:"waveColor"`
+	HideLyrics       bool        `json:"hideLyrics,omitempty"`
+	LyricTransition  int         `json:"lyricTransition,omitempty"`
+	LyricStyle       lyricStyle  `json:"lyricStyle,omitzero"`
+	WeatherCity      weatherCity `json:"weatherCity,omitzero"`
+	MediaCardStyle   int         `json:"mediaCardStyle,omitempty"`
+	HideInFullscreen bool        `json:"hideInFullscreen"`
 }
 
 func (s appSettings) waveColor(artwork ui.Color) ui.Color {
@@ -66,7 +67,7 @@ func (s appSettings) waveColor(artwork ui.Color) ui.Color {
 }
 
 func loadSettings(path string) (appSettings, error) {
-	defaults := appSettings{Color: accent}
+	defaults := appSettings{Color: accent, HideInFullscreen: true}
 	data, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
 		return defaults, nil
@@ -138,6 +139,9 @@ func saveStateFile(path string, data []byte) error {
 
 func (a *island) settingsHeight() int {
 	height := 415 + a.settings.cardHeight() + 2*cardPreviewInset + cardPreviewGap + clipboardSettingsHeight
+	if supportsFullscreenHiding {
+		height += settingsRowHeight + 1
+	}
 	if !a.settings.HideLyrics {
 		height += 3 * (settingsRowHeight + 1)
 	}
@@ -196,7 +200,7 @@ func (a *island) settingsView(c *ui.Context) {
 	c.Root().Background(settingsTheme.Background)
 	ui.Scroll(c.Key("settings")).Fill().Padding(16, 18).Gap(14).Children(func() {
 		var weatherChanged, lyricsChanged, transitionChanged, cardStyleChanged, modeChanged, colorChanged bool
-		var lyricSizeChanged, lyricColorChanged bool
+		var lyricSizeChanged, lyricColorChanged, fullscreenChanged bool
 		settingsGroup(c.Key("idle-settings"), "空闲", func() { weatherChanged = a.weatherSettings(c) })
 		settingsGroup(c.Key("clipboard-settings"), "剪贴板", func() { a.clipboardSettings(c) })
 		settingsGroup(c.Key("media-settings"), "媒体", func() {
@@ -314,6 +318,14 @@ func (a *island) settingsView(c *ui.Context) {
 			}
 		})
 		settingsGroup(c.Key("app-settings"), "应用", func() {
+			if supportsFullscreenHiding {
+				settingsRow(c.Key("fullscreen-settings")).Children(func() {
+					const label = "全屏时隐藏灵动岛"
+					ui.Text(c, label).Grow(1).FontSize(13).TextColor(ink).AccessHidden(true)
+					fullscreenChanged = ui.Switch(c.Key("hide-in-fullscreen"), &a.settings.HideInFullscreen).Label(label).Changed()
+				})
+				ui.Box(c).AlignSelf(ui.Stretch).Height(1).Shrink(0).Margin(0, 14).Background(theme.Border)
+			}
 			settingsRow(c.Key("update-settings")).Children(func() {
 				ui.Text(c, fmt.Sprintf("版本 %s", mygo.App.Version())).Grow(1).FontSize(13).TextColor(ink)
 				a.updateControl(c)
@@ -332,7 +344,10 @@ func (a *island) settingsView(c *ui.Context) {
 				win.SetContentBounds(content)
 			})
 		}
-		if modeChanged || colorChanged || lyricsChanged || transitionChanged || lyricSizeChanged || lyricColorChanged || weatherChanged || cardStyleChanged {
+		if fullscreenChanged && a.win != nil {
+			a.win.Update(a.syncFullscreenVisibility)
+		}
+		if modeChanged || colorChanged || lyricsChanged || transitionChanged || lyricSizeChanged || lyricColorChanged || weatherChanged || cardStyleChanged || fullscreenChanged {
 			a.settingsSaveAt = c.Now().Add(300 * time.Millisecond)
 			if a.win != nil {
 				a.win.Invalidate()
