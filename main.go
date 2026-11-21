@@ -1,7 +1,14 @@
 package main
 
-import "dynamicisland/internal/island"
+import (
+	_ "embed"
+
+	"dynamicisland/internal/island"
+)
+
+//go:embed resources/icon.png
+var appIcon []byte
 
 func main() {
-	island.Run()
+	island.Run(appIcon)
 }

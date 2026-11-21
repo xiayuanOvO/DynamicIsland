@@ -11,7 +11,7 @@ import (
 	"github.com/egoist/mygo"
 )
 
-func Run() {
+func Run(appIcon []byte) {
 	mygo.App.SetName("DynamicIsland")
 	if mygo.App.Version() == "" {
 		mygo.App.SetVersion("0.1.0")
@@ -60,6 +60,11 @@ func Run() {
 		})
 	})
 	mygo.App.WhenReady(func() {
+		if !mygo.App.IsPackaged() {
+			if err := mygo.App.Dock.SetIcon(appIcon); err != nil {
+				log.Printf("app icon: %v", err)
+			}
+		}
 		a.start()
 		a.startUpdates()
 		a.addFiles(commandPaths(os.Args[1:], ""))

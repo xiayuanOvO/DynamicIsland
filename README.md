@@ -27,17 +27,13 @@ go run .
 
 开发时可运行 `go tool mygo dev`，修改 Go 代码后自动重新构建并启动。在 macOS 上首次开发前运行 `./scripts/build-macos.sh --prepare-media`，开发版与发布版会打包同一份媒体适配器。
 
-构建无控制台窗口的 Windows 程序：
+运行脚本可构建带应用图标的 Windows 程序，输出为 `dist\DynamicIsland.exe`。
 
 ```powershell
 .\scripts\build.ps1
 ```
 
-输出：`dist\DynamicIsland.exe`。也可以直接执行：
-
-```powershell
-go build -trimpath -ldflags "-H=windowsgui -s -w" -o dist/DynamicIsland.exe .
-```
+MyGo 使用 `resources/icon.png` 生成 macOS 应用图标、Windows 可执行文件图标和 Linux 桌面图标。
 
 ## 发布和应用内更新
 

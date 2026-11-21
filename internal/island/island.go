@@ -170,9 +170,8 @@ func (a *island) trayMenu() *mygo.Menu {
 }
 
 func (a *island) createTray() {
-	icon := trayIcon()
 	tray, err := mygo.NewTray(mygo.TrayOptions{
-		ID: "dynamic-island", Icon: icon, IconIsTemplate: true, ToolTip: "灵动岛", Menu: a.trayMenu(),
+		ID: "dynamic-island", Icon: trayIcon(), IconIsTemplate: true, ToolTip: "灵动岛", Menu: a.trayMenu(),
 	})
 	if err != nil {
 		log.Printf("tray: %v", err)
@@ -181,9 +180,6 @@ func (a *island) createTray() {
 	}
 	a.tray = tray
 	a.tray.OnClick(a.toggle)
-	if err := a.win.SetIcon(icon); err != nil {
-		log.Printf("window icon: %v", err)
-	}
 }
 
 func (a *island) compactIdle() bool {
