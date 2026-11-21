@@ -1,7 +1,13 @@
 package island
 
 import (
+	"context"
 	"fmt"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
+	"strings"
 	"testing"
 	"time"
 
@@ -12,7 +18,7 @@ import (
 
 func TestIdleCapsuleStatus(t *testing.T) {
 	a := island{files: &shelf.Shelf{}}
-	a.idle.weather = idleWeather{condition: "局部多云伴有阵雨", temperature: -12}
+	a.idle.weather = idleWeather{condition: "局部多云伴有阵雨", temperature: -12, icon: weatherRainIcon}
 	a.idle.weatherUntil = time.Now().Add(time.Minute)
 	a.battery.readings = []battery.Reading{
 		{ID: "computer", Name: "本机", Kind: battery.Computer, Percent: 84, Charging: true},
@@ -22,11 +28,15 @@ func TestIdleCapsuleStatus(t *testing.T) {
 	a.shownFrame = a.targetFrame()
 	width := int(a.shownFrame.width)
 	view := ui.NewTester(func(c *ui.Context) { a.header(c, a.shownFrame.open) }, width, compactHeight)
+	weather, hasWeather := view.Find(a.idle.weather.condition)
 	temp, hasTemp := view.Find("-12°C")
 	device, hasDevice := view.Find("本机")
 	leftEar, hasEar := view.Find("耳机 左耳")
-	if !hasTemp || !hasDevice || !hasEar || !view.HasText("鼠标 · 电量未知") || !view.HasText(view.Now().Format("15:04")) {
+	if !hasWeather || !hasTemp || !hasDevice || !hasEar || !view.HasText("鼠标 · 电量未知") || !view.HasText(view.Now().Format("15:04")) {
 		t.Fatalf("missing capsule status: %v", view.Texts())
+	}
+	if weather.W != 14 || weather.H != 14 || weather.X+weather.W > temp.X {
+		t.Fatalf("weather icon should fit to the left of the temperature: icon %+v, temperature %+v", weather, temp)
 	}
 	if temp.X+temp.W > device.X || leftEar.X+leftEar.W > float32(width) {
 		t.Fatalf("weather or battery indicators overlap or overflow: temperature %+v, battery %+v, left ear %+v", temp, device, leftEar)
@@ -53,6 +63,40 @@ func TestIdleCapsuleStatus(t *testing.T) {
 	view.Key(0, ui.KeyEnter)
 	if !a.expanded {
 		t.Fatal("pressing Enter on the capsule should expand the island")
+	}
+}
+
+func TestFetchIdleWeatherIcons(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, r.URL.Query().Get("weather"))
+	}))
+	t.Cleanup(server.Close)
+	for _, test := range []struct {
+		response string
+		icon     *ui.SVG
+	}{
+		{"晴|-3°C|113", weatherSunIcon},
+		{"Partly cloudy|-3°C|116", weatherPartlyCloudyIcon},
+		{"多云|-3°C|119", weatherPartlyCloudyIcon},
+		{"阴|-3°C|122", weatherCloudIcon},
+		{"阵雨|-3°C|353", weatherRainIcon},
+		{"暴雪|-3°C|230", weatherSnowIcon},
+		{"雷阵雨|-3°C|386", weatherThunderIcon},
+		{"冻雾|-3°C|260", weatherFogIcon},
+		{"Smoky haze|-3°C|149", weatherFogIcon},
+		{"局部多云伴有阵雨|-3°C", weatherRainIcon},
+		{"未知天气|-3°C|999", weatherUnknownIcon},
+	} {
+		t.Run(test.response, func(t *testing.T) {
+			weather, err := fetchIdleWeather(context.Background(), server.URL+"?weather="+url.QueryEscape(test.response))
+			if err != nil {
+				t.Fatal(err)
+			}
+			condition, _, _ := strings.Cut(test.response, "|")
+			if weather.condition != condition || weather.temperature != -3 || weather.icon != test.icon {
+				t.Fatalf("unexpected weather or icon for %s: %+v", test.response, weather)
+			}
+		})
 	}
 }
 

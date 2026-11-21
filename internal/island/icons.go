@@ -29,6 +29,20 @@ var (
 
 var clipboardIcon = svg(`<rect x="8" y="3" width="8" height="4" rx="1.4"/><path d="M8 5H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2M8 12h8m-8 4h6"/>`)
 
+const weatherCloudShape = `<path d="M6 15a3.5 3.5 0 0 1 0-7h.8a5 5 0 0 1 9.5 1h1.2a3 3 0 0 1 0 6Z"/>`
+
+var (
+	weatherSunIcon          = svg(`<circle cx="12" cy="12" r="4.5"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M5 19l1.5-1.5m11-11L19 5"/>`)
+	weatherPartlyCloudyIcon = svg(`<path d="M4.7 11.6A4.5 4.5 0 1 1 13 8M8 2v1.5M2.6 4.5l1 1M1.5 9H3m10-5 1-1"/>` +
+		`<path d="M8 20a3.2 3.2 0 0 1 0-6.4h.6a4.7 4.7 0 0 1 8.9-1.2h.5A3.8 3.8 0 0 1 18 20Z"/>`)
+	weatherCloudIcon   = svg(`<g transform="translate(0 2)">` + weatherCloudShape + `</g>`)
+	weatherRainIcon    = svg(weatherCloudShape + `<path d="m8 18-1.5 3m6-3L11 21m6-3-1.5 3"/>`)
+	weatherSnowIcon    = svg(`<path d="M12 2v20M3.3 7l17.4 10M3.3 17 20.7 7m-12-3 3.3 2 3.3-2m-6.6 16 3.3-2 3.3 2M3.6 11l3.5-2-.2-4M17.1 19l-.2-4 3.5-2M3.6 13l3.5 2-.2 4M17.1 5l-.2 4 3.5 2"/>`)
+	weatherThunderIcon = svg(weatherCloudShape + `<path d="m13 15-4 4h4l-2 3"/>`)
+	weatherFogIcon     = svg(weatherCloudShape + `<path d="M4 18h16M6 21h12"/>`)
+	weatherUnknownIcon = svg(`<path d="M10 14V5a2 2 0 0 1 4 0v9a4 4 0 1 1-4 0Zm2-3v6"/><circle cx="12" cy="17.5" r="1"/>`)
+)
+
 func trayIcon() []byte {
 	icon := image.NewNRGBA(image.Rect(0, 0, 32, 32))
 	for y := 6; y < 26; y++ {

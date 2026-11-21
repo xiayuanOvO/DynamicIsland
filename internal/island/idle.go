@@ -15,7 +15,7 @@ import (
 
 const (
 	idleWeatherBase     = "https://wttr.in/"
-	idleWeatherQuery    = "?format=%25C%7C%25t&lang=zh-cn&m"
+	idleWeatherQuery    = "?format=%25C%7C%25t%7C%25i&lang=zh-cn&m"
 	idleWeatherEndpoint = idleWeatherBase + idleWeatherQuery
 
 	idleCapsulePadding   = 12
@@ -37,6 +37,7 @@ type idleInfo struct {
 type idleWeather struct {
 	condition   string
 	temperature int
+	icon        *ui.SVG
 }
 
 func (a *island) showsIdleCapsule() bool {
@@ -91,9 +92,9 @@ func (a *island) idleCapsule(c *ui.Context, opacity float32) {
 			ui.Text(c.Key("clock"), now.Format("15:04")).FontSize(16).FontWeight(650).
 				FontFeatures("tnum").SingleLine().TextColor(ink)
 			if weather := a.idle.weather; weather.condition != "" && now.Before(a.idle.weatherUntil) {
-				ui.Row(c.Key("weather")).FillWidth().Gap(4).Children(func() {
-					ui.Text(c.Key("condition"), weather.condition).FontSize(11).FontWeight(500).
-						MinWidth(0).Shrink(1).SingleLine().Ellipsis("…").TextColor(ink)
+				ui.Row(c.Key("weather")).FillWidth().AlignItems(ui.Center).Gap(4).Children(func() {
+					ui.Icon(c.Key("condition"), weather.icon).Size(14, 14).Shrink(0).TextColor(ink).
+						Role(ui.RoleImage).Label(weather.condition)
 					ui.Text(c.Key("temperature"), fmt.Sprintf("%d°C", weather.temperature)).FontSize(11).FontWeight(500).
 						Shrink(0).SingleLine().TextColor(ink)
 				})
@@ -122,7 +123,8 @@ func fetchIdleWeather(ctx context.Context, endpoint string) (idleWeather, error)
 	if err != nil {
 		return idleWeather{}, err
 	}
-	condition, reading, found := strings.Cut(strings.TrimSpace(string(data)), "|")
+	condition, rest, found := strings.Cut(strings.TrimSpace(string(data)), "|")
+	reading, rawCode, _ := strings.Cut(rest, "|")
 	condition = strings.TrimSpace(condition)
 	number, celsius := strings.CutSuffix(strings.TrimSpace(reading), "°C")
 	temperature, err := strconv.Atoi(number)
@@ -130,5 +132,45 @@ func fetchIdleWeather(ctx context.Context, endpoint string) (idleWeather, error)
 		!celsius || err != nil || temperature < -100 || temperature > 80 {
 		return idleWeather{}, errors.New("invalid weather response")
 	}
-	return idleWeather{condition: condition, temperature: temperature}, nil
+	code, _ := strconv.Atoi(strings.TrimSpace(rawCode))
+	return idleWeather{condition: condition, temperature: temperature, icon: idleWeatherIcon(code, condition)}, nil
+}
+
+func idleWeatherIcon(code int, condition string) *ui.SVG {
+	switch code {
+	case 113:
+		return weatherSunIcon
+	case 116, 119:
+		return weatherPartlyCloudyIcon
+	case 122:
+		return weatherCloudIcon
+	case 143, 248, 260:
+		return weatherFogIcon
+	case 176, 185, 263, 266, 281, 284, 293, 296, 299, 302, 305, 308, 311, 314, 353, 356, 359:
+		return weatherRainIcon
+	case 179, 182, 227, 230, 317, 320, 323, 326, 329, 332, 335, 338, 350, 362, 365, 368, 371, 374, 377, 395:
+		return weatherSnowIcon
+	case 200, 386, 389, 392:
+		return weatherThunderIcon
+	}
+	// New conditions can appear before the service assigns them a documented code.
+	name := strings.ToLower(condition)
+	switch {
+	case strings.Contains(name, "雷"), strings.Contains(name, "thunder"):
+		return weatherThunderIcon
+	case strings.ContainsAny(name, "雪霰雹"), strings.Contains(name, "snow"), strings.Contains(name, "sleet"), strings.Contains(name, "hail"):
+		return weatherSnowIcon
+	case strings.Contains(name, "雨"), strings.Contains(name, "rain"), strings.Contains(name, "drizzle"), strings.Contains(name, "shower"):
+		return weatherRainIcon
+	case strings.ContainsAny(name, "雾霧霾尘塵沙"), strings.Contains(name, "fog"), strings.Contains(name, "mist"), strings.Contains(name, "haze"), strings.Contains(name, "dust"), strings.Contains(name, "smoke"):
+		return weatherFogIcon
+	case strings.ContainsAny(name, "阴陰"), strings.Contains(name, "overcast"):
+		return weatherCloudIcon
+	case strings.ContainsAny(name, "云雲"), strings.Contains(name, "cloud"):
+		return weatherPartlyCloudyIcon
+	case strings.Contains(name, "晴"), name == "clear", name == "sunny":
+		return weatherSunIcon
+	default:
+		return weatherUnknownIcon
+	}
 }
