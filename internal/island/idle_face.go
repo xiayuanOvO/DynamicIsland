@@ -41,11 +41,11 @@ func (f *idleFaceState) lookAt(now time.Time, delta ui.Point) {
 	f.gaze.Y += (delta.Y/float32(distance) - f.gaze.Y) * blend
 }
 
-func (a *island) drawIdleFace(c *ui.Context, height, open, offset float32) {
+func (a *island) drawIdleFace(c *ui.Context, slot ui.Element, opacity, offset float32) {
 	face := &a.face
 	const closedEyeHeight = 2
 	eyeHeight, amount := idleEyeHeight, float32(0)
-	if open == 0 && !a.expanded && !a.moving {
+	if opacity == 1 && !a.expanded && !a.moving {
 		const closeTime, openTime = 72 * time.Millisecond, 128 * time.Millisecond
 		now := c.Now()
 		if face.blinkAt.IsZero() || !now.Before(face.blinkAt.Add(closeTime+openTime)) {
@@ -96,8 +96,7 @@ func (a *island) drawIdleFace(c *ui.Context, height, open, offset float32) {
 		*face = idleFaceState{}
 	}
 	mood, gaze := face.mood, face.gaze
-	ui.Box(c.Key("idle-face")).Absolute().Left(0).Right(0).Top(0).Height(height).
-		Opacity(1-open).Translate(offset, 0).IgnoreInput(true).Label("空闲表情").
+	slot.IgnoreInput(true).Label("空闲表情").
 		Draw(func(p *ui.Painter, r ui.Rect) {
 			paintIdleFace(p, r, mood, amount, eyeHeight, gaze)
 		})

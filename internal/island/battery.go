@@ -38,7 +38,8 @@ var (
 func (a *island) updateBattery(c *ui.Context) {
 	b := &a.battery
 	showOverview := a.expanded && !a.todos.open && !a.clipboard.open
-	if !battery.Supported || (!showOverview && !a.showsIdleCapsule()) || !a.win.IsVisible() || b.reading {
+	showIdle := a.showsIdleCapsule() && a.settings.showsIdleItem(idleItemBattery)
+	if !battery.Supported || (!showOverview && !showIdle) || !a.win.IsVisible() || b.reading {
 		return
 	}
 	if delay := b.refreshAt.Sub(c.Now()); delay > 0 {

@@ -314,7 +314,7 @@ func TestClearLyricCacheFromSettings(t *testing.T) {
 	if !view.HasText("< 0.01 MB") {
 		t.Fatalf("expected small cache size in MB: %v", view.Texts())
 	}
-	for range 12 {
+	for range 12 + len(defaultIdleItems) {
 		if view.Focused("清理缓存") {
 			break
 		}

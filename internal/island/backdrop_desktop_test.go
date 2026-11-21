@@ -60,7 +60,7 @@ func checkDesktopBackdrop() error {
 				win.ShowInactive()
 				win.Invalidate()
 				frames := [...]mygo.Size{
-					{Width: idleCapsuleBaseWidth, Height: idleCapsuleHeight},
+					{Width: 200, Height: idleCapsuleHeight},
 					{Width: 200, Height: compactHeight},
 					{Width: panelWidth, Height: 170},
 					{Width: compactHeight, Height: compactHeight},

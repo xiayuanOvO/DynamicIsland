@@ -10,6 +10,8 @@ import (
 
 func TestBatteryRowInOverview(t *testing.T) {
 	a := &island{expanded: true, files: &shelf.Shelf{}}
+	a.settings.IdleItems = defaultIdleItems
+	a.settings.IdleItems[2].Hidden = true
 	withoutBattery := a.targetFrame()
 	a.battery.readings = []battery.Reading{
 		{ID: "computer", Name: "本机", Kind: battery.Computer, Percent: 100, Charging: true},

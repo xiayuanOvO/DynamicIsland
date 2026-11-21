@@ -115,10 +115,11 @@ func (a *island) header(c *ui.Context, open float32) {
 	height += (panelHeaderHeight - height) * open
 	offset := -float32(a.dock.side) * (dockTuck / 2.0) * (1 - open)
 	compactAlpha := 1 - animationPhase(open, 0, 0.6)
-	idleFace := compactAlpha > 0 && idle
+	showIdle := compactAlpha > 0 && idle
+	showFace := showIdle && a.settings.showsIdleItem(idleItemFace)
 	track := a.media.track
 	playing := track.Playing && track.Title != ""
-	if !idleFace {
+	if !showFace {
 		a.face = idleFaceState{}
 	}
 	header := ui.Row(c.Key("header")).FillWidth().Height(height).Shrink(0).
@@ -137,9 +138,13 @@ func (a *island) header(c *ui.Context, open float32) {
 		}
 	}
 	header.Children(func() {
-		if idleFace {
+		if showIdle {
 			if docked {
-				a.drawIdleFace(c, compactHeight, 1-compactAlpha, offset)
+				if showFace {
+					slot := ui.Box(c.Key("idle-face")).Absolute().Left(0).Right(0).Top(0).Height(compactHeight).
+						Translate(offset, 0).Opacity(compactAlpha)
+					a.drawIdleFace(c, slot, compactAlpha, offset)
+				}
 			} else {
 				a.idleCapsule(c, compactAlpha)
 			}

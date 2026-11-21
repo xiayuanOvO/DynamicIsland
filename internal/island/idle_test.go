@@ -59,7 +59,7 @@ func TestIdleCapsuleStatus(t *testing.T) {
 			t.Errorf("the compact battery indicator should omit %q", label)
 		}
 	}
-	a.shownFrame.width = idleCapsuleBaseWidth + idleBatteryStep + 10
+	a.shownFrame.width = float32(width - 2*idleBatteryStep + 10)
 	view.SetSize(int(a.shownFrame.width), idleCapsuleHeight)
 	clock, hasClock = view.Find(view.Now().Format("15:04"))
 	if !hasClock || clock.X+clock.W != a.shownFrame.width-idleCapsulePadding || !view.HasText("本机") || view.HasText("耳机 左耳") {
@@ -123,7 +123,9 @@ func TestFetchIdleWeatherIcons(t *testing.T) {
 
 func TestIdleCapsuleLimitsBatteryCountAndTucksOnDock(t *testing.T) {
 	a := island{files: &shelf.Shelf{}}
-	for i := 0; i <= idleMaxBatteries; i++ {
+	base, _ := a.idleCapsuleMetrics(a.settings.idleItems())
+	maxBatteries := (panelWidth - base) / idleBatteryStep
+	for i := 0; i <= maxBatteries; i++ {
 		a.battery.readings = append(a.battery.readings, battery.Reading{
 			ID: fmt.Sprint(i), Name: fmt.Sprintf("设备 %d", i), Percent: 50 + i,
 		})
@@ -133,8 +135,8 @@ func TestIdleCapsuleLimitsBatteryCountAndTucksOnDock(t *testing.T) {
 		t.Fatalf("idle capsule width = %.0f, want a capsule that fits within the panel width", a.shownFrame.width)
 	}
 	view := ui.NewTester(func(c *ui.Context) { a.header(c, a.shownFrame.open) }, int(a.shownFrame.width), idleCapsuleHeight)
-	if !view.HasText(fmt.Sprintf("设备 %d", idleMaxBatteries-1)) || view.HasText(fmt.Sprintf("设备 %d", idleMaxBatteries)) {
-		t.Fatalf("battery indicators should be limited to %d: %v", idleMaxBatteries, view.Texts())
+	if !view.HasText(fmt.Sprintf("设备 %d", maxBatteries-1)) || view.HasText(fmt.Sprintf("设备 %d", maxBatteries)) {
+		t.Fatalf("battery indicators should be limited to %d: %v", maxBatteries, view.Texts())
 	}
 
 	a.dock.side = dockRight

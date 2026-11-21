@@ -40,14 +40,15 @@ var settingsTheme = func() *ui.Theme {
 }()
 
 type appSettings struct {
-	Mode             int         `json:"waveColorMode"`
-	Color            ui.Color    `json:"waveColor"`
-	HideLyrics       bool        `json:"hideLyrics,omitempty"`
-	LyricTransition  int         `json:"lyricTransition,omitempty"`
-	LyricStyle       lyricStyle  `json:"lyricStyle,omitzero"`
-	WeatherCity      weatherCity `json:"weatherCity,omitzero"`
-	MediaCardStyle   int         `json:"mediaCardStyle,omitempty"`
-	HideInFullscreen bool        `json:"hideInFullscreen"`
+	Mode             int              `json:"waveColorMode"`
+	Color            ui.Color         `json:"waveColor"`
+	HideLyrics       bool             `json:"hideLyrics,omitempty"`
+	LyricTransition  int              `json:"lyricTransition,omitempty"`
+	LyricStyle       lyricStyle       `json:"lyricStyle,omitzero"`
+	WeatherCity      weatherCity      `json:"weatherCity,omitzero"`
+	IdleItems        idleItemSettings `json:"idleItems,omitzero"`
+	MediaCardStyle   int              `json:"mediaCardStyle,omitempty"`
+	HideInFullscreen bool             `json:"hideInFullscreen"`
 }
 
 func (s appSettings) waveColor(artwork ui.Color) ui.Color {
@@ -85,6 +86,7 @@ func loadSettings(path string) (appSettings, error) {
 	if !settings.WeatherCity.valid() {
 		settings.WeatherCity = weatherCity{}
 	}
+	settings.IdleItems = settings.IdleItems.normalized()
 	if settings.MediaCardStyle != mediaCardLargeCover {
 		settings.MediaCardStyle = mediaCardDefault
 	}
@@ -139,6 +141,7 @@ func saveStateFile(path string, data []byte) error {
 
 func (a *island) settingsHeight() int {
 	height := 415 + a.settings.cardHeight() + 2*cardPreviewInset + cardPreviewGap + clipboardSettingsHeight
+	height += len(defaultIdleItems)*settingsRowHeight + 1
 	if supportsFullscreenHiding {
 		height += settingsRowHeight + 1
 	}
@@ -165,6 +168,7 @@ func (a *island) openSettings() {
 		a.settingsWindow.OnClosed(func() {
 			a.settingsWindow = nil
 			a.citySearch = weatherCitySearch{}
+			a.idleSettingsList = ui.ListState{}
 			a.clipboard.editingShortcut, a.clipboard.shortcutProblem = false, ""
 			if a.updates.phase == updateLatest {
 				a.updates.phase = updateIdle
@@ -199,9 +203,13 @@ func (a *island) settingsView(c *ui.Context) {
 	c.SetTheme(settingsTheme)
 	c.Root().Background(settingsTheme.Background)
 	ui.Scroll(c.Key("settings")).Fill().Padding(16, 18).Gap(14).Children(func() {
-		var weatherChanged, lyricsChanged, transitionChanged, cardStyleChanged, modeChanged, colorChanged bool
+		var idleChanged, weatherChanged, lyricsChanged, transitionChanged, cardStyleChanged, modeChanged, colorChanged bool
 		var lyricSizeChanged, lyricColorChanged, fullscreenChanged bool
-		settingsGroup(c.Key("idle-settings"), "空闲", func() { weatherChanged = a.weatherSettings(c) })
+		settingsGroup(c.Key("idle-settings"), "空闲", func() {
+			idleChanged = a.idleDisplaySettings(c)
+			ui.Box(c).AlignSelf(ui.Stretch).Height(1).Shrink(0).Margin(0, 14).Background(theme.Border)
+			weatherChanged = a.weatherSettings(c)
+		})
 		settingsGroup(c.Key("clipboard-settings"), "剪贴板", func() { a.clipboardSettings(c) })
 		settingsGroup(c.Key("media-settings"), "媒体", func() {
 			divider := func() {
@@ -347,7 +355,7 @@ func (a *island) settingsView(c *ui.Context) {
 		if fullscreenChanged && a.win != nil {
 			a.win.Update(a.syncFullscreenVisibility)
 		}
-		if modeChanged || colorChanged || lyricsChanged || transitionChanged || lyricSizeChanged || lyricColorChanged || weatherChanged || cardStyleChanged || fullscreenChanged {
+		if modeChanged || colorChanged || lyricsChanged || transitionChanged || lyricSizeChanged || lyricColorChanged || idleChanged || weatherChanged || cardStyleChanged || fullscreenChanged {
 			a.settingsSaveAt = c.Now().Add(300 * time.Millisecond)
 			if a.win != nil {
 				a.win.Invalidate()
