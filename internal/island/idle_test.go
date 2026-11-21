@@ -43,8 +43,11 @@ func TestIdleCapsuleStatus(t *testing.T) {
 	if weather.W != 14 || weather.H != 14 || weather.X+weather.W > temp.X {
 		t.Fatalf("weather icon should fit to the left of the temperature: icon %+v, temperature %+v", weather, temp)
 	}
-	if temp.X+temp.W > device.X || leftEar.X+leftEar.W > clock.X || clock.X+clock.W != float32(width-idleCapsulePadding) {
+	if temp.X+temp.W > device.X-idleCapsuleGap || leftEar.X+leftEar.W > clock.X || clock.X+clock.W != float32(width-idleCapsulePadding) {
 		t.Fatalf("clock should be to the right of weather and batteries: temperature %+v, battery %+v, left ear %+v, clock %+v", temp, device, leftEar, clock)
+	}
+	if temp.H != clock.H {
+		t.Fatalf("temperature and clock should have the same text height: %.1f and %.1f", temp.H, clock.H)
 	}
 	for _, box := range []ui.Rect{weather, temp, device, leftEar, clock} {
 		if math.Abs(float64(box.Y+box.H/2-idleCapsuleHeight/2)) > 1 {

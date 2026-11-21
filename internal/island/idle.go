@@ -18,13 +18,13 @@ const (
 	idleWeatherQuery    = "?format=%25C%7C%25t%7C%25i&lang=zh-cn&m"
 	idleWeatherEndpoint = idleWeatherBase + idleWeatherQuery
 
-	idleCapsulePadding   = 12
-	idleCapsuleGap       = 4
+	idleCapsulePadding   = 10
+	idleCapsuleGap       = 2
 	idleCapsuleHeight    = 40
-	idleFaceWidth        = 36
-	idleWeatherWidth     = 60
-	idleClockWidth       = 48
-	idleBatteryItemWidth = 32
+	idleFaceWidth        = 30
+	idleWeatherWidth     = 66
+	idleClockWidth       = 42
+	idleBatteryItemWidth = 26
 	idleCapsuleBaseWidth = 2*idleCapsulePadding + idleFaceWidth + idleWeatherWidth + idleClockWidth + 2*idleCapsuleGap
 	idleBatteryStep      = idleBatteryItemWidth + idleCapsuleGap
 	idleMaxBatteries     = (panelWidth - idleCapsuleBaseWidth) / idleBatteryStep
@@ -91,20 +91,19 @@ func (a *island) idleCapsule(c *ui.Context, opacity float32) {
 	c.After(now.Truncate(time.Minute).Add(time.Minute).Sub(now))
 	ui.Row(c.Key("idle-status")).Absolute().Left(left).Top(0).Size(width, idleCapsuleHeight).
 		Opacity(opacity).IgnoreInput(true).AlignItems(ui.Center).Gap(idleCapsuleGap).
+		FontSize(13).FontWeight(600).FontFeatures("tnum").TextColor(ink).
 		Padding(0, idleCapsulePadding, 0, idleCapsulePadding+idleFaceWidth+idleCapsuleGap).Children(func() {
-		ui.Row(c.Key("weather")).Width(idleWeatherWidth).Shrink(0).AlignItems(ui.Center).Gap(4).Children(func() {
+		ui.Row(c.Key("weather")).Width(idleWeatherWidth).Shrink(0).AlignItems(ui.Center).Justify(ui.Center).Gap(3).Children(func() {
 			if weather := a.idle.weather; weather.condition != "" && now.Before(a.idle.weatherUntil) {
 				ui.Icon(c.Key("condition"), weather.icon).Size(14, 14).Shrink(0).TextColor(ink).
 					Role(ui.RoleImage).Label(weather.condition)
-				ui.Text(c.Key("temperature"), fmt.Sprintf("%d°C", weather.temperature)).FontSize(12).FontWeight(500).
-					Shrink(0).SingleLine().TextColor(ink)
+				ui.Text(c.Key("temperature"), fmt.Sprintf("%d°C", weather.temperature)).Shrink(0).SingleLine()
 			}
 		})
 		for _, reading := range a.battery.readings[:batteries] {
 			batteryIndicator(c, reading, true)
 		}
-		ui.Text(c.Key("clock"), now.Format("15:04")).Width(idleClockWidth).Grow(1).Shrink(0).TextAlign(ui.End).
-			FontSize(14).FontWeight(650).FontFeatures("tnum").SingleLine().TextColor(ink)
+		ui.Text(c.Key("clock"), now.Format("15:04")).Width(idleClockWidth).Grow(1).Shrink(0).TextAlign(ui.End).SingleLine()
 	})
 }
 
