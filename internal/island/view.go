@@ -68,6 +68,7 @@ func (a *island) view(c *ui.Context) {
 
 	a.updateMedia(c)
 	a.updateWave(c)
+	a.updateBattery(c)
 	if !a.dragging && !a.moving {
 		a.animation.retarget(a.targetFrame(), c.Now())
 		a.scheduleWindowFrame(time.Now().Add(windowFrameInterval))
@@ -217,21 +218,24 @@ func (a *island) body(c *ui.Context, frame islandFrame) {
 	}
 	progress := max(todo, clipboard)
 	overviewOpacity := 1 - animationPhase(progress, 0, panelCardPreviewEnd)
-	mediaHeight := 0
-	if a.media.track.Title != "" {
-		mediaHeight = a.settings.cardHeight() + 14
-	}
+	leadHeight := a.overviewLeadHeight()
 	body := ui.Column(c.Key("body")).Width(panelWidth-2).Shrink(0).Padding(0, panelBodyPadding, 20).
 		Opacity(opacity).Translate(0, 10*(1-opacity)).IgnoreInput(!a.expanded || opacity < 0.80)
 	body.Children(func() {
-		if progress < 1 && mediaHeight > 0 {
-			// Only the space reserved for the music card shrinks. Keep its
-			// contents whole as they fade out above the expanding panel.
-			media := ui.Column(c.Key("overview-media")).FillWidth().Shrink(0).
-				Height(float32(mediaHeight) * (1 - progress))
+		if progress < 1 && leadHeight > 0 {
+			// Keep the battery row and music card whole as their slot shrinks.
+			lead := ui.Column(c.Key("overview-lead")).FillWidth().Shrink(0).
+				Height(float32(leadHeight) * (1 - progress))
 			if overviewOpacity > 0 {
-				media.ZIndex(1).Opacity(overviewOpacity).
-					IgnoreInput(progress > 0 || a.todos.open || a.clipboard.open).Children(func() { a.mediaCard(c) })
+				lead.ZIndex(1).Opacity(overviewOpacity).
+					IgnoreInput(progress > 0 || a.todos.open || a.clipboard.open).Children(func() {
+					if len(a.battery.readings) > 0 {
+						a.batteryRow(c)
+					}
+					if a.media.track.Title != "" {
+						a.mediaCard(c)
+					}
+				})
 			}
 		}
 		tools := ui.Box(c.Key("tools")).FillWidth().Shrink(0)
@@ -241,16 +245,16 @@ func (a *island) body(c *ui.Context, frame islandFrame) {
 			tools.MinHeight(clipboardHeight)
 		}
 		tools.Children(func() {
-			// Counter the shrinking media slot for the card that is only fading out.
+			// Counter the shrinking overview slot for the card that is only fading out.
 			todoFade := max(0, clipboard-todo)
 			clipboardFade := max(0, todo-clipboard)
 			if todo > 0 || clipboard < panelCardPreviewEnd {
 				a.todoCard(c, todo, 1-animationPhase(todoFade, 0, panelCardPreviewEnd), frame).
-					Translate(0, float32(mediaHeight)*todoFade)
+					Translate(0, float32(leadHeight)*todoFade)
 			}
 			if showClipboard {
 				a.clipboardCard(c, clipboard, clipboardHeight, 1-animationPhase(clipboardFade, 0, panelCardPreviewEnd),
-					a.expanded && opacity >= 0.80).Translate(0, float32(mediaHeight)*clipboardFade)
+					a.expanded && opacity >= 0.80).Translate(0, float32(leadHeight)*clipboardFade)
 			}
 		})
 		if overviewOpacity > 0 && (len(a.files.Items) > 0 || a.status != "") {
@@ -261,7 +265,7 @@ func (a *island) body(c *ui.Context, frame islandFrame) {
 				// Keep the expanding card from pushing the fading files below the window.
 				// If the window is shrinking, move the group with its bottom edge.
 				files.Absolute().Left(panelBodyPadding).
-					Top(float32(mediaHeight+a.todos.previewHeight()) + min(0, frame.height-float32(overviewHeight)))
+					Top(float32(leadHeight+a.todos.previewHeight()) + min(0, frame.height-float32(overviewHeight)))
 			}
 			files.Children(func() {
 				hasFiles := len(a.files.Items) > 0

@@ -6,6 +6,8 @@
 
 macOS 和 Windows 默认开启「设置 → 应用 → 全屏时隐藏灵动岛」。前台应用全屏时，灵动岛、歌词和时间天气会自动隐藏，退出全屏后恢复。关闭此项可在全屏时继续显示灵动岛。
 
+展开灵动岛时，面板顶部用环形进度和百分比显示设备电量。闪电表示正在充电。macOS 显示本机电池和已连接的蓝牙设备，耳机左右耳与充电盒会在系统提供各自读数时分别显示。蓝牙设备的电量取决于系统报告，未知时显示「—」。Windows 显示本机电池。
+
 空闲时，小球旁显示系统本地时间及当前天气。天气默认按网络 IP 估算位置；可在「设置 → 天气城市」搜索并选择城市，或恢复自动定位。搜索结果以行政区区分同名城市，天气无法获取时继续显示时间。 [天气数据由 wttr.in 提供](https://github.com/chubin/wttr.in) · [城市搜索由 Open-Meteo 提供](https://open-meteo.com/en/docs/geocoding-api) · [城市数据来自 GeoNames](https://www.geonames.org/) · [城市数据许可 CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)
 
 ## 运行和构建

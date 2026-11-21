@@ -41,6 +41,7 @@ type island struct {
 	previewClock          uint64
 	animation             islandAnimation
 	media                 islandMedia
+	battery               islandBattery
 	lyrics                lyricOverlay
 	idle                  idleInfo
 	face                  idleFaceState
@@ -194,14 +195,8 @@ func (a *island) overviewHeights() (height, gridHeight int) {
 	} else if a.status != "" {
 		height += 20
 	}
-	if a.media.track.Title != "" {
-		height += a.settings.cardHeight()
-		if hasFiles || a.status != "" {
-			height += 14
-		}
-	}
-	height += a.todos.previewHeight()
-	if hasFiles || a.status != "" || a.media.track.Title != "" {
+	height += a.overviewLeadHeight() + a.todos.previewHeight()
+	if hasFiles || a.status != "" {
 		height += 14
 	}
 	if a.dock.side != dockNone {
