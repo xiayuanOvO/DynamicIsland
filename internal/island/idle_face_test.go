@@ -12,7 +12,7 @@ import (
 
 func TestIdleFaceEyes(t *testing.T) {
 	const scale = 4
-	eye := color.RGBA{A: 255}
+	eye := color.RGBA{48, 48, 48, 255}
 	background := color.RGBA{240, 240, 240, 255}
 	for _, test := range []struct {
 		name          string
@@ -20,10 +20,10 @@ func TestIdleFaceEyes(t *testing.T) {
 		blink         bool
 		filled, clear []image.Point
 	}{
-		{"neutral", moodNeutral, false, []image.Point{{19, 15}, {19, 22}, {33, 22}, {33, 29}}, []image.Point{{15, 15}, {25, 22}}},
+		{"neutral", moodNeutral, false, []image.Point{{19, 16}, {19, 22}, {33, 22}, {33, 28}}, []image.Point{{15, 16}, {25, 22}, {19, 15}, {33, 29}}},
 		{"sleepy", moodSleepy, false, []image.Point{{19, 25}, {33, 25}}, []image.Point{{19, 22}, {33, 22}}},
 		{"bored", moodBored, false, []image.Point{{18, 19}, {32, 23}}, []image.Point{{32, 19}}},
-		{"happy", moodHappy, false, []image.Point{{19, 17}, {33, 17}}, []image.Point{{19, 22}, {33, 22}}},
+		{"happy", moodHappy, false, []image.Point{{19, 18}, {33, 18}}, []image.Point{{19, 22}, {33, 22}}},
 		{"looking", moodLooking, false, []image.Point{{25, 22}, {39, 22}}, []image.Point{{16, 22}}},
 		{"blink", moodNeutral, true, []image.Point{{19, 22}, {33, 22}}, []image.Point{{19, 20}, {33, 24}}},
 	} {

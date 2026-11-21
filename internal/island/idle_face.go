@@ -11,7 +11,7 @@ import (
 
 type idleMood uint8
 
-const idleEyeHeight float32 = 16.5
+const idleEyeHeight float32 = 13
 
 const (
 	moodNeutral idleMood = iota
@@ -106,9 +106,10 @@ func (a *island) drawIdleFace(c *ui.Context, height, open, offset float32) {
 func paintIdleFace(p *ui.Painter, r ui.Rect, mood idleMood, amount, eyeHeight float32, gaze ui.Point) {
 	const ellipseKappa = 0.55228475
 	centerX, centerY := r.X+r.W/2, r.Y+r.H/2-4
-	for index, offset := range [...]float32{-6.8, 6.8} {
+	eyeColor := ui.RGB(48, 48, 48)
+	for index, offset := range [...]float32{-6.5, 6.5} {
 		x, y := centerX+offset, centerY
-		radiusX := float32(4.75)
+		radiusX := float32(4.5)
 		upper, lower := eyeHeight/2, eyeHeight/2
 		var lowerCurve float32
 		switch mood {
@@ -141,6 +142,6 @@ func paintIdleFace(p *ui.Painter, r ui.Rect, mood idleMood, amount, eyeHeight fl
 			CubeTo(right, y+lowerSide, x+handleX, bottom, x, bottom).
 			CubeTo(x-handleX, bottom, left, y+lowerSide, left, y).
 			Close()
-		p.FillPath(&eye, ui.RGB(0, 0, 0))
+		p.FillPath(&eye, eyeColor)
 	}
 }
