@@ -33,6 +33,7 @@ type islandMedia struct {
 	artwork          ui.ImageSource
 	artworkColor     ui.Color
 	artworkHash      [32]byte
+	artworkCacheDir  string
 	artworkLoading   bool
 	refreshAt        time.Time
 	fastRefreshUntil time.Time
@@ -76,7 +77,7 @@ func (a *island) requestMedia(command nowplaying.Command) {
 	}
 	m.reading = command.Action == ""
 	m.action = command.Action
-	adapter, oldHash, oldSong := m.adapter, m.artworkHash, m.track
+	adapter, oldHash, oldSong, cacheDir := m.adapter, m.artworkHash, m.track, m.artworkCacheDir
 	withArtwork := a.expanded || oldSong.Playing || oldSong.Title == "" || command.Action != ""
 	go func() {
 		var controlErr error
@@ -88,17 +89,14 @@ func (a *island) requestMedia(command nowplaying.Command) {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		track, readErr := nowplaying.Read(ctx, adapter, withArtwork)
 		cancel()
-		hash := sha256.Sum256(track.Artwork)
-		var cover ui.ImageSource
-		var coverColor ui.Color
-		if len(track.Artwork) > 0 && len(track.Artwork) <= 8<<20 && (hash != oldHash || !oldSong.SameSong(track)) {
-			cover, coverColor = decodeArtwork(track.Artwork)
-		}
+		cover, coverColor, hash, keepCover := resolveArtwork(track, oldSong, oldHash, cacheDir)
 		track.Artwork = nil
 		a.win.Update(func() {
 			m.reading, m.action = false, ""
 			now := time.Now()
-			if controlErr == nil && (command.Action == nowplaying.Next || command.Action == nowplaying.Previous) {
+			skipping := command.Action == nowplaying.Next || command.Action == nowplaying.Previous
+			startingWithoutMetadata := command.Action == nowplaying.Toggle && oldSong.Title != "" && !oldSong.Playing && readErr == nil && track.Title == ""
+			if controlErr == nil && (skipping || startingWithoutMetadata) {
 				m.fastRefreshUntil = now.Add(1500 * time.Millisecond)
 			}
 			m.refreshAt = now.Add(2 * time.Second)
@@ -113,9 +111,6 @@ func (a *island) requestMedia(command nowplaying.Command) {
 				if trackChanged {
 					m.scrubbing = false
 					m.catalogDuration = 0
-					if cover == nil {
-						a.setArtwork(nil, ui.Transparent, [32]byte{})
-					}
 					if track.Duration <= 0 && track.IsNetEase() && track.Artist != "" {
 						go func() {
 							ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
@@ -140,6 +135,8 @@ func (a *island) requestMedia(command nowplaying.Command) {
 				}
 				if cover != nil {
 					a.setArtwork(cover, coverColor, hash)
+				} else if !keepCover && m.artwork != nil {
+					a.setArtwork(nil, ui.Transparent, [32]byte{})
 				}
 				if track.Playing && !withArtwork && m.artwork == nil {
 					m.refreshAt = now
@@ -151,10 +148,13 @@ func (a *island) requestMedia(command nowplaying.Command) {
 						defer cancel()
 						data := load(ctx)
 						cover, color := decodeArtwork(data)
+						if cover != nil {
+							saveArtwork(cacheDir, track.ArtworkKey(), data)
+						}
 						hash := sha256.Sum256(data)
 						a.win.Update(func() {
 							m.artworkLoading = false
-							if cover != nil && m.artwork == nil && m.track.SameSong(track) {
+							if cover != nil && m.artwork == nil && m.track.ArtworkKey() == track.ArtworkKey() {
 								a.setArtwork(cover, color, hash)
 							}
 						})
@@ -182,7 +182,7 @@ func (a *island) setArtwork(cover ui.ImageSource, color ui.Color, hash [32]byte)
 }
 
 func decodeArtwork(data []byte) (ui.ImageSource, ui.Color) {
-	if len(data) == 0 || len(data) > 8<<20 {
+	if len(data) == 0 || len(data) > maxArtworkBytes {
 		return nil, ui.Transparent
 	}
 	cover, _ := ui.DecodeImage(data)

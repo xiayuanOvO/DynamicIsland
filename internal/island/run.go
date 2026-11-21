@@ -28,6 +28,9 @@ func Run() {
 	a := &island{
 		files: files, statePath: statePath, selected: make(map[string]bool),
 	}
+	if cache, err := os.UserCacheDir(); err == nil {
+		a.media.artworkCacheDir = filepath.Join(cache, "DynamicIsland", "artwork")
+	}
 	a.lyrics.diskCache = lyrics.NewCache(filepath.Dir(statePath))
 	a.loadTodos()
 	a.loadClipboard()

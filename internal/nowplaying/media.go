@@ -30,6 +30,11 @@ func (t Track) SameSong(other Track) bool {
 	return t.Title == other.Title && t.Artist == other.Artist && t.Album == other.Album
 }
 
+func (t Track) ArtworkKey() [4]string {
+	// MediaRemote and AppleScript report different IDs for the same Music track.
+	return [4]string{strings.TrimPrefix(t.Source, "applescript:"), t.Title, t.Artist, t.Album}
+}
+
 func (t Track) CanSeek() bool { return t.Seek && t.Duration > 0 }
 
 func (t Track) IsNetEase() bool { return strings.EqualFold(t.Source, "cloudmusic.exe") }
