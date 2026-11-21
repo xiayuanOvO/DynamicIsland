@@ -84,6 +84,7 @@ var settingsThemes = func() [2]*ui.Theme {
 	light.Accent = ui.Hex("#496782")
 	light.SurfacePressed = ui.Hex("#dce5ee")
 	dark.Background = ui.Hex(settingsBackgroundDark)
+	dark.SurfacePressed = ui.Hex("#51555e")
 	return [2]*ui.Theme{&light, &dark}
 }()
 

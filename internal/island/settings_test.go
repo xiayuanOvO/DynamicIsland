@@ -112,6 +112,35 @@ func TestThemeSettingCanBeChangedAndSaved(t *testing.T) {
 	}
 }
 
+func TestDarkSettingsSelectedSegmentStandsOut(t *testing.T) {
+	a := island{
+		statePath:    filepath.Join(t.TempDir(), "shelf.json"),
+		settingsPage: settingsPageMedia,
+		settings:     appSettings{Theme: themeDark},
+	}
+	const height = 590
+	view := ui.NewTester(a.settingsView, settingsWidth, height)
+	for _, pair := range [][2]string{{"上移", "淡入"}, {"淡入", "上移"}} {
+		selected, unselected := pair[0], pair[1]
+		if err := view.Click(selected); err != nil {
+			t.Fatal(err)
+		}
+		view.Move(settingsWidth-2, height-2)
+		chosen, chosenOK := view.Find(selected)
+		other, otherOK := view.Find(unselected)
+		if !chosenOK || !otherOK {
+			t.Fatal("the lyric transition options should be visible")
+		}
+		frame := view.Image()
+		// Sample the fill just above each label, outside the text.
+		on := frame.RGBAAt(int(chosen.X+chosen.W/2), int(chosen.Y)-3)
+		off := frame.RGBAAt(int(other.X+other.W/2), int(other.Y)-3)
+		if int(on.R)-int(off.R) < 30 {
+			t.Errorf("selected segment %q should stand out from the track, got %v against %v", selected, on, off)
+		}
+	}
+}
+
 func TestFullscreenHidingSettingCanBeChangedAndSaved(t *testing.T) {
 	a := island{statePath: filepath.Join(t.TempDir(), "shelf.json")}
 	for _, existing := range []bool{false, true} {
