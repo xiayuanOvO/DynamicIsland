@@ -41,6 +41,15 @@ if [[ ! -x "$meter" || native/macos/audio-level.m -nt "$meter" || native/macos/a
         native/macos/audio-level.m -o "$meter"
 fi
 
+battery=resources/darwin/bluetooth-battery
+if [[ ! -x "$battery" || native/macos/bluetooth-battery.m -nt "$battery" || native/macos/bluetooth-battery.plist -nt "$battery" ]]; then
+    mkdir -p resources/darwin
+    xcrun clang -fobjc-arc -O2 -arch arm64 -arch x86_64 -mmacosx-version-min=12.0 \
+        -framework Foundation -framework CoreBluetooth -framework IOBluetooth \
+        -Wl,-sectcreate,__TEXT,__info_plist,native/macos/bluetooth-battery.plist \
+        native/macos/bluetooth-battery.m -o "$battery"
+fi
+
 if [[ "${1:-}" == --prepare-media ]]; then
     exit 0
 fi

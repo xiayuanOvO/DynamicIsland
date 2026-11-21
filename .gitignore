@@ -1,6 +1,7 @@
 /dist/
 /resources/darwin/media-control/
 /resources/darwin/audio-level
+/resources/darwin/bluetooth-battery
 *.exe
 *.test
 mygo-update.key

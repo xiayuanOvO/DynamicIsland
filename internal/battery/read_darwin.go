@@ -4,11 +4,15 @@ import (
 	"context"
 	"encoding/json"
 	"encoding/xml"
+	"maps"
 	"os/exec"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/egoist/mygo"
 )
 
 func Read(ctx context.Context) []Reading {
@@ -25,7 +29,18 @@ func Read(ctx context.Context) []Reading {
 		return readings
 	}
 	registry, _ := exec.CommandContext(ctx, "/usr/sbin/ioreg", "-a", "-r", "-l", "-k", "BatteryPercent", "-d", "1").Output()
-	return append(readings, parseBluetoothBatteries(output, registryBatteries(registry))...)
+	connected := parseBluetoothBatteries(output, registryBatteries(registry))
+	targets := bluetoothProbeTargets(connected)
+	if len(targets) == 0 {
+		return append(readings, connected...)
+	}
+	resources, err := mygo.App.Path(mygo.PathResources)
+	if err == nil {
+		if output, err := exec.CommandContext(ctx, filepath.Join(resources, "bluetooth-battery"), slices.Sorted(maps.Keys(targets))...).Output(); err == nil {
+			connected = mergeBluetoothProbe(connected, targets, output)
+		}
+	}
+	return append(readings, connected...)
 }
 
 func parseMacBattery(output string) (Reading, bool) {

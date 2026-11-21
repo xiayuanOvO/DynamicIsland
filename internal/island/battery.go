@@ -46,7 +46,7 @@ func (a *island) updateBattery(c *ui.Context) {
 	}
 	b.reading = true
 	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		readings := battery.Read(ctx)
 		a.win.Update(func() {
