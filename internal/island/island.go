@@ -79,7 +79,7 @@ type island struct {
 }
 
 func (a *island) start() {
-	mygo.Theme.SetSource(mygo.ThemeLight)
+	a.applyTheme()
 	area := mygo.Screen.PrimaryDisplay().WorkArea
 	a.centerX, a.top = area.X+area.Width/2, area.Y+14
 	frame := a.targetFrame()

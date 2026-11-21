@@ -105,7 +105,7 @@ func (a *island) drawIdleFace(c *ui.Context, slot ui.Element, opacity, offset fl
 func paintIdleFace(p *ui.Painter, r ui.Rect, mood idleMood, amount, eyeHeight float32, gaze ui.Point) {
 	const ellipseKappa = 0.55228475
 	centerX, centerY := r.X+r.W/2, r.Y+r.H/2
-	eyeColor := ui.RGB(48, 48, 48)
+	eyeColor := colorsFor(p.Theme().Dark).eyes
 	for index, offset := range [...]float32{-6, 6} {
 		x, y := centerX+offset, centerY
 		radiusX := float32(3)

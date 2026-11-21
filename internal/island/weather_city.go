@@ -106,9 +106,9 @@ func (a *island) weatherSettings(c *ui.Context) bool {
 	selected := a.settings.WeatherCity
 	settingsRow(c.Key("weather-city")).Children(func() {
 		ui.Column(c).Grow(1).MinWidth(0).Gap(1).Children(func() {
-			ui.Text(c, "天气城市").FontSize(13).TextColor(ink)
+			ui.Text(c, "天气城市").FontSize(13).TextColor(c.Theme().Text)
 			if selected.ID != 0 {
-				ui.Link(c, "Open-Meteo", weatherCityAttribution).FontSize(10).TextColor(muted).SingleLine()
+				ui.Link(c, "Open-Meteo", weatherCityAttribution).FontSize(10).TextColor(c.Theme().TextMuted).SingleLine()
 			}
 		})
 		label := "自动定位"
@@ -124,7 +124,7 @@ func (a *island) weatherSettings(c *ui.Context) bool {
 		}
 		ui.PopoverBase(c, trigger, &search.open, func(panel ui.Element) {
 			panel.AttachTo(trigger, ui.AnchorBottomEnd, ui.AnchorTopEnd).Margin(4, 0, 0).
-				Width(268).Radius(12).Background(ui.Hex("#f2f3f5")).Border(1, theme.Border).
+				Width(268).Radius(12).Background(colorsFor(c.Theme().Dark).popup).Border(1, c.Theme().Border).
 				Shadow(0, 4, 14, 0, ink.Alpha(0.16)).Clip()
 			ui.Column(c).FillWidth().Padding(8).Gap(4).Children(func() {
 				ui.Row(c).FillWidth().Height(30).Gap(4).AlignItems(ui.Center).Children(func() {
@@ -166,7 +166,7 @@ func (a *island) weatherSettings(c *ui.Context) bool {
 					status = "未找到城市"
 				}
 				if status != "" {
-					ui.Text(c, status).Padding(4, 6).FontSize(11).TextColor(muted)
+					ui.Text(c, status).Padding(4, 6).FontSize(11).TextColor(c.Theme().TextMuted)
 					return
 				}
 				ui.Scroll(c.Key("city-results")).FillWidth().Height(float32(min(3, len(search.results)) * 37)).Gap(2).Children(func() {
@@ -174,12 +174,12 @@ func (a *island) weatherSettings(c *ui.Context) bool {
 						result := ui.ButtonBase(c.Key(city.ID)).Column().FillWidth().Height(35).Shrink(0).
 							Padding(2, 8).Justify(ui.Center).Radius(7).Label(city.label()).Cursor(ui.CursorPointer)
 						if result.Hovered() || city.ID == selected.ID {
-							result.Background(white.Alpha(0.76))
+							result.Background(colorsFor(c.Theme().Dark).glass.Alpha(0.76))
 						}
 						result.Children(func() {
-							ui.Text(c, city.Name).FontSize(12).FontWeight(600).SingleLine().TextColor(ink)
+							ui.Text(c, city.Name).FontSize(12).FontWeight(600).SingleLine().TextColor(c.Theme().Text)
 							if city.Region != "" {
-								ui.Text(c, city.Region).FontSize(10).SingleLine().Ellipsis("…").TextColor(muted)
+								ui.Text(c, city.Region).FontSize(10).SingleLine().Ellipsis("…").TextColor(c.Theme().TextMuted)
 							}
 						})
 						if result.Clicked() {
@@ -188,7 +188,7 @@ func (a *island) weatherSettings(c *ui.Context) bool {
 						}
 					}
 				})
-				ui.Link(c, "Open-Meteo · GeoNames", weatherCityAttribution).FontSize(10).TextColor(muted).SingleLine()
+				ui.Link(c, "Open-Meteo · GeoNames", weatherCityAttribution).FontSize(10).TextColor(c.Theme().TextMuted).SingleLine()
 			})
 		})
 	})

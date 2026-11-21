@@ -107,13 +107,13 @@ func (a *island) clipboardShortcutSettings(c *ui.Context) {
 	history := &a.clipboard
 	settingsRow(c.Key("clipboard-shortcut")).Children(func() {
 		ui.Column(c).Grow(1).MinWidth(0).Gap(1).Children(func() {
-			ui.Text(c, "快捷键").FontSize(13).TextColor(ink)
+			ui.Text(c, "快捷键").FontSize(13).TextColor(c.Theme().Text)
 			problem := history.shortcutProblem
 			if problem == "" && history.Recording && a.win != nil && history.registeredShortcut == "" {
 				problem = "剪贴板快捷键不可用"
 			}
 			if problem != "" {
-				ui.Text(c, problem).FontSize(11).TextColor(ui.Hex("#a65b50"))
+				ui.Text(c, problem).FontSize(11).TextColor(colorsFor(c.Theme().Dark).problem)
 			}
 		})
 		label := strings.ReplaceAll(history.hotkey(), "+", " + ")

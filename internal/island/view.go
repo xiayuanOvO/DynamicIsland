@@ -27,7 +27,7 @@ const (
 )
 
 func (a *island) view(c *ui.Context) {
-	c.SetTheme(theme)
+	c.SetTheme(islandThemes[a.settings.Theme])
 	c.Root().Background(ui.Transparent)
 	frame := a.shownFrame
 	w, h := int(frame.width), int(frame.height)
@@ -171,7 +171,7 @@ func (a *island) header(c *ui.Context, open float32) {
 							Absolute().Left(0).Top((compactHeight - coverSize) / 2)
 						ui.Text(c.Key("compact-time"), mediaTime(track.Elapsed(c.Now()))).
 							Absolute().Right(0).Top((compactHeight-16)/2).Size(timeWidth, 16).
-							SingleLine().TextAlign(ui.Center).FontSize(11.5).FontWeight(600).TextColor(ink.Alpha(0.72))
+							SingleLine().TextAlign(ui.Center).FontSize(11.5).FontWeight(600).TextColor(c.Theme().Text.Alpha(0.72))
 					}
 				})
 			})
@@ -196,17 +196,17 @@ func (a *island) header(c *ui.Context, open float32) {
 				}
 				row.Children(func() {
 					if item != nil && (!docked || fileCount == 0) {
-						ui.Icon(c, todoIcon).Size(16, 16).Shrink(0).TextColor(accent)
+						ui.Icon(c, todoIcon).Size(16, 16).Shrink(0).TextColor(c.Theme().Accent)
 					}
 					if !docked {
 						if item != nil {
-							ui.Text(c, item.Title).Grow(1).MinWidth(0).SingleLine().Ellipsis("…").FontSize(12).TextColor(ink)
+							ui.Text(c, item.Title).Grow(1).MinWidth(0).SingleLine().Ellipsis("…").FontSize(12).TextColor(c.Theme().Text)
 						} else {
 							ui.Box(c).Grow(1)
 						}
 					}
 					if fileCount > 0 {
-						summary := ui.Text(c.Key("summary"), fmt.Sprintf("%02d", fileCount)).FontSize(10.5).SingleLine().TextColor(muted)
+						summary := ui.Text(c.Key("summary"), fmt.Sprintf("%02d", fileCount)).FontSize(10.5).SingleLine().TextColor(c.Theme().TextMuted)
 						if !docked {
 							summary.Width(24).Shrink(0)
 						}
@@ -287,7 +287,7 @@ func (a *island) body(c *ui.Context, frame islandFrame) {
 				hasFiles := len(a.files.Items) > 0
 				if hasFiles {
 					ui.Text(c.Key("files-heading"), fmt.Sprintf("暂存文件  /  %02d", len(a.files.Items))).
-						Height(24).Shrink(0).FontSize(10.5).TextColor(muted)
+						Height(24).Shrink(0).FontSize(10.5).TextColor(c.Theme().TextMuted)
 					ui.Scroll(c.Key("files")).Height(float32(gridHeight)).Shrink(0).
 						Children(func() {
 							ui.Grid(c.Key("file-cards")).FillWidth().Columns(cardColumns).Gap(cardGap).Padding(4).Children(func() {
@@ -297,13 +297,13 @@ func (a *island) body(c *ui.Context, frame islandFrame) {
 							})
 						})
 					ui.Box(c.Key("divider")).FillWidth().Height(1).Shrink(0).
-						Gradient(ink.Alpha(0.055), white.Alpha(0.5), 90)
+						Gradient(c.Theme().Text.Alpha(0.055), colorsFor(c.Theme().Dark).glass.Alpha(0.5), 90)
 					a.actions(c)
 				}
 				if hasFiles || a.status != "" {
-					color := muted
+					color := c.Theme().TextMuted
 					if a.statusError {
-						color = ui.Hex("#a65b50")
+						color = colorsFor(c.Theme().Dark).problem
 					}
 					ui.Text(c.Key("status"), a.status).Height(20).Shrink(0).FontSize(10).SingleLine().TextColor(color).
 						Tooltip(a.status)
@@ -316,8 +316,9 @@ func (a *island) body(c *ui.Context, frame islandFrame) {
 func panelCardSurface(c *ui.Context, progress, previewWidth, height float32) ui.Element {
 	surface := ui.Box(c).Size(previewWidth+(panelBodyWidth-previewWidth)*progress, height).Shrink(0)
 	if progress < 1 {
-		surface.Radius(13).Clip().Background(white.Alpha(0.4*(1-progress))).
-			Border(0.75, white.Alpha(0.65*(1-progress)))
+		tint := colorsFor(c.Theme().Dark).glass
+		surface.Radius(13).Clip().Background(tint.Alpha(0.4*(1-progress))).
+			Border(0.75, tint.Alpha(0.65*(1-progress)))
 	}
 	return surface
 }
@@ -325,16 +326,17 @@ func panelCardSurface(c *ui.Context, progress, previewWidth, height float32) ui.
 func (a *island) fileCard(c *ui.Context, item shelf.Item) {
 	key := shelf.Key(item.Path)
 	selected := a.selected[key]
+	tint := colorsFor(c.Theme().Dark).glass
 	card := ui.ButtonBase(c.Key(key)).Column().FillWidth().MinWidth(0).Height(cardHeight).Shrink(0).
 		Padding(8).Gap(4).AlignItems(ui.Center).Radius(13).
-		Gradient(white.Alpha(0.43), white.Alpha(0.17), 155).Border(0.75, white.Alpha(0.65)).
-		InsetShadow(0, 1, 0, 0, white.Alpha(0.46)).Shadow(0, 3, 10, -5, ink.Alpha(0.10)).
+		Gradient(tint.Alpha(0.43), tint.Alpha(0.17), 155).Border(0.75, tint.Alpha(0.65)).
+		InsetShadow(0, 1, 0, 0, tint.Alpha(0.46)).Shadow(0, 3, 10, -5, ink.Alpha(0.10)).
 		Cursor(ui.CursorGrab).Label(item.Name).Tooltip(item.Path)
 	hovered := card.Hovered()
 	if selected {
-		card.Gradient(white.Alpha(0.76), white.Alpha(0.40), 155).Border(1, accent.Alpha(0.42))
+		card.Gradient(tint.Alpha(0.76), tint.Alpha(0.40), 155).Border(1, c.Theme().Accent.Alpha(0.42))
 	} else if hovered {
-		card.Gradient(white.Alpha(0.66), white.Alpha(0.30), 155)
+		card.Gradient(tint.Alpha(0.66), tint.Alpha(0.30), 155)
 	}
 	controlTarget := float32(0)
 	if selected || hovered || len(a.selected) > 0 || card.FocusWithin() {
@@ -363,7 +365,7 @@ func (a *island) fileCard(c *ui.Context, item shelf.Item) {
 	card.Children(func() {
 		icon, color, kind := fileStyle(item)
 		ui.Box(c.Key("visual")).FillWidth().Height(48).Shrink(0).Radius(8).Clip().
-			Background(white.Alpha(0.16)).Center().Children(func() {
+			Background(tint.Alpha(0.16)).Center().Children(func() {
 			if visual != nil && visual.source != nil {
 				if visual.thumbnail {
 					ui.Image(c, visual.source).Fill().Fit(ui.Cover)
@@ -375,15 +377,15 @@ func (a *island) fileCard(c *ui.Context, item shelf.Item) {
 			}
 		})
 		ui.Text(c, item.Name).FillWidth().MinWidth(0).Height(30).Shrink(0).
-			FontSize(11).FontWeight(500).Wrap().MaxLines(2).TextAlign(ui.Center).TextColor(ink)
+			FontSize(11).FontWeight(500).Wrap().MaxLines(2).TextAlign(ui.Center).TextColor(c.Theme().Text)
 		info := kind
 		if !item.Directory {
 			info += " · " + formatSize(item.Size)
 		}
 		ui.Text(c, info).FillWidth().Height(12).Shrink(0).FontSize(9.5).
-			SingleLine().TextAlign(ui.Center).TextColor(muted)
+			SingleLine().TextAlign(ui.Center).TextColor(c.Theme().TextMuted)
 		check := ui.Checkbox(c.Key("select"), &selected, "").Absolute().Left(6).Top(6).
-			Padding(1).Radius(5).Background(white.Alpha(0.86)).Opacity(controls).Label("选择 " + item.Name)
+			Padding(1).Radius(5).Background(tint.Alpha(0.86)).Opacity(controls).Label("选择 " + item.Name)
 		if check.Changed() {
 			if selected {
 				a.selected[key] = true
@@ -392,7 +394,7 @@ func (a *island) fileCard(c *ui.Context, item shelf.Item) {
 			}
 		}
 		if iconButton(c.Key("remove"), closeIcon, "移除").
-			Absolute().Right(5).Top(5).Size(20, 20).Background(white.Alpha(0.86)).Opacity(controls).Clicked() {
+			Absolute().Right(5).Top(5).Size(20, 20).Background(tint.Alpha(0.86)).Opacity(controls).Clicked() {
 			a.removeFiles([]string{item.Path})
 		}
 	})
@@ -418,21 +420,22 @@ func (a *island) actions(c *ui.Context) {
 		label = "拖出所选"
 	}
 	ui.Row(c.Key("actions")).Height(40).Shrink(0).Gap(8).Children(func() {
+		tint := colorsFor(c.Theme().Dark).glass
 		drag := ui.ButtonBase(c.Key("drag-all")).Row().Grow(1).MinWidth(0).Height(40).Gap(8).Center().Radius(13).
-			Gradient(white.Alpha(0.7), white.Alpha(0.36), 165).Border(0.75, white.Alpha(0.75)).
-			InsetShadow(0, 1, 0, 0, white.Alpha(0.55)).TextColor(ink).
+			Gradient(tint.Alpha(0.7), tint.Alpha(0.36), 165).Border(0.75, tint.Alpha(0.75)).
+			InsetShadow(0, 1, 0, 0, tint.Alpha(0.55)).TextColor(c.Theme().Text).
 			Cursor(ui.CursorGrab).Label(label).Tooltip(label).
 			Disabled(len(paths) == 0)
 		if drag.Hovered() {
-			drag.Gradient(white.Alpha(0.88), white.Alpha(0.50), 165)
+			drag.Gradient(tint.Alpha(0.88), tint.Alpha(0.50), 165)
 		}
 		drag.DragDataFrom(func() transfer.Data { return a.dragData("") }, transfer.DragOptions{
 			Operations: transfer.Copy, Done: a.dragDone,
 		})
 		drag.Children(func() {
-			ui.Icon(c, sendIcon).Size(14, 14).TextColor(ink.Alpha(0.72))
+			ui.Icon(c, sendIcon).Size(14, 14).TextColor(c.Theme().Text.Alpha(0.72))
 			ui.Text(c, label).FontSize(12).SingleLine()
-			ui.Text(c, fmt.Sprintf("%02d", len(paths))).FontSize(10).TextColor(muted)
+			ui.Text(c, fmt.Sprintf("%02d", len(paths))).FontSize(10).TextColor(c.Theme().TextMuted)
 		})
 		if iconButton(c.Key("copy"), copyIcon, "复制文件").
 			Size(36, 40).Disabled(len(paths) == 0).Clicked() {
@@ -504,9 +507,9 @@ func (a *island) shortcuts(c *ui.Context) {
 
 func iconButton(c *ui.Context, icon *ui.SVG, label string) ui.Element {
 	button := ui.ButtonBase(c).Size(26, 26).Shrink(0).Radius(8).Center().
-		TextColor(muted).Label(label).Tooltip(label).Cursor(ui.CursorPointer)
+		TextColor(c.Theme().TextMuted).Label(label).Tooltip(label).Cursor(ui.CursorPointer)
 	if button.Hovered() {
-		button.Background(theme.SurfaceHover).TextColor(ink)
+		button.Background(c.Theme().SurfaceHover).TextColor(c.Theme().Text)
 	}
 	button.Children(func() {
 		ui.Icon(c, icon).Size(15, 15)

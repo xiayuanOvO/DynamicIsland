@@ -115,8 +115,8 @@ func (a *island) idleDisplaySettings(c *ui.Context) bool {
 			}).Children(func() {
 				ui.Row(c).Grow(1).Height(settingsRowHeight).Gap(8).AlignItems(ui.Center).
 					Cursor(ui.CursorGrab).Children(func() {
-					ui.Icon(c, idleReorderIcon).Size(16, 16).Shrink(0).TextColor(muted).AccessHidden(true).IgnoreInput(true)
-					ui.Text(c, label).FontSize(13).TextColor(ink).AccessHidden(true).IgnoreInput(true)
+					ui.Icon(c, idleReorderIcon).Size(16, 16).Shrink(0).TextColor(c.Theme().TextMuted).AccessHidden(true).IgnoreInput(true)
+					ui.Text(c, label).FontSize(13).TextColor(c.Theme().Text).AccessHidden(true).IgnoreInput(true)
 				})
 				shown := !item.Hidden
 				toggle := ui.Switch(c.Key("shown"), &shown).Label("显示" + label)

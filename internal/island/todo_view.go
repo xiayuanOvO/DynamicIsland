@@ -25,12 +25,6 @@ const (
 	todoEditorSchedule   = 2*todoEditorRow + 2*todoEditorGap
 )
 
-var todoTheme = func() *ui.Theme {
-	t := *theme
-	t.Background = ui.Hex("#f2f3f5")
-	return &t
-}()
-
 var todoReminderLabels = []string{"不提醒", "准时提醒", "提前 5 分钟", "提前 15 分钟", "提前 30 分钟", "提前 1 小时"}
 
 type todoDraft struct {
@@ -105,15 +99,15 @@ func (a *island) todoPreview(c *ui.Context, height, opacity float32) {
 		Height(height).Radius(13).Cursor(ui.CursorPointer).Label("查看待办事项").
 		Opacity(opacity).IgnoreInput(a.todos.open)
 	if card.Hovered() {
-		card.Background(white.Alpha(0.2))
+		card.Background(colorsFor(c.Theme().Dark).glass.Alpha(0.2))
 	}
 	card.Children(func() {
 		ui.Scroll(c.Key("todo-preview-list")).Fill().Padding(todoPreviewPadding, 10).
 			Children(func() {
 				ui.Row(c.Key("todo-preview-heading")).FillWidth().Height(todoPreviewHeader).Shrink(0).
 					Gap(6).AlignItems(ui.Center).Children(func() {
-					ui.Icon(c, todoIcon).Size(14, 14).TextColor(accent)
-					ui.Text(c, "待办事项").SingleLine().FontSize(11).FontWeight(600).TextColor(muted)
+					ui.Icon(c, todoIcon).Size(14, 14).TextColor(c.Theme().Accent)
+					ui.Text(c, "待办事项").SingleLine().FontSize(11).FontWeight(600).TextColor(c.Theme().TextMuted)
 				})
 				for _, item := range a.todos.items {
 					if item.Done {
@@ -127,9 +121,9 @@ func (a *island) todoPreview(c *ui.Context, height, opacity float32) {
 							a.changeTodo(item, false)
 						}
 						ui.Column(c).Grow(1).MinWidth(0).Gap(1).Children(func() {
-							ui.Text(c, item.Title).SingleLine().Ellipsis("…").FontSize(12).FontWeight(600).TextColor(ink)
+							ui.Text(c, item.Title).SingleLine().Ellipsis("…").FontSize(12).FontWeight(600).TextColor(c.Theme().Text)
 							if !item.Due.IsZero() {
-								ui.Text(c, item.deadlineLabel(c.Now())).SingleLine().Ellipsis("…").FontSize(9).TextColor(muted)
+								ui.Text(c, item.deadlineLabel(c.Now())).SingleLine().Ellipsis("…").FontSize(9).TextColor(c.Theme().TextMuted)
 							}
 						})
 					})
@@ -169,7 +163,7 @@ func (a *island) todoView(c *ui.Context, frame islandFrame) {
 	if t.problem != "" {
 		footer = todoEditorStatus + todoEditorGap
 	}
-	ui.Themed(c.Key("todos"), todoTheme).Fill().MinHeight(0).Background(ui.Transparent).Children(func() {
+	ui.Themed(c.Key("todos"), panelTheme(c)).Fill().MinHeight(0).Background(ui.Transparent).Children(func() {
 		if editor < 1 {
 			ui.Column(c.Key("todo-list-page")).Absolute().Top(0).Left(0).Right(0).Bottom(footer).
 				Gap(todoEditorGap).Opacity(1-editor).Translate(0, -6*editor).
@@ -182,7 +176,7 @@ func (a *island) todoView(c *ui.Context, frame islandFrame) {
 		}
 		if t.problem != "" {
 			ui.Text(c, t.problem).Absolute().Bottom(0).Left(0).Right(0).Height(todoEditorStatus).
-				FontSize(11).TextColor(ui.Hex("#a65b50")).SingleLine().Ellipsis("…").Tooltip(t.problem)
+				FontSize(11).TextColor(colorsFor(c.Theme().Dark).problem).SingleLine().Ellipsis("…").Tooltip(t.problem)
 		}
 	})
 }
@@ -193,14 +187,14 @@ func (a *island) todoList(c *ui.Context) {
 		if iconButton(c.Key("back"), backIcon, "返回岛面板").Clicked() {
 			t.open = false
 		}
-		ui.Text(c, "待办事项").Grow(1).FontSize(18).FontWeight(650).TextColor(ink)
+		ui.Text(c, "待办事项").Grow(1).FontSize(18).FontWeight(650).TextColor(c.Theme().Text)
 		if ui.Button(c.Key("add"), "新建待办").Height(30).Disabled(t.loadFailed).Clicked() {
 			t.draft = &todoDraft{item: todoItem{Due: c.Now().Add(time.Hour).Truncate(time.Minute), LeadMinutes: 15}}
 		}
 	})
 	if len(t.items) == 0 && !t.loadFailed {
 		ui.Box(c).FillWidth().Grow(1).Center().Children(func() {
-			ui.Text(c, "暂无待办").FontSize(13).TextColor(muted)
+			ui.Text(c, "暂无待办").FontSize(13).TextColor(c.Theme().TextMuted)
 		})
 	} else {
 		if next := t.next(); next != nil && !next.Due.IsZero() {
@@ -209,16 +203,16 @@ func (a *island) todoList(c *ui.Context) {
 		ui.Scroll(c.Key("todo-list")).FillWidth().Grow(1).MinHeight(0).Children(func() {
 			for i, item := range t.items {
 				if item.Done && (i == 0 || !t.items[i-1].Done) {
-					ui.Text(c, "已完成").Padding(4, 2).FontSize(11).TextColor(muted)
+					ui.Text(c, "已完成").Padding(4, 2).FontSize(11).TextColor(c.Theme().TextMuted)
 				}
 				row := ui.Row(c.Key(item.ID)).FillWidth().Height(50).Shrink(0).Padding(0, 6).
 					Gap(8).AlignItems(ui.Center).Radius(7)
 				if row.Hovered() {
-					row.Background(white.Alpha(0.22))
+					row.Background(colorsFor(c.Theme().Dark).glass.Alpha(0.22))
 				}
 				if i+1 < len(t.items) && item.Done == t.items[i+1].Done {
 					row.DrawOver(func(p *ui.Painter, r ui.Rect) {
-						p.Fill(ui.Rect{X: r.X + 6, Y: r.Y + r.H - 1, W: r.W - 12, H: 1}, ink.Alpha(0.1), 0)
+						p.Fill(ui.Rect{X: r.X + 6, Y: r.Y + r.H - 1, W: r.W - 12, H: 1}, p.Theme().Text.Alpha(0.1), 0)
 					})
 				}
 				row.Children(func() {
@@ -231,13 +225,13 @@ func (a *island) todoList(c *ui.Context) {
 					edit := ui.ButtonBase(c.Key("edit")).Column().Grow(1).MinWidth(0).Height(46).Justify(ui.Center).AlignItems(ui.Stretch).TextAlign(ui.Start).
 						Gap(2).Radius(6).Cursor(ui.CursorPointer).Label("编辑 " + item.Title)
 					edit.Children(func() {
-						color := ink
+						color := c.Theme().Text
 						if item.Done {
-							color = muted
+							color = c.Theme().TextMuted
 						}
 						ui.Text(c, item.Title).FontSize(13).FontWeight(550).TextColor(color).SingleLine().Ellipsis("…")
 						if !item.Due.IsZero() {
-							ui.Text(c, item.deadlineLabel(c.Now())).SingleLine().FontSize(11).TextColor(muted)
+							ui.Text(c, item.deadlineLabel(c.Now())).SingleLine().FontSize(11).TextColor(c.Theme().TextMuted)
 						}
 					})
 					if edit.Clicked() {
@@ -260,12 +254,12 @@ func (a *island) todoEditor(c *ui.Context, d *todoDraft, schedule float32) {
 	if existing {
 		title = "编辑待办"
 	}
-	ui.Text(c, title).Height(todoEditorTitle).Shrink(0).FontSize(18).FontWeight(650).TextColor(ink)
+	ui.Text(c, title).Height(todoEditorTitle).Shrink(0).FontSize(18).FontWeight(650).TextColor(c.Theme().Text)
 	ui.Column(c.Key("todo-form")).FillWidth().Shrink(0).Children(func() {
 		ui.Column(c.Key("todo-fields")).FillWidth().Shrink(0).Gap(todoEditorGap).Children(func() {
 			ui.TextInput(c.Key("title"), &d.item.Title).FillWidth().Height(todoEditorName).Shrink(0).Label("待办名称").Placeholder("待办名称").AutoFocus()
 			ui.Row(c).FillWidth().Height(todoEditorRow).Shrink(0).AlignItems(ui.Center).Children(func() {
-				ui.Text(c, "截止时间").Grow(1).FontSize(13).TextColor(ink)
+				ui.Text(c, "截止时间").Grow(1).FontSize(13).TextColor(c.Theme().Text)
 				ui.Switch(c.Key("scheduled"), &d.scheduled).Label("设置截止时间")
 			})
 		})
@@ -282,7 +276,7 @@ func (a *island) todoEditor(c *ui.Context, d *todoDraft, schedule float32) {
 						ui.TimeInput(c.Key("time"), &d.item.Due).Label("截止时刻")
 					})
 					ui.Row(c).FillWidth().Height(todoEditorRow).Shrink(0).AlignItems(ui.Center).Children(func() {
-						ui.Text(c, "提醒").Grow(1).FontSize(13).TextColor(ink)
+						ui.Text(c, "提醒").Grow(1).FontSize(13).TextColor(c.Theme().Text)
 						label := todoReminderLabels[slices.Index(todoLeadMinutes, d.item.LeadMinutes)]
 						if ui.Select(c.Key("reminder"), &label, todoReminderLabels).Width(148).Height(30).Label("提醒时间").Changed() {
 							d.item.LeadMinutes = todoLeadMinutes[slices.Index(todoReminderLabels, label)]

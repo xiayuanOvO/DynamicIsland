@@ -256,7 +256,7 @@ func (a *island) updateControl(c *ui.Context) {
 			const radius, stroke = 8.5, 2.5
 			cx, cy := r.X+r.W/2, r.Y+r.H/2
 			var ring ui.Path
-			p.StrokePath(ring.Circle(cx, cy, radius), stroke, theme.Border)
+			p.StrokePath(ring.Circle(cx, cy, radius), stroke, p.Theme().Border)
 			if fraction == 0 {
 				return
 			}
@@ -273,12 +273,12 @@ func (a *island) updateControl(c *ui.Context) {
 				angle := start + 2*math.Pi*fraction*float64(i)/float64(steps)
 				arc.LineTo(cx+radius*float32(math.Sin(angle)), cy-radius*float32(math.Cos(angle)))
 			}
-			p.StrokePath(&arc, stroke, accent)
+			p.StrokePath(&arc, stroke, p.Theme().Accent)
 		})
 	case u.phase == updateOffering:
-		ui.Text(c, "有新版本").FontSize(12).TextColor(ink)
+		ui.Text(c, "有新版本").FontSize(12).TextColor(c.Theme().Text)
 	case u.phase == updateLatest:
-		ui.Text(c, "已是最新版本").FontSize(12).TextColor(ink)
+		ui.Text(c, "已是最新版本").FontSize(12).TextColor(c.Theme().Text)
 	case u.phase == updateReady:
 		if ui.Button(c.Key("restart-for-update"), "重启应用").Height(40).FontSize(12).Clicked() {
 			mygo.App.Relaunch()

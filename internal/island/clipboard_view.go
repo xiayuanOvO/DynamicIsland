@@ -43,7 +43,7 @@ func (a *island) clipboardSettings(c *ui.Context) {
 	row := settingsRow(c.Key("clipboard-recording"))
 	row.Children(func() {
 		if history.loadFailed {
-			ui.Text(c, history.problem).Grow(1).FontSize(11).TextColor(ui.Hex("#a65b50"))
+			ui.Text(c, history.problem).Grow(1).FontSize(11).TextColor(colorsFor(c.Theme().Dark).problem)
 			confirm := ui.Local(row, "confirm-reset", func() bool { return false })
 			if ui.Button(c.Key("reset-history"), "清空历史…").Height(40).Clicked() {
 				*confirm = true
@@ -56,9 +56,9 @@ func (a *island) clipboardSettings(c *ui.Context) {
 		}
 		var label ui.Element
 		ui.Column(c).Grow(1).MinWidth(0).Gap(1).Children(func() {
-			label = ui.Text(c, "记录剪贴板").FontSize(13).TextColor(ink)
+			label = ui.Text(c, "记录剪贴板").FontSize(13).TextColor(c.Theme().Text)
 			if history.problem != "" {
-				ui.Text(c, history.problem).FontSize(11).TextColor(ui.Hex("#a65b50"))
+				ui.Text(c, history.problem).FontSize(11).TextColor(colorsFor(c.Theme().Dark).problem)
 			}
 		})
 		recording := history.Recording
@@ -97,12 +97,12 @@ func (a *island) clipboardCard(c *ui.Context, progress, height, opacity float32,
 				Radius(13).Cursor(ui.CursorPointer).Label("查看剪贴板历史").
 				Opacity(1 - animationPhase(progress, 0, panelCardPreviewEnd)).IgnoreInput(a.clipboard.open)
 			if card.Hovered() {
-				card.Background(white.Alpha(0.2))
+				card.Background(colorsFor(c.Theme().Dark).glass.Alpha(0.2))
 			}
 			card.Children(func() {
 				ui.Row(c).Height(todoPreviewHeader).Gap(6).AlignItems(ui.Center).Children(func() {
-					ui.Icon(c, clipboardIcon).Size(14, 14).TextColor(accent)
-					ui.Text(c, "剪贴板历史").SingleLine().FontSize(11).FontWeight(600).TextColor(muted)
+					ui.Icon(c, clipboardIcon).Size(14, 14).TextColor(c.Theme().Accent)
+					ui.Text(c, "剪贴板历史").SingleLine().FontSize(11).FontWeight(600).TextColor(c.Theme().TextMuted)
 				})
 			})
 			if card.Clicked() {
@@ -121,7 +121,7 @@ func (a *island) clipboardCard(c *ui.Context, progress, height, opacity float32,
 
 func (a *island) clipboardView(c *ui.Context, interactive bool, write func(transfer.Data) error) {
 	history := &a.clipboard
-	ui.Themed(c.Key("clipboard-history"), todoTheme).FillWidth().Height(clipboardPanelHeight).
+	ui.Themed(c.Key("clipboard-history"), panelTheme(c)).FillWidth().Height(clipboardPanelHeight).
 		Shrink(0).Gap(8).Background(ui.Transparent).Children(func() {
 		var search ui.Element
 		if !history.confirmClear {
@@ -138,7 +138,7 @@ func (a *island) clipboardView(c *ui.Context, interactive bool, write func(trans
 		}
 		if history.confirmClear {
 			ui.Column(c.Key("confirm-clear")).FillWidth().Grow(1).Justify(ui.Center).AlignItems(ui.Center).Gap(10).Children(func() {
-				ui.Text(c, "清空所有剪贴板历史？").FontSize(13).TextColor(ink)
+				ui.Text(c, "清空所有剪贴板历史？").FontSize(13).TextColor(c.Theme().Text)
 				ui.Row(c).Gap(8).Children(func() {
 					if ui.Button(c.Key("cancel"), "取消").Height(40).AutoFocus().Clicked() {
 						history.confirmClear = false
@@ -179,7 +179,7 @@ func (a *island) clipboardView(c *ui.Context, interactive bool, write func(trans
 					empty = "未找到匹配记录"
 				}
 				ui.Box(c).FillWidth().Grow(1).Center().Children(func() {
-					ui.Text(c, empty).FontSize(13).TextColor(muted)
+					ui.Text(c, empty).FontSize(13).TextColor(c.Theme().TextMuted)
 				})
 			} else {
 				entry := entries[selected]
@@ -222,7 +222,7 @@ func (a *island) clipboardView(c *ui.Context, interactive bool, write func(trans
 			}
 		}
 		if history.problem != "" {
-			ui.Text(c, history.problem).FontSize(11).TextColor(ui.Hex("#a65b50")).SingleLine()
+			ui.Text(c, history.problem).FontSize(11).TextColor(colorsFor(c.Theme().Dark).problem).SingleLine()
 		}
 	})
 }
@@ -249,7 +249,7 @@ func (a *island) clipboardRow(c *ui.Context, entry clipboardEntry, selected bool
 			return history.selected != key
 		})
 	if selected {
-		row.Background(theme.SurfaceHover)
+		row.Background(c.Theme().SurfaceHover)
 	}
 	row.Children(func() {
 		label := text
@@ -258,11 +258,11 @@ func (a *island) clipboardRow(c *ui.Context, entry clipboardEntry, selected bool
 		}
 		copy = ui.ButtonBase(c.Key("copy")).Row().Grow(1).MinWidth(0).Height(rowHeight).Padding(0, 9).
 			Gap(8).AlignItems(ui.Center).Radius(8).
-			TextColor(muted).Cursor(ui.CursorPointer).Label("复制 " + label)
+			TextColor(c.Theme().TextMuted).Cursor(ui.CursorPointer).Label("复制 " + label)
 		copy.Children(func() {
 			preview := ui.Box(c.Key("preview")).Size(44, 34).Shrink(0).Radius(6).Clip().Center()
 			if entry.Width != 0 {
-				preview.Background(white.Alpha(0.45))
+				preview.Background(colorsFor(c.Theme().Dark).glass.Alpha(0.45))
 			}
 			preview.Children(func() {
 				if entry.Width == 0 {
@@ -276,15 +276,15 @@ func (a *island) clipboardRow(c *ui.Context, entry clipboardEntry, selected bool
 						return
 					}
 				}
-				ui.Icon(c, imageIcon).Size(16, 16).TextColor(muted)
+				ui.Icon(c, imageIcon).Size(16, 16).TextColor(c.Theme().TextMuted)
 			})
 			ui.Column(c).Grow(1).MinWidth(0).Gap(1).Children(func() {
-				ui.Text(c, text).MinWidth(0).SingleLine().Ellipsis("…").FontSize(13).TextColor(ink)
+				ui.Text(c, text).MinWidth(0).SingleLine().Ellipsis("…").FontSize(13).TextColor(c.Theme().Text)
 				if dimensions != "" {
-					ui.Text(c, dimensions).FontSize(10).TextColor(muted)
+					ui.Text(c, dimensions).FontSize(10).TextColor(c.Theme().TextMuted)
 				}
 			})
-			ui.Text(c, entry.CopiedAt.Local().Format("01-02 15:04")).Shrink(0).FontSize(10).TextColor(muted)
+			ui.Text(c, entry.CopiedAt.Local().Format("01-02 15:04")).Shrink(0).FontSize(10).TextColor(c.Theme().TextMuted)
 		})
 		if copy.Clicked() {
 			if c.KeyDown(ui.KeyEnter) {

@@ -24,12 +24,12 @@ const (
 )
 
 const (
-	settingsWidth      = 584
-	settingsHeight     = 520
-	settingsBackground = "#f5f6f8"
+	settingsWidth  = 584
+	settingsHeight = 520
 )
 
 type appSettings struct {
+	Theme            int              `json:"theme,omitempty"`
 	Mode             int              `json:"waveColorMode"`
 	Color            ui.Color         `json:"waveColor"`
 	HideLyrics       bool             `json:"hideLyrics,omitempty"`
@@ -48,13 +48,17 @@ func (s appSettings) waveColor(artwork ui.Color) ui.Color {
 	case waveArtwork:
 		if artwork.A != 0 {
 			lightness := 0.2126*float32(artwork.R) + 0.7152*float32(artwork.G) + 0.0722*float32(artwork.B)
-			if lightness > 125 {
+			if s.Theme == themeDark {
+				if lightness < 155 {
+					return artwork.Mix(white, (155-lightness)/(255-lightness))
+				}
+			} else if lightness > 125 {
 				return artwork.Mix(ui.RGB(0, 0, 0), 1-125/lightness)
 			}
 			return artwork
 		}
 	}
-	return accent
+	return islandThemes[s.Theme].Accent
 }
 
 func loadSettings(path string) (appSettings, error) {
@@ -72,6 +76,9 @@ func loadSettings(path string) (appSettings, error) {
 	}
 	if settings.Mode < waveDefault || settings.Mode > waveArtwork {
 		return defaults, fmt.Errorf("未知的律动配色模式 %d", settings.Mode)
+	}
+	if settings.Theme != themeDark {
+		settings.Theme = themeLight
 	}
 	if !settings.WeatherCity.valid() {
 		settings.WeatherCity = weatherCity{}
@@ -137,7 +144,7 @@ func (a *island) openSettings() {
 			Title: "灵动岛设置", Content: ui.View(a.settingsView),
 			Width: settingsWidth, Height: min(settingsHeight, area.Height-48), UseContentSize: true,
 			DisableResize: true, DisableMaximize: true, DisableFullScreen: true,
-			BackgroundColor: settingsBackground,
+			BackgroundColor: "light-dark(" + settingsBackgroundLight + ", " + settingsBackgroundDark + ")",
 		})
 		a.settingsWindow.OnClose(func(*mygo.CloseEvent) { a.saveSettings() })
 		a.settingsWindow.OnClosed(func() {

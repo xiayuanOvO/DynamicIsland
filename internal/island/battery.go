@@ -31,8 +31,6 @@ var (
 	earbudIcon      = svg(`<path d="M15 10v9a2 2 0 0 1-4 0v-6H9a4 4 0 0 1 0-8h3a3 3 0 0 1 3 3v2Z"/><path d="M8 8v2"/>`)
 	batteryCaseIcon = svg(`<rect x="4" y="6" width="16" height="12" rx="4"/><path d="M5 11h14m-7 3h.1"/>`)
 	chargingIcon    = svg(`<path d="m14 3-8 10h5l-1 8 8-10h-5Z" fill="currentColor" stroke-width="1"/>`)
-	chargeGreen     = ui.Hex("#237448")
-	batteryLow      = ui.Hex("#a63338")
 )
 
 func (a *island) updateBattery(c *ui.Context) {
@@ -113,12 +111,14 @@ func batteryIndicator(c *ui.Context, reading battery.Reading, compact bool) {
 	case battery.Case:
 		icon, name, display = batteryCaseIcon, name+" 充电盒", "盒 "+display
 	}
-	color := ink
+	text := c.Theme().Text
+	colors := colorsFor(c.Theme().Dark)
+	color := text
 	if reading.Charging {
-		color = chargeGreen
+		color = colors.charging
 		value += " · 充电中"
 	} else if known && reading.Percent <= 20 {
-		color = batteryLow
+		color = colors.lowBattery
 	}
 	item := ui.Column(c.Key(reading.ID)).Size(itemWidth, itemHeight).Shrink(0).Gap(2).AlignItems(ui.Center).
 		Label(name).Value(value)
@@ -139,7 +139,7 @@ func batteryIndicator(c *ui.Context, reading battery.Reading, compact bool) {
 				if compact && !known {
 					ring.Dash(0, 2, 2)
 				}
-				p.StrokePath(&ring, stroke, ink.Alpha(0.19))
+				p.StrokePath(&ring, stroke, text.Alpha(0.19))
 				if reading.Percent == 100 {
 					p.StrokePath(&ring, stroke, color)
 				} else if reading.Percent > 0 {
@@ -153,10 +153,10 @@ func batteryIndicator(c *ui.Context, reading battery.Reading, compact bool) {
 					p.StrokePath(&arc, stroke, color)
 				}
 			}).Children(func() {
-			ui.Icon(c, icon).Size(iconSize, iconSize).TextColor(ink).IgnoreInput(true)
+			ui.Icon(c, icon).Size(iconSize, iconSize).TextColor(text).IgnoreInput(true)
 			if reading.Charging {
 				ui.Box(c).Absolute().Right(-1).Bottom(0).Size(12, 12).Radius(6).
-					Background(chargeGreen).Border(1, white).Center().IgnoreInput(true).Children(func() {
+					Background(lightColors.charging).Border(1, white).Center().IgnoreInput(true).Children(func() {
 					ui.Icon(c, chargingIcon).Size(9, 9).TextColor(white)
 				})
 			}

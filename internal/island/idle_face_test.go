@@ -65,3 +65,24 @@ func TestIdleFaceEyes(t *testing.T) {
 		})
 	}
 }
+
+func TestDarkIdleCapsuleHasLightEyes(t *testing.T) {
+	a := island{files: &shelf.Shelf{}, settings: appSettings{Theme: themeDark}}
+	a.shownFrame = a.targetFrame()
+	const scale = 4
+	img := ui.Render(func(c *ui.Context) {
+		c.SetTheme(islandThemes[a.settings.Theme])
+		capsule := ui.Column(c).Fill().Radius(idleCapsuleHeight / 2).Clip()
+		glassSurface(c, capsule, false, false, false)
+		capsule.Children(func() { a.header(c, 0) })
+	}, int(a.shownFrame.width), idleCapsuleHeight, scale)
+	background := img.RGBAAt(25*scale, 20*scale)
+	if background.A != 255 || background.R >= 65 || background.G >= 65 || background.B >= 75 {
+		t.Fatalf("the capsule should have a dark background, got %v", background)
+	}
+	for _, x := range []int{19, 31} {
+		if eye := img.RGBAAt(x*scale, 20*scale); eye.R < 230 || eye.G < 230 || eye.B < 230 {
+			t.Errorf("the eye at x=%d should be light, got %v", x, eye)
+		}
+	}
+}

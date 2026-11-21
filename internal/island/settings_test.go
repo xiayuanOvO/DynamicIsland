@@ -59,6 +59,59 @@ func TestSettingsSidebarNavigationAndSave(t *testing.T) {
 	}
 }
 
+func TestThemeSettingCanBeChangedAndSaved(t *testing.T) {
+	a := island{statePath: filepath.Join(t.TempDir(), "shelf.json")}
+	for _, data := range []string{`{"hideLyrics":true}`, `{"hideLyrics":true,"theme":99}`} {
+		if err := os.WriteFile(a.settingsPath(), []byte(data), 0600); err != nil {
+			t.Fatal(err)
+		}
+		settings, err := loadSettings(a.settingsPath())
+		if err != nil || settings.Theme != themeLight || !settings.HideLyrics {
+			t.Fatalf("expected to fall back to light and keep the other settings, got %+v, %v", settings, err)
+		}
+		a.settings = settings
+	}
+
+	view := ui.NewTester(a.settingsView, settingsWidth, settingsHeight)
+	view.UseScreenReader()
+	if err := view.Click("主题"); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := view.Find("外观"); a.settingsPage != settingsPageTheme || !ok {
+		t.Fatalf("the Theme page should expose the appearance control: %v", view.Texts())
+	}
+	for range len(settingsPages) + 1 {
+		if view.Focused("浅色") {
+			break
+		}
+		view.Key(0, ui.KeyTab)
+	}
+	if !view.Focused("浅色") {
+		t.Fatal("the appearance control should be reachable by Tab")
+	}
+	for _, step := range []struct {
+		key        ui.Key
+		want       int
+		background ui.Color
+	}{
+		{ui.KeyRight, themeDark, ui.Hex(settingsBackgroundDark)},
+		{ui.KeyLeft, themeLight, ui.Hex(settingsBackgroundLight)},
+	} {
+		view.Key(0, step.key)
+		view.Advance(time.Second / 30)
+		background := view.Image().RGBAAt(settingsWidth-8, settingsHeight-8)
+		if a.settings.Theme != step.want || background.R != step.background.R ||
+			background.G != step.background.G || background.B != step.background.B {
+			t.Fatalf("switching themes should repaint immediately, got theme %d and background %v", a.settings.Theme, background)
+		}
+		view.Advance(time.Second)
+		saved, err := loadSettings(a.settingsPath())
+		if err != nil || saved.Theme != step.want || !saved.HideLyrics {
+			t.Fatalf("switching themes should save the new choice and keep other settings, got %+v, %v", saved, err)
+		}
+	}
+}
+
 func TestFullscreenHidingSettingCanBeChangedAndSaved(t *testing.T) {
 	a := island{statePath: filepath.Join(t.TempDir(), "shelf.json")}
 	for _, existing := range []bool{false, true} {

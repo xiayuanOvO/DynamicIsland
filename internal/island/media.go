@@ -270,11 +270,11 @@ func (m *islandMedia) stopWave() {
 
 func (m *islandMedia) cover(c *ui.Context, size float32) ui.Element {
 	return ui.Box(c).Size(size, size).Shrink(0).Radius(min(18, size*0.225)).Clip().Label("专辑封面").
-		Background(white.Alpha(0.4)).Center().Children(func() {
+		Background(colorsFor(c.Theme().Dark).glass.Alpha(0.4)).Center().Children(func() {
 		if m.artwork != nil {
 			ui.Image(c, m.artwork).Fill().Fit(ui.Cover)
 		} else {
-			ui.Icon(c, mediaIcon).Size(size/2, size/2).TextColor(muted)
+			ui.Icon(c, mediaIcon).Size(size/2, size/2).TextColor(c.Theme().TextMuted)
 		}
 	})
 }
@@ -331,10 +331,10 @@ func (s appSettings) renderMediaCard(c *ui.Context, m *islandMedia, expanded boo
 		}
 		details.Children(func() {
 			ui.Text(c, track.Title).FillWidth().SingleLine().FontSize(titleSize).FontWeight(600).
-				TextColor(ink).Tooltip(track.Title)
+				TextColor(c.Theme().Text).Tooltip(track.Title)
 			if track.Artist != "" {
 				ui.Text(c, track.Artist).FillWidth().SingleLine().FontSize(artistSize).
-					TextColor(muted).Tooltip(track.Artist)
+					TextColor(c.Theme().TextMuted).Tooltip(track.Artist)
 			}
 		})
 	}
@@ -347,7 +347,7 @@ func (s appSettings) renderMediaCard(c *ui.Context, m *islandMedia, expanded boo
 			icon, label = pauseIcon, "暂停"
 		}
 		if iconButton(c.Key("toggle"), icon, label).Size(34, 34).Radius(17).
-			Background(theme.SurfaceHover).TextColor(ink).
+			Background(c.Theme().SurfaceHover).TextColor(c.Theme().Text).
 			Disabled(!track.Toggle || m.action != "").Clicked() && control != nil {
 			control(nowplaying.Toggle, 0)
 		}
@@ -389,7 +389,7 @@ func (s appSettings) renderMediaCard(c *ui.Context, m *islandMedia, expanded boo
 			color := s.waveColor(m.artworkColor)
 			if large {
 				bar := ui.Rect{X: r.X, Y: r.Y + (r.H-4)/2, W: r.W, H: 4}
-				p.Fill(bar, ink.Alpha(0.13), 2)
+				p.Fill(bar, p.Theme().Text.Alpha(0.13), 2)
 				bar.W *= min(1, max(0, fraction))
 				p.Fill(bar, color.Alpha(0.88), min(2, bar.W/2))
 			} else {
@@ -397,17 +397,18 @@ func (s appSettings) renderMediaCard(c *ui.Context, m *islandMedia, expanded boo
 			}
 		})
 		ui.Row(c.Key("times")).FillWidth().Height(14).Shrink(0).AlignItems(ui.Center).Children(func() {
-			ui.Text(c, mediaTime(position)).FontSize(10).TextColor(muted)
+			ui.Text(c, mediaTime(position)).FontSize(10).TextColor(c.Theme().TextMuted)
 			ui.Box(c).Grow(1)
 			if duration > 0 {
-				ui.Text(c, mediaTime(duration)).FontSize(10).TextColor(muted)
+				ui.Text(c, mediaTime(duration)).FontSize(10).TextColor(c.Theme().TextMuted)
 			}
 		})
 	}
+	tint := colorsFor(c.Theme().Dark).glass
 	card := ui.Column(c.Key("media")).FillWidth().Height(float32(s.cardHeight())).Shrink(0).IgnoreInput(control == nil).
 		Padding(10, 12).Gap(5).Radius(16).
-		Gradient(white.Alpha(0.48), white.Alpha(0.19), 155).Border(0.75, white.Alpha(0.65)).
-		InsetShadow(0, 1, 0, 0, white.Alpha(0.46))
+		Gradient(tint.Alpha(0.48), tint.Alpha(0.19), 155).Border(0.75, tint.Alpha(0.65)).
+		InsetShadow(0, 1, 0, 0, tint.Alpha(0.46))
 	if large {
 		card.Row().Padding(12).Gap(14).AlignItems(ui.Center)
 	}
@@ -435,8 +436,8 @@ func paintMediaBars(p *ui.Painter, r ui.Rect, levels []float32, bandsPerBar int,
 	bars := float32(len(levels) / bandsPerBar)
 	step := r.W / bars
 	played, remaining := color.Alpha(0.88), color.Alpha(0.30)
-	if color == accent {
-		remaining = ink.Alpha(0.17)
+	if color == islandThemes[themeLight].Accent || color == islandThemes[themeDark].Accent {
+		remaining = p.Theme().Text.Alpha(0.17)
 	}
 	for i := 0; i < len(levels); i += bandsPerBar {
 		x := float32(i / bandsPerBar)

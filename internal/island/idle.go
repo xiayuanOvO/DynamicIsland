@@ -127,7 +127,7 @@ func (a *island) idleCapsule(c *ui.Context, opacity float32) {
 	x := left + (width-contentWidth)/2 + idleCapsulePadding
 	ui.Row(c.Key("idle-status")).Absolute().Left(left).Top(0).Size(width, idleCapsuleHeight).
 		Opacity(opacity).IgnoreInput(true).AlignItems(ui.Center).Justify(ui.Center).Gap(idleCapsuleGap).
-		FontSize(13).FontWeight(600).FontFeatures("tnum").TextColor(ink).Padding(0, idleCapsulePadding).
+		FontSize(13).FontWeight(600).FontFeatures("tnum").TextColor(c.Theme().Text).Padding(0, idleCapsulePadding).
 		Children(func() {
 			for _, item := range items {
 				if item.Hidden {
@@ -149,7 +149,7 @@ func (a *island) idleCapsule(c *ui.Context, opacity float32) {
 					}
 					ui.Row(c.Key(item.ID)).Width(float32(itemWidth)).Shrink(0).AlignItems(ui.Center).Justify(ui.Center).Gap(3).Children(func() {
 						if weather.condition != "" && now.Before(a.idle.weatherUntil) {
-							ui.Icon(c.Key("condition"), weather.icon).Size(14, 14).Shrink(0).TextColor(ink).
+							ui.Icon(c.Key("condition"), weather.icon).Size(14, 14).Shrink(0).TextColor(c.Theme().Text).
 								Role(ui.RoleImage).Label(weather.condition)
 							ui.Text(c.Key("temperature"), fmt.Sprintf("%d°C", weather.temperature)).Shrink(0).SingleLine()
 						}

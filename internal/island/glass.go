@@ -8,31 +8,7 @@ import (
 	"github.com/egoist/mygo/ui"
 )
 
-var (
-	ink    = ui.Hex("#30343b")
-	muted  = ui.Hex("#767b84")
-	accent = ui.Hex("#657b96")
-	white  = ui.RGB(255, 255, 255)
-	theme  = islandTheme()
-	grain  = frostGrain()
-)
-
-func islandTheme() *ui.Theme {
-	t := ui.LightTheme()
-	t.Text, t.TextMuted, t.Accent = ink, muted, accent
-	t.InactiveAccent = accent
-	t.AccentText = white
-	t.Background = ui.Transparent
-	t.InverseText = white
-	t.Surface = white.Alpha(0.32)
-	t.SurfaceHover = white.Alpha(0.52)
-	t.SurfacePressed = ink.Alpha(0.07)
-	t.Border = ink.Alpha(0.10)
-	t.Focus = accent.Alpha(0.4)
-	t.Scrollbar = ink.Alpha(0.18)
-	t.FontSize, t.Radius = 13, 10
-	return t
-}
+var grain = frostGrain()
 
 func islandCornerRadius(height float32) float32 {
 	return min(windowRadius, height/2)
@@ -46,6 +22,11 @@ func glassSurface(c *ui.Context, element ui.Element, vibrant, over, movingGlass 
 		backdrop = c.Root()
 	}
 	switch {
+	case c.Theme().Dark && vibrant:
+		base := ui.Hex("#242933")
+		backdrop.Gradient(base.Alpha(0.90), base.Alpha(0.86), 155)
+	case c.Theme().Dark:
+		backdrop.Gradient(ui.Hex("#2c323c"), ui.Hex("#1b1f26"), 155)
 	case runtime.GOOS == "windows" && vibrant:
 		backdrop.Gradient(white.Alpha(0.70), white.Alpha(0.62), 155)
 	case vibrant:
@@ -66,27 +47,38 @@ func glassSurface(c *ui.Context, element ui.Element, vibrant, over, movingGlass 
 		// frame can sit a refresh behind it and look like a second outline.
 		return
 	}
-	edge := white.Alpha(0.76)
+	edge, middle, bottom, shine := white.Alpha(0.76), white.Alpha(0.24), white.Alpha(0.54), white.Alpha(0.48)
+	if c.Theme().Dark {
+		rim := ui.Hex("#677384")
+		edge, middle, bottom, shine = rim, rim.Alpha(0.4), rim.Alpha(0.7), rim.Alpha(0.18)
+	}
 	if over {
 		edge = ui.RGB(207, 222, 242)
+		if c.Theme().Dark {
+			edge = c.Theme().Accent
+		}
 	}
 	element.BorderColor(edge).BorderLinearGradient(ui.LinearGradient{
 		Angle: 155, Stops: []ui.GradientStop{
 			{Color: edge, At: 0},
-			{Color: white.Alpha(0.24), At: 0.48},
-			{Color: white.Alpha(0.54), At: 1},
+			{Color: middle, At: 0.48},
+			{Color: bottom, At: 1},
 		},
-	}).InsetShadow(0, 1, 1, 0, white.Alpha(0.48)).
+	}).InsetShadow(0, 1, 1, 0, shine).
 		InsetShadow(0, -1, 2, 0, ink.Alpha(0.035))
 }
 
 func paintFrost(p *ui.Painter, r ui.Rect) {
 	radius := islandCornerRadius(r.H)
+	light := white.Alpha(0.18)
+	if p.Theme().Dark {
+		light = white.Alpha(0.055)
+	}
 	p.Clip(r, radius, func() {
 		p.FillRadialGradient(r, ui.RadialGradient{
 			Center: ui.Point{X: 0.12, Y: 0.02}, Radius: r.W * 0.9,
 			Stops: []ui.GradientStop{
-				{Color: white.Alpha(0.18), At: 0},
+				{Color: light, At: 0},
 				{Color: ui.Transparent, At: 1},
 			},
 		}, radius)

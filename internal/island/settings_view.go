@@ -12,6 +12,7 @@ const (
 	settingsPageIdle      = "idle"
 	settingsPageMedia     = "media"
 	settingsPageClipboard = "clipboard"
+	settingsPageTheme     = "theme"
 	settingsPageApp       = "app"
 	settingsSidebarWidth  = 138
 	settingsPageInset     = 24
@@ -21,14 +22,6 @@ const (
 	cardPreviewGap        = 12
 )
 
-var settingsTheme = func() *ui.Theme {
-	t := *theme
-	t.Background = ui.Hex(settingsBackground)
-	t.Accent = ui.Hex("#496782")
-	t.SurfacePressed = ui.Hex("#dce5ee")
-	return &t
-}()
-
 var settingsPages = [...]struct {
 	id, name string
 	icon     *ui.SVG
@@ -36,17 +29,18 @@ var settingsPages = [...]struct {
 	{settingsPageIdle, "空闲", svg(`<rect x="3" y="6" width="18" height="12" rx="6"/><path d="M9 11v2m6-2v2"/>`)},
 	{settingsPageMedia, "媒体", svg(`<path d="M9 18V6l11-3v12M9 9l11-3"/><ellipse cx="6" cy="18" rx="3" ry="2.5"/><ellipse cx="17" cy="15" rx="3" ry="2.5"/>`)},
 	{settingsPageClipboard, "剪贴板", clipboardIcon},
+	{settingsPageTheme, "主题", svg(`<circle cx="12" cy="12" r="8"/><path d="M12 4v16m0 0a8 8 0 0 0 0-16" fill="currentColor"/>`)},
 	{settingsPageApp, "应用", svg(`<rect x="3" y="4" width="18" height="16" rx="3"/><path d="M3 9h18m-14 5h5m-5 3h9"/>`)},
 }
 
 func settingsCard(c *ui.Context, children func()) {
-	ui.Column(c).FillWidth().Shrink(0).Radius(12).Background(white.Alpha(0.78)).
-		Border(1, theme.Border).Children(children)
+	ui.Column(c).FillWidth().Shrink(0).Radius(12).Background(colorsFor(c.Theme().Dark).settingsCard).
+		Border(1, c.Theme().Border).Children(children)
 }
 
 func settingsSection(c *ui.Context, label string, children func()) {
 	ui.Column(c).FillWidth().Shrink(0).Gap(6).Children(func() {
-		ui.Text(c, label).Padding(0, 3).FontSize(12).FontWeight(650).TextColor(muted).Role(ui.RoleHeading).Level(2)
+		ui.Text(c, label).Padding(0, 3).FontSize(12).FontWeight(650).TextColor(c.Theme().TextMuted).Role(ui.RoleHeading).Level(2)
 		settingsCard(c, children)
 	})
 }
@@ -56,10 +50,11 @@ func settingsRow(c *ui.Context) ui.Element {
 }
 
 func settingsDivider(c *ui.Context) {
-	ui.Box(c).AlignSelf(ui.Stretch).Height(1).Shrink(0).Margin(0, 14).Background(theme.Border)
+	ui.Box(c).AlignSelf(ui.Stretch).Height(1).Shrink(0).Margin(0, 14).Background(c.Theme().Border)
 }
 
 func (a *island) settingsView(c *ui.Context) {
+	settingsTheme := settingsThemes[a.settings.Theme]
 	c.SetTheme(settingsTheme)
 	c.Root().Background(settingsTheme.Background)
 	if a.settingsPage == "" {
@@ -76,19 +71,19 @@ func (a *island) settingsView(c *ui.Context) {
 				ui.SidebarItem(c, page.id, page.icon, page.name).Height(40).Cursor(ui.CursorPointer)
 			}
 		}).Width(settingsSidebarWidth).FillHeight().Padding(18, 10).Gap(4).
-			Background(ui.Hex("#ebeff4")).Label("设置分类")
+			Background(colorsFor(c.Theme().Dark).sidebar).Label("设置分类")
 		if a.settingsPage != settingsPageIdle {
 			a.citySearch.open = false
 		}
 		if a.settingsPage != settingsPageClipboard {
 			a.clipboard.editingShortcut, a.clipboard.shortcutProblem = false, ""
 		}
-		ui.Box(c).Width(1).Shrink(0).FillHeight().Background(theme.Border)
+		ui.Box(c).Width(1).Shrink(0).FillHeight().Background(c.Theme().Border)
 		ui.Column(c.Key("settings-content")).Grow(1).FillHeight().MinWidth(0).Children(func() {
 			for _, page := range settingsPages {
 				if page.id == a.settingsPage {
 					ui.Text(c.Key("settings-page-title"), page.name).Padding(20, settingsPageInset, 16).
-						FontSize(22).FontWeight(680).TextColor(ink).Role(ui.RoleHeading).Level(1)
+						FontSize(22).FontWeight(680).TextColor(c.Theme().Text).Role(ui.RoleHeading).Level(1)
 					break
 				}
 			}
@@ -106,12 +101,27 @@ func (a *island) settingsView(c *ui.Context) {
 					changed = a.mediaSettings(c)
 				case settingsPageClipboard:
 					settingsCard(c.Key("clipboard-settings"), func() { a.clipboardSettings(c) })
+				case settingsPageTheme:
+					settingsCard(c.Key("theme-settings"), func() {
+						settingsRow(c).Children(func() {
+							const label = "外观"
+							ui.Text(c, label).Grow(1).FontSize(13).AccessHidden(true)
+							if ui.Segmented(c.Key("appearance"), &a.settings.Theme, "浅色", "深色").
+								FillEqually().Width(settingsControlWidth).Height(40).FontSize(13).Label(label).Changed() {
+								changed = true
+								if a.settingsWindow != nil {
+									a.applyTheme()
+								}
+								c.AnimationFrame()
+							}
+						})
+					})
 				case settingsPageApp:
 					settingsCard(c.Key("app-settings"), func() {
 						if supportsFullscreenHiding {
 							settingsRow(c.Key("fullscreen-settings")).Children(func() {
 								const label = "全屏时隐藏灵动岛"
-								ui.Text(c, label).Grow(1).FontSize(13).TextColor(ink).AccessHidden(true)
+								ui.Text(c, label).Grow(1).FontSize(13).TextColor(c.Theme().Text).AccessHidden(true)
 								if ui.Switch(c.Key("hide-in-fullscreen"), &a.settings.HideInFullscreen).Label(label).Changed() {
 									changed = true
 									if a.win != nil {
@@ -123,9 +133,9 @@ func (a *island) settingsView(c *ui.Context) {
 						}
 						settingsRow(c.Key("update-settings")).Children(func() {
 							ui.Column(c).Grow(1).Gap(1).Children(func() {
-								ui.Text(c, "软件更新").FontSize(13).TextColor(ink)
+								ui.Text(c, "软件更新").FontSize(13).TextColor(c.Theme().Text)
 								if version := mygo.App.Version(); version != "" {
-									ui.Text(c, "版本 "+version).FontSize(11).TextColor(muted)
+									ui.Text(c, "版本 "+version).FontSize(11).TextColor(c.Theme().TextMuted)
 								}
 							})
 							a.updateControl(c)
@@ -147,7 +157,7 @@ func (a *island) settingsView(c *ui.Context) {
 				}
 			}
 			if a.settingsSaveFailed {
-				ui.Text(c, "设置保存失败").Padding(6, settingsPageInset, 12).FontSize(12).TextColor(batteryLow)
+				ui.Text(c, "设置保存失败").Padding(6, settingsPageInset, 12).FontSize(12).TextColor(colorsFor(c.Theme().Dark).lowBattery)
 			}
 		})
 	})
@@ -157,7 +167,7 @@ func (a *island) mediaSettings(c *ui.Context) bool {
 	changed := false
 	settingsSection(c.Key("music-card-settings"), "音乐卡片", func() {
 		settingsRow(c.Key("card-style")).Children(func() {
-			ui.Text(c, "风格").Grow(1).FontSize(13).TextColor(ink)
+			ui.Text(c, "风格").Grow(1).FontSize(13).TextColor(c.Theme().Text)
 			if ui.Segmented(c.Key("card-mode"), &a.settings.MediaCardStyle, "默认风格", "大封面").
 				FillEqually().Width(settingsControlWidth).Height(30).FontSize(12).Label("音乐卡片选项").Changed() {
 				changed = true
@@ -165,13 +175,13 @@ func (a *island) mediaSettings(c *ui.Context) bool {
 		})
 		ui.Column(c.Key("card-preview-area")).FillWidth().Padding(0, 14, cardPreviewGap).Children(func() {
 			ui.Column(c.Key("card-preview")).FillWidth().Padding(cardPreviewInset).
-				Radius(12).Background(ui.Hex("#e5e8ec")).Label("音乐卡片预览").
+				Radius(12).Background(colorsFor(c.Theme().Dark).mediaPreview).Label("音乐卡片预览").
 				Children(func() { a.mediaCardPreview(c) })
 		})
 	})
 	settingsSection(c.Key("lyrics-settings"), "歌词", func() {
 		settingsRow(c.Key("lyric-settings")).Children(func() {
-			ui.Text(c, "显示歌词").Grow(1).FontSize(13).TextColor(ink)
+			ui.Text(c, "显示歌词").Grow(1).FontSize(13).TextColor(c.Theme().Text)
 			shown := !a.settings.HideLyrics
 			if ui.Switch(c.Key("show-lyrics"), &shown).Label("歌词显示").Changed() {
 				a.settings.HideLyrics = !shown
@@ -182,7 +192,7 @@ func (a *island) mediaSettings(c *ui.Context) bool {
 			style := &a.settings.LyricStyle
 			settingsDivider(c)
 			settingsRow(c.Key("lyric-size-settings")).Children(func() {
-				ui.Text(c, "歌词字号").Grow(1).FontSize(13).TextColor(ink).AccessHidden(true)
+				ui.Text(c, "歌词字号").Grow(1).FontSize(13).TextColor(c.Theme().Text).AccessHidden(true)
 				ui.Row(c).Width(settingsControlWidth).Gap(8).AlignItems(ui.Center).Children(func() {
 					size := float64(style.fontSize())
 					if ui.Slider(c.Key("lyric-font-size"), &size, lyricMinFontSize, lyricMaxFontSize).
@@ -190,12 +200,12 @@ func (a *island) mediaSettings(c *ui.Context) bool {
 						style.FontSize = int(size)
 						changed = true
 					}
-					ui.Text(c, fmt.Sprint(style.fontSize())).Width(20).FontSize(12).TextAlign(ui.End).TextColor(muted).AccessHidden(true)
+					ui.Text(c, fmt.Sprint(style.fontSize())).Width(20).FontSize(12).TextAlign(ui.End).TextColor(c.Theme().TextMuted).AccessHidden(true)
 				})
 			})
 			settingsDivider(c)
 			settingsRow(c.Key("lyric-color-settings")).Children(func() {
-				ui.Text(c, "歌词高亮颜色").Grow(1).FontSize(13).TextColor(ink).AccessHidden(true)
+				ui.Text(c, "歌词高亮颜色").Grow(1).FontSize(13).TextColor(c.Theme().Text).AccessHidden(true)
 				color := style.highlightColor()
 				if color != white && ui.Button(c.Key("reset-lyric-color"), "恢复默认").Height(36).FontSize(12).
 					Label("恢复默认歌词颜色").Clicked() {
@@ -209,7 +219,7 @@ func (a *island) mediaSettings(c *ui.Context) bool {
 			})
 			settingsDivider(c)
 			settingsRow(c.Key("lyric-transition-settings")).Children(func() {
-				ui.Text(c, "歌词过渡").Grow(1).FontSize(13).TextColor(ink)
+				ui.Text(c, "歌词过渡").Grow(1).FontSize(13).TextColor(c.Theme().Text)
 				if ui.Segmented(c.Key("lyric-transition"), &a.settings.LyricTransition, "上移", "淡入", "缩放", "关闭").
 					FillEqually().Width(settingsControlWidth).Height(36).FontSize(12).Label("歌词过渡").Changed() {
 					changed = true
@@ -220,9 +230,9 @@ func (a *island) mediaSettings(c *ui.Context) bool {
 		settingsRow(c.Key("lyric-cache")).Children(func() {
 			lyrics := &a.lyrics
 			ui.Column(c).Grow(1).MinWidth(0).Gap(1).Children(func() {
-				ui.Text(c, "歌词缓存").FontSize(13).TextColor(ink)
+				ui.Text(c, "歌词缓存").FontSize(13).TextColor(c.Theme().Text)
 				if lyrics.cacheClearErr != nil {
-					ui.Text(c, "清理失败，可重试").FontSize(11).TextColor(batteryLow)
+					ui.Text(c, "清理失败，可重试").FontSize(11).TextColor(colorsFor(c.Theme().Dark).lowBattery)
 				}
 			})
 			const bytesPerMB = 1_000_000
@@ -232,7 +242,7 @@ func (a *island) mediaSettings(c *ui.Context) bool {
 			} else if lyrics.cacheBytes > 0 && lyrics.cacheBytes < bytesPerMB/100 {
 				size = "< 0.01 MB"
 			}
-			ui.Text(c, size).FontSize(12).TextColor(muted)
+			ui.Text(c, size).FontSize(12).TextColor(c.Theme().TextMuted)
 			if ui.Button(c.Key("clear-lyric-cache"), "清理缓存").Height(40).FontSize(12).
 				Disabled(lyrics.cacheBytes == 0 && lyrics.cacheSizeErr == nil && lyrics.cacheClearErr == nil).Clicked() {
 				lyrics.cacheVersion++
@@ -254,7 +264,7 @@ func (a *island) mediaSettings(c *ui.Context) bool {
 	settingsSection(c.Key("wave-color-settings"), "律动柱", func() {
 		settingsRow(c.Key("wave-settings")).Children(func() {
 			ui.Row(c).Grow(1).MinWidth(0).Gap(8).AlignItems(ui.Center).Children(func() {
-				ui.Text(c, "颜色").FontSize(13).SingleLine().Shrink(0).TextColor(ink)
+				ui.Text(c, "颜色").FontSize(13).SingleLine().Shrink(0).TextColor(c.Theme().Text)
 				ui.Box(c.Key("wave-preview")).Size(38, 22).Shrink(0).Label("律动预览").
 					Draw(func(p *ui.Painter, r ui.Rect) {
 						levels := [...]float32{0.16, 0.38, 0.62, 0.52, 0.60, 0.40, 0.14}

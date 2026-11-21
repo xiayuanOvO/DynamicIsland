@@ -207,7 +207,7 @@ func lyricBounds(island, area mygo.Rectangle, side dockSide, fontSize int) mygo.
 }
 
 func (o *lyricOverlay) view(c *ui.Context) {
-	c.SetTheme(theme)
+	c.SetTheme(islandThemes[themeLight])
 	c.Root().Background(ui.Transparent)
 	align, originX := ui.Center, float32(0.5)
 	if o.side == dockLeft {
@@ -288,7 +288,7 @@ func (o *lyricOverlay) view(c *ui.Context) {
 					TextShadow(0, 1, 4+2*emphasis, ink.Alpha(0.9+0.05*emphasis))
 			}
 			if wrapped && !reduceMotion {
-				font := ui.Font{Family: theme.Font, Size: currentSize, Weight: currentWeight, Lang: c.Locale()}
+				font := ui.Font{Family: c.Theme().Font, Size: currentSize, Weight: currentWeight, Lang: c.Locale()}
 				marquee.split(line, textWidth, font, c.Direction())
 				if marquee.tail != "" {
 					tailWidth, _ := c.MeasureText(0, ui.Span{Text: marquee.tail, Size: size, Weight: weight})
