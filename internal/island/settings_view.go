@@ -54,7 +54,7 @@ func settingsDivider(c *ui.Context) {
 }
 
 func (a *island) settingsView(c *ui.Context) {
-	settingsTheme := settingsThemes[a.settings.Theme]
+	settingsTheme := settingsThemes[a.resolvedTheme()]
 	c.SetTheme(settingsTheme)
 	c.Root().Background(settingsTheme.Background)
 	if a.settingsPage == "" {
@@ -110,7 +110,7 @@ func (a *island) settingsView(c *ui.Context) {
 						settingsRow(c).Children(func() {
 							const label = "外观"
 							ui.Text(c, label).Grow(1).FontSize(13).AccessHidden(true)
-							if ui.Segmented(c.Key("appearance"), &a.settings.Theme, "浅色", "深色").
+							if ui.Segmented(c.Key("appearance"), &a.settings.Theme, "浅色", "深色", "跟随系统").
 								FillEqually().Width(settingsControlWidth).Height(40).FontSize(13).Label(label).Changed() {
 								changed = true
 								if a.settingsWindow != nil {
@@ -287,7 +287,7 @@ func (a *island) mediaSettings(c *ui.Context) bool {
 				ui.Box(c.Key("wave-preview")).Size(38, 22).Shrink(0).Label("律动预览").
 					Draw(func(p *ui.Painter, r ui.Rect) {
 						levels := [...]float32{0.16, 0.38, 0.62, 0.52, 0.60, 0.40, 0.14}
-						paintMediaBars(p, r, levels[:], 1, 1, a.settings.waveColor(a.media.artworkColor))
+						paintMediaBars(p, r, levels[:], 1, 1, a.settings.waveColor(a.media.artworkColor, c.Theme().Dark))
 					})
 			})
 			if ui.Segmented(c.Key("wave-mode"), &a.settings.Mode, "默认", "自定义", "跟随海报").

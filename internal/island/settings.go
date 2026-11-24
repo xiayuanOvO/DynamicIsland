@@ -49,14 +49,14 @@ func (s appSettings) toggleHotkey() string {
 	return hotkey
 }
 
-func (s appSettings) waveColor(artwork ui.Color) ui.Color {
+func (s appSettings) waveColor(artwork ui.Color, dark bool) ui.Color {
 	switch s.Mode {
 	case waveCustom:
 		return s.Color
 	case waveArtwork:
 		if artwork.A != 0 {
 			lightness := 0.2126*float32(artwork.R) + 0.7152*float32(artwork.G) + 0.0722*float32(artwork.B)
-			if s.Theme == themeDark {
+			if dark {
 				if lightness < 155 {
 					return artwork.Mix(white, (155-lightness)/(255-lightness))
 				}
@@ -66,7 +66,10 @@ func (s appSettings) waveColor(artwork ui.Color) ui.Color {
 			return artwork
 		}
 	}
-	return islandThemes[s.Theme].Accent
+	if dark {
+		return islandThemes[themeDark].Accent
+	}
+	return islandThemes[themeLight].Accent
 }
 
 func loadSettings(path string) (appSettings, error) {
@@ -85,7 +88,7 @@ func loadSettings(path string) (appSettings, error) {
 	if settings.Mode < waveDefault || settings.Mode > waveArtwork {
 		return defaults, fmt.Errorf("未知的律动配色模式 %d", settings.Mode)
 	}
-	if settings.Theme != themeDark {
+	if settings.Theme < themeLight || settings.Theme > themeSystem {
 		settings.Theme = themeLight
 	}
 	if !settings.WeatherCity.valid() {

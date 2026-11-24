@@ -387,7 +387,7 @@ func (s appSettings) renderMediaCard(c *ui.Context, m *islandMedia, expanded boo
 			waveHeight = 14
 		}
 		wave.FillWidth().Height(waveHeight).Shrink(0).Draw(func(p *ui.Painter, r ui.Rect) {
-			color := s.waveColor(m.artworkColor)
+			color := s.waveColor(m.artworkColor, c.Theme().Dark)
 			if large {
 				bar := ui.Rect{X: r.X, Y: r.Y + (r.H-4)/2, W: r.W, H: 4}
 				p.Fill(bar, p.Theme().Text.Alpha(0.13), 2)

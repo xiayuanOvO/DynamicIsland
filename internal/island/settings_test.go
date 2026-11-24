@@ -97,8 +97,11 @@ func TestThemeSettingCanBeChangedAndSaved(t *testing.T) {
 		background ui.Color
 	}{
 		{ui.KeyRight, themeDark, ui.Hex(settingsBackgroundDark)},
+		{ui.KeyRight, themeSystem, ui.Hex(settingsBackgroundLight)},
+		{ui.KeyLeft, themeDark, ui.Hex(settingsBackgroundDark)},
 		{ui.KeyLeft, themeLight, ui.Hex(settingsBackgroundLight)},
 	} {
+		a.isSystemDark = func() bool { return false }
 		view.Key(0, step.key)
 		view.Advance(time.Second / 30)
 		background := view.Image().RGBAAt(settingsWidth-8, settingsHeight-8)
@@ -111,6 +114,16 @@ func TestThemeSettingCanBeChangedAndSaved(t *testing.T) {
 		if err != nil || saved.Theme != step.want || !saved.HideLyrics {
 			t.Fatalf("switching themes should save the new choice and keep other settings, got %+v, %v", saved, err)
 		}
+	}
+
+	// Verify system theme reacts when the OS switches to dark mode.
+	a.settings.Theme = themeSystem
+	a.isSystemDark = func() bool { return true }
+	view.Frame()
+	darkBg := ui.Hex(settingsBackgroundDark)
+	background := view.Image().RGBAAt(settingsWidth-8, settingsHeight-8)
+	if background.R != darkBg.R || background.G != darkBg.G || background.B != darkBg.B {
+		t.Fatalf("system theme should follow dark OS appearance, got background %v", background)
 	}
 }
 
