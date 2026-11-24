@@ -15,17 +15,52 @@ import (
 	"github.com/egoist/mygo"
 )
 
-const noTodoReminder = -1
+const (
+	noTodoReminder     = -1
+	todoRepeatNone     = ""
+	todoRepeatDaily    = "daily"
+	todoRepeatWeekdays = "weekdays"
+	todoRepeatWeekly   = "weekly"
+)
 
-var todoLeadMinutes = []int{noTodoReminder, 0, 5, 15, 30, 60}
+var (
+	todoLeadMinutes  = []int{noTodoReminder, 0, 5, 15, 30, 60}
+	todoRepeatValues = []string{todoRepeatNone, todoRepeatDaily, todoRepeatWeekdays, todoRepeatWeekly}
+)
 
 type todoItem struct {
 	ID          string    `json:"id"`
 	Title       string    `json:"title"`
 	Due         time.Time `json:"due,omitzero"`
 	LeadMinutes int       `json:"leadMinutes"`
+	Repeat      string    `json:"repeat,omitempty"`
 	Done        bool      `json:"done,omitempty"`
 	Notified    bool      `json:"notified,omitempty"`
+}
+
+func nextTodoDue(due time.Time, repeat string, now time.Time) time.Time {
+	next := due
+	advance := func(t time.Time) time.Time {
+		switch repeat {
+		case todoRepeatDaily:
+			return t.AddDate(0, 0, 1)
+		case todoRepeatWeekdays:
+			t = t.AddDate(0, 0, 1)
+			for t.Weekday() == time.Saturday || t.Weekday() == time.Sunday {
+				t = t.AddDate(0, 0, 1)
+			}
+			return t
+		case todoRepeatWeekly:
+			return t.AddDate(0, 0, 7)
+		default:
+			return t
+		}
+	}
+	next = advance(next)
+	for repeat != todoRepeatNone && !next.After(now) {
+		next = advance(next)
+	}
+	return next
 }
 
 func (item todoItem) reminderDue(now time.Time) bool {
@@ -83,7 +118,8 @@ func (a *island) loadTodos() {
 		if err == nil {
 			seen := make(map[string]bool, len(items))
 			for i, item := range items {
-				if item.ID == "" || seen[item.ID] || strings.TrimSpace(item.Title) == "" || !slices.Contains(todoLeadMinutes, item.LeadMinutes) {
+				if item.ID == "" || seen[item.ID] || strings.TrimSpace(item.Title) == "" ||
+					!slices.Contains(todoLeadMinutes, item.LeadMinutes) || !slices.Contains(todoRepeatValues, item.Repeat) {
 					err = fmt.Errorf("无效的待办事项 %d", i+1)
 					break
 				}
@@ -116,7 +152,13 @@ func (a *island) changeTodo(item todoItem, remove bool) bool {
 		items = append(items, item)
 	default:
 		previous := items[index]
-		item.Notified = previous.Notified && previous.Due.Equal(item.Due) && previous.LeadMinutes == item.LeadMinutes
+		if item.Done && !previous.Done && item.Repeat != todoRepeatNone && !item.Due.IsZero() {
+			item.Due = nextTodoDue(item.Due, item.Repeat, time.Now())
+			item.Done = false
+			item.Notified = false
+		} else {
+			item.Notified = previous.Notified && previous.Due.Equal(item.Due) && previous.LeadMinutes == item.LeadMinutes
+		}
 		items[index] = item
 	}
 	sortTodos(items)
