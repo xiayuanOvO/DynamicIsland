@@ -132,7 +132,7 @@ func (a *island) targetFrame() islandFrame {
 	if a.dock.side != dockNone {
 		width = compactHeight
 	} else if a.capsuleAlertWantsWidth(time.Now()) {
-		return islandFrame{width: capsuleAlertWidth, height: idleCapsuleHeight}
+		return islandFrame{width: a.capsuleAlertTargetWidth(), height: idleCapsuleHeight}
 	} else if a.compactIdle() {
 		return islandFrame{width: float32(a.idleCapsuleWidth()), height: idleCapsuleHeight}
 	} else if a.media.track.Playing && a.media.track.Title != "" {

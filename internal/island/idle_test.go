@@ -217,6 +217,38 @@ func TestIdleCapsuleRainReminder(t *testing.T) {
 	}
 }
 
+func TestIdleAlertExitDoesNotShrinkOrPopBatteries(t *testing.T) {
+	a := island{files: &shelf.Shelf{}}
+	a.idle.weather = idleWeather{condition: "晴", temperature: 22, icon: weatherSunIcon}
+	a.battery.readings = []battery.Reading{
+		{ID: "computer", Name: "本机", Kind: battery.Computer, Percent: 90},
+		{ID: "earbud", Name: "耳机", Kind: battery.Headphones, Percent: 70},
+		{ID: "mouse", Name: "鼠标", Kind: battery.Mouse, Percent: 12},
+	}
+	idleWidth := a.targetFrame().width
+	if idleWidth <= capsuleAlertWidth {
+		t.Fatalf("expected idle capsule with 3 batteries to exceed alert width, got %.0f", idleWidth)
+	}
+
+	now := time.Now()
+	a.showCapsuleAlert(capsuleAlertTomorrowRain, battery.Reading{}, now)
+	if alertWidth := a.targetFrame().width; alertWidth != idleWidth {
+		t.Fatalf("alert in wide idle mode should keep idle width %.0f instead of shrinking to %.0f", idleWidth, alertWidth)
+	}
+
+	a.shownFrame = a.targetFrame()
+	view := ui.NewTester(func(c *ui.Context) { a.header(c, 0) }, int(idleWidth), idleCapsuleHeight)
+	a.showCapsuleAlert(capsuleAlertLowBattery, a.battery.readings[2], view.Now())
+	view.Frame()
+	// Advance into the exit crossfade: all 3 batteries should fade in together without popping.
+	view.Advance(capsuleAlertEnter + capsuleAlertHold + capsuleAlertExit/2)
+	for _, label := range []string{"本机", "耳机", "鼠标"} {
+		if !view.HasText(label) {
+			t.Fatalf("all batteries should remain visible during alert exit without re-expanding, missing %q in %v", label, view.Texts())
+		}
+	}
+}
+
 func TestIdleCapsuleLimitsBatteryCountAndTucksOnDock(t *testing.T) {
 	a := island{files: &shelf.Shelf{}}
 	base, _ := a.idleCapsuleMetrics(a.settings.idleItems())

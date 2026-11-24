@@ -58,6 +58,13 @@ func (a *island) capsuleAlertWantsWidth(now time.Time) bool {
 	return now.Before(a.alert.until.Add(-capsuleAlertExit))
 }
 
+func (a *island) capsuleAlertTargetWidth() float32 {
+	if a.compactIdle() {
+		return float32(max(capsuleAlertWidth, a.idleCapsuleWidth()))
+	}
+	return capsuleAlertWidth
+}
+
 func (a *island) activeCapsuleAlert(now time.Time, reduceMotion bool) (active bool, progress float32, exiting bool) {
 	if a.alert.kind == capsuleAlertNone || !now.Before(a.alert.until) {
 		return false, 0, false
