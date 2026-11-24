@@ -3,6 +3,7 @@ package island
 import (
 	"fmt"
 	"log"
+	"slices"
 	"strings"
 	"time"
 
@@ -211,7 +212,7 @@ func (a *island) clipboardView(c *ui.Context, interactive bool, write func(trans
 						return false
 					})
 				list.Rows(func(item ui.ListRow) {
-					row := a.clipboardRow(item.Context, entries[item.Index], item.Index == selected, write)
+					row := a.clipboardRow(item.Context, entries[item.Index], item.Index == selected, search, write)
 					if item.Index == selected {
 						search.ActiveDescendant(row)
 					}
@@ -231,7 +232,7 @@ func (a *island) clipboardView(c *ui.Context, interactive bool, write func(trans
 	})
 }
 
-func (a *island) clipboardRow(c *ui.Context, entry clipboardEntry, selected bool, write func(transfer.Data) error) ui.Element {
+func (a *island) clipboardRow(c *ui.Context, entry clipboardEntry, selected bool, search ui.Element, write func(transfer.Data) error) ui.Element {
 	text := entry.Preview
 	dimensions := ""
 	const rowHeight = 50
@@ -308,11 +309,16 @@ func (a *island) clipboardRow(c *ui.Context, entry clipboardEntry, selected bool
 			pin.TextColor(c.Theme().Accent).Background(c.Theme().Accent.Alpha(0.16))
 		}
 		if pin.Clicked() {
+			index := slices.IndexFunc(history.entries, func(item clipboardEntry) bool { return item.ID == entry.ID })
 			if err := history.store.setPinned(entry.ID, !entry.Pinned); err != nil {
 				log.Printf("pin clipboard entry: %v", err)
 				history.problem = "置顶状态保存失败"
 			} else {
 				a.refreshClipboardEntries(c.Now(), false)
+				if index >= 0 && index < len(history.entries) {
+					history.selected = history.entries[index].ID
+				}
+				search.Focus()
 				c.Invalidate()
 			}
 		}

@@ -651,6 +651,9 @@ func TestClipboardPinMovesToTopAndSurvivesExpiry(t *testing.T) {
 	if len(a.clipboard.entries) != 3 || a.clipboard.entries[0].Preview != "常用邮箱" || !a.clipboard.entries[0].Pinned {
 		t.Fatalf("pinning should move the entry to the top: %+v", a.clipboard.entries)
 	}
+	if !view.Focused("搜索剪贴板历史") {
+		t.Fatal("toggling pin should return focus to search so the list does not scroll with the moved row")
+	}
 
 	// Verify pagination across pinned and unpinned entries.
 	page1, more, err := a.clipboard.store.entryPage("", time.Now(), clipboardEntry{}, 2)
