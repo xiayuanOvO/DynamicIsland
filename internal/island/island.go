@@ -76,6 +76,10 @@ type island struct {
 	settingsWindow     *mygo.Window
 	settingsSaveAt     time.Time
 	settingsSaveFailed bool
+	openAtLogin        bool
+	openAtLoginErr     string
+	getOpenAtLogin     func() bool
+	setOpenAtLogin     func(bool) error
 }
 
 func (a *island) start() {

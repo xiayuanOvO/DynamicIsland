@@ -80,6 +80,7 @@ func (a *island) settingsView(c *ui.Context) {
 		}
 		if a.settingsPage != settingsPageApp {
 			a.editingHotkey, a.hotkeyProblem = false, ""
+			a.openAtLoginErr = ""
 		}
 		ui.Box(c).Width(1).Shrink(0).FillHeight().Background(c.Theme().Border)
 		ui.Column(c.Key("settings-content")).Grow(1).FillHeight().MinWidth(0).Children(func() {
@@ -121,6 +122,19 @@ func (a *island) settingsView(c *ui.Context) {
 					})
 				case settingsPageApp:
 					settingsCard(c.Key("app-settings"), func() {
+						settingsRow(c.Key("launch-at-login-settings")).Children(func() {
+							const label = "开机启动"
+							ui.Column(c).Grow(1).MinWidth(0).Gap(1).Children(func() {
+								ui.Text(c, label).FontSize(13).TextColor(c.Theme().Text).AccessHidden(true)
+								if a.openAtLoginErr != "" {
+									ui.Text(c, a.openAtLoginErr).FontSize(11).TextColor(colorsFor(c.Theme().Dark).problem)
+								}
+							})
+							if ui.Switch(c.Key("open-at-login"), &a.openAtLogin).Label(label).Changed() {
+								a.applyOpenAtLogin(a.openAtLogin)
+							}
+						})
+						settingsDivider(c)
 						if supportsFullscreenHiding {
 							settingsRow(c.Key("fullscreen-settings")).Children(func() {
 								const label = "全屏时隐藏灵动岛"
