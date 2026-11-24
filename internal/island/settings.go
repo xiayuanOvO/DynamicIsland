@@ -146,6 +146,7 @@ func saveStateFile(path string, data []byte) error {
 
 func (a *island) openSettings() {
 	a.refreshLyricCacheSize()
+	a.refreshOpenAtLogin()
 	if a.settingsWindow == nil {
 		area := mygo.Screen.PrimaryDisplay().WorkArea
 		a.settingsWindow = mygo.NewWindow(mygo.WindowOptions{
@@ -161,6 +162,7 @@ func (a *island) openSettings() {
 			a.idleSettingsList = ui.ListState{}
 			a.clipboard.editingShortcut, a.clipboard.shortcutProblem = false, ""
 			a.editingHotkey, a.hotkeyProblem = false, ""
+			a.openAtLoginErr = ""
 			if a.updates.phase == updateLatest {
 				a.updates.phase = updateIdle
 			}
@@ -176,4 +178,32 @@ func (a *island) refreshLyricCacheSize() {
 	if a.settingsWindow != nil {
 		a.settingsWindow.Invalidate()
 	}
+}
+
+func (a *island) refreshOpenAtLogin() {
+	get := a.getOpenAtLogin
+	if get == nil {
+		get = mygo.App.OpenAtLogin
+	}
+	a.openAtLogin = get()
+	a.openAtLoginErr = ""
+}
+
+func (a *island) applyOpenAtLogin(enabled bool) {
+	set := a.setOpenAtLogin
+	if set == nil {
+		set = mygo.App.SetOpenAtLogin
+	}
+	if err := set(enabled); err != nil {
+		log.Printf("open at login: %v", err)
+		a.openAtLoginErr = "设置开机启动失败"
+		get := a.getOpenAtLogin
+		if get == nil {
+			get = mygo.App.OpenAtLogin
+		}
+		a.openAtLogin = get()
+		return
+	}
+	a.openAtLogin = enabled
+	a.openAtLoginErr = ""
 }

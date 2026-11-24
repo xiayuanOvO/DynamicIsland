@@ -2,6 +2,7 @@ package island
 
 import (
 	"bytes"
+	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -536,5 +537,50 @@ func TestToggleShortcutCanBeRecordedAndSavedFromSettings(t *testing.T) {
 	view.Key(0, ui.KeyEscape)
 	if a.editingHotkey || a.settings.toggleHotkey() != "Ctrl+Shift+Space" {
 		t.Fatal("Escape should cancel the toggle shortcut edit")
+	}
+}
+
+func TestOpenAtLoginSwitchUpdatesStateAndReportsFailure(t *testing.T) {
+	systemEnabled := false
+	failNext := false
+	a := island{
+		statePath:    filepath.Join(t.TempDir(), "shelf.json"),
+		settingsPage: settingsPageApp,
+		getOpenAtLogin: func() bool {
+			return systemEnabled
+		},
+		setOpenAtLogin: func(enabled bool) error {
+			if failNext {
+				return errors.New("test login item error")
+			}
+			systemEnabled = enabled
+			return nil
+		},
+	}
+	a.refreshOpenAtLogin()
+
+	const label = "开机启动"
+	view := ui.NewTester(a.settingsView, settingsWidth, settingsHeight)
+	view.UseScreenReader()
+	for range 20 {
+		if view.Focused(label) {
+			break
+		}
+		view.Key(0, ui.KeyTab)
+	}
+	if !view.Focused(label) {
+		t.Fatal("the launch-at-login switch was not reachable by Tab")
+	}
+	for _, want := range []bool{true, false} {
+		view.Key(0, ui.KeySpace)
+		if a.openAtLogin != want || systemEnabled != want || view.HasText("设置开机启动失败") {
+			t.Fatalf("toggling launch-at-login to %v failed: switch=%v system=%v texts=%v", want, a.openAtLogin, systemEnabled, view.Texts())
+		}
+	}
+
+	failNext = true
+	view.Key(0, ui.KeySpace)
+	if a.openAtLogin || systemEnabled || !view.HasText("设置开机启动失败") {
+		t.Fatalf("a failed update should revert the switch and report the error: switch=%v system=%v texts=%v", a.openAtLogin, systemEnabled, view.Texts())
 	}
 }
