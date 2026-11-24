@@ -54,6 +54,7 @@ func (s lyricStyle) highlightColor() ui.Color {
 type lyricOverlay struct {
 	win            *mygo.Window
 	cache          map[lyrics.Song]lyrics.Lines
+	offsets        map[string]float64
 	diskCache      lyrics.Cache
 	cacheVersion   uint64
 	cacheBytes     int64
@@ -120,10 +121,11 @@ func (a *island) updateLyrics(c *ui.Context, frame islandFrame, width, height in
 			}()
 		}
 		if !a.expanded && frame.open == 0 && track.Rate > 0 {
-			position := track.Elapsed(now)
+			offset := a.lyricOffset(song)
+			position := track.Elapsed(now) + offset
 			var next float64
 			rows, index, next = lines.Surrounding(position)
-			if next > position && (track.Duration <= 0 || next <= track.Duration) {
+			if next > position && (track.Duration <= 0 || next <= track.Duration+max(0, offset)) {
 				delay := (next - position) / track.Rate
 				c.After(max(time.Millisecond, time.Duration(delay*float64(time.Second))))
 			}
@@ -134,7 +136,7 @@ func (a *island) updateLyrics(c *ui.Context, frame islandFrame, width, height in
 				}
 				if end > 0 {
 					// Anchor to the player sample so repainting alone does not change the deadline.
-					lineEndsAt = track.Sampled.Add(time.Duration((end - track.Position) / track.Rate * float64(time.Second)))
+					lineEndsAt = track.Sampled.Add(time.Duration((end - (track.Position + offset)) / track.Rate * float64(time.Second)))
 				}
 				anchor = a.windowBounds(width, height)
 				side = a.dock.side

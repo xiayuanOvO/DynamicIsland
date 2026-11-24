@@ -16,6 +16,7 @@ import (
 
 	"dynamicisland/internal/battery"
 	"dynamicisland/internal/lyrics"
+	"dynamicisland/internal/nowplaying"
 	"dynamicisland/internal/shelf"
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
@@ -778,5 +779,47 @@ func TestDisplaySelectionAndPositionPersistence(t *testing.T) {
 	saved, err = loadSettings(a.settingsPath())
 	if err != nil || saved.DisplayID != external.ID || a.centerX != external.WorkArea.X+external.WorkArea.Width/2 || a.top != external.WorkArea.Y+14 || a.dock.side != dockNone {
 		t.Fatalf("selecting external display should center on it and persist DisplayID: saved=%+v cx=%d top=%d dock=%+v err=%v", saved, a.centerX, a.top, a.dock, err)
+	}
+}
+
+func TestLyricOffsetAdjustsPersistsAndResets(t *testing.T) {
+	track := nowplaying.Track{Title: "夜行列车", Artist: "林海风", Album: "现场版", Duration: 226, Playing: true}
+	song := songForTrack(track)
+	a := island{
+		statePath:    filepath.Join(t.TempDir(), "shelf.json"),
+		settingsPage: settingsPageMedia,
+		media:        islandMedia{track: track},
+	}
+	view := ui.NewTester(a.settingsView, settingsWidth, settingsHeight+160)
+	if !view.HasText("歌词偏移") || !view.HasText("0.0s") {
+		t.Fatalf("media settings should show lyric offset controls: %v", view.Texts())
+	}
+	if err := view.Click("歌词提前 0.5 秒"); err != nil {
+		t.Fatal(err)
+	}
+	if err := view.Click("歌词提前 0.5 秒"); err != nil {
+		t.Fatal(err)
+	}
+	if got := a.lyricOffset(song); got != 1.0 || !view.HasText("+1.0s") {
+		t.Fatalf("expected +1.0s offset, got %.1f, texts=%v", got, view.Texts())
+	}
+
+	reloaded := island{statePath: a.statePath}
+	reloaded.loadLyricOffsets()
+	if got := reloaded.lyricOffset(song); got != 1.0 {
+		t.Fatalf("lyric offset should persist across restarts, got %.1f", got)
+	}
+
+	lines := lyrics.Lines{{At: 10, Text: "第一句"}, {At: 11, Text: "第二句"}}
+	rows, _, _ := lines.Surrounding(10.2 + reloaded.lyricOffset(song))
+	if rows[1] != "第二句" {
+		t.Fatalf("positive offset should advance lyric timeline, got %+v", rows)
+	}
+
+	if err := view.Click("重置歌词偏移 +1.0s"); err != nil {
+		t.Fatal(err)
+	}
+	if got := a.lyricOffset(song); got != 0 || !view.HasText("0.0s") {
+		t.Fatalf("reset should restore 0.0s offset, got %.1f", got)
 	}
 }

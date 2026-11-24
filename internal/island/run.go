@@ -37,6 +37,7 @@ func Run(appIcon []byte) {
 		a.media.artworkCacheDir = filepath.Join(cache, "DynamicIsland", "artwork")
 	}
 	a.lyrics.diskCache = lyrics.NewCache(filepath.Dir(statePath))
+	a.loadLyricOffsets()
 	a.loadTodos()
 	a.loadClipboard()
 	a.settings, err = loadSettings(a.settingsPath())

@@ -290,6 +290,8 @@ func (a *island) mediaSettings(c *ui.Context) bool {
 					changed = true
 				}
 			})
+			settingsDivider(c)
+			a.lyricOffsetSettings(c)
 		}
 		settingsDivider(c)
 		settingsRow(c.Key("lyric-cache")).Children(func() {
