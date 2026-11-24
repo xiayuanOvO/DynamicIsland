@@ -16,24 +16,64 @@ import (
 )
 
 func Read(ctx context.Context) Snapshot {
+	return ReadIncremental(ctx, nil)
+}
+
+func ReadIncremental(ctx context.Context, onPartial func(Snapshot)) Snapshot {
 	var snapshot Snapshot
-	if output, err := exec.CommandContext(ctx, "/usr/bin/pmset", "-g", "batt").Output(); err == nil {
-		snapshot.computer = []Reading{}
-		if computer, ok := parseMacBattery(string(output)); ok {
-			snapshot.computer = append(snapshot.computer, computer)
+
+	pmsetCh := make(chan []Reading, 1)
+	go func() {
+		output, err := exec.CommandContext(ctx, "/usr/bin/pmset", "-g", "batt").Output()
+		if err != nil {
+			pmsetCh <- nil
+			return
 		}
+		readings := []Reading{}
+		if computer, ok := parseMacBattery(string(output)); ok {
+			readings = append(readings, computer)
+		}
+		pmsetCh <- readings
+	}()
+
+	profilerCh := make(chan []byte, 1)
+	go func() {
+		probe, cancel := context.WithTimeout(ctx, 2*time.Second)
+		defer cancel()
+		output, err := exec.CommandContext(probe, "/usr/sbin/system_profiler", "SPBluetoothDataType", "-json").Output()
+		if err != nil {
+			profilerCh <- nil
+			return
+		}
+		profilerCh <- output
+	}()
+
+	ioregCh := make(chan []byte, 1)
+	go func() {
+		output, _ := exec.CommandContext(ctx, "/usr/sbin/ioreg", "-a", "-r", "-l", "-k", "BatteryPercent", "-d", "1").Output()
+		ioregCh <- output
+	}()
+
+	snapshot.computer = <-pmsetCh
+	if onPartial != nil && snapshot.computer != nil {
+		onPartial(Snapshot{computer: slices.Clone(snapshot.computer)})
 	}
-	probe, cancel := context.WithTimeout(ctx, 2*time.Second)
-	defer cancel()
-	output, err := exec.CommandContext(probe, "/usr/sbin/system_profiler", "SPBluetoothDataType", "-json").Output()
-	if err != nil {
+
+	output := <-profilerCh
+	registry := <-ioregCh
+	if len(output) == 0 {
 		return snapshot
 	}
-	registry, _ := exec.CommandContext(ctx, "/usr/sbin/ioreg", "-a", "-r", "-l", "-k", "BatteryPercent", "-d", "1").Output()
 	snapshot.bluetooth = parseBluetoothBatteries(output, registryBatteries(registry))
 	targets := bluetoothProbeTargets(snapshot.bluetooth)
 	if len(targets) == 0 {
 		return snapshot
+	}
+	if onPartial != nil {
+		onPartial(Snapshot{
+			computer:  slices.Clone(snapshot.computer),
+			bluetooth: slices.Clone(snapshot.bluetooth),
+		})
 	}
 	resources, err := mygo.App.Path(mygo.PathResources)
 	if err == nil {

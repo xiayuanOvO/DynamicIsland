@@ -33,6 +33,28 @@ var (
 	chargingIcon    = svg(`<path d="m14 3-8 10h5l-1 8 8-10h-5Z" fill="currentColor" stroke-width="1"/>`)
 )
 
+func (a *island) refreshBattery() {
+	b := &a.battery
+	if !battery.Supported || b.reading || a.win == nil {
+		return
+	}
+	b.reading = true
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		snapshot := battery.ReadIncremental(ctx, func(partial battery.Snapshot) {
+			a.win.Update(func() {
+				b.readings = partial.Merge(b.readings)
+			})
+		})
+		a.win.Update(func() {
+			b.reading = false
+			b.readings = snapshot.Merge(b.readings)
+			b.refreshAt = time.Now().Add(30 * time.Second)
+		})
+	}()
+}
+
 func (a *island) updateBattery(c *ui.Context) {
 	b := &a.battery
 	showOverview := a.expanded && !a.todos.open && !a.clipboard.open
@@ -44,17 +66,7 @@ func (a *island) updateBattery(c *ui.Context) {
 		c.After(delay)
 		return
 	}
-	b.reading = true
-	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		snapshot := battery.Read(ctx)
-		a.win.Update(func() {
-			b.reading = false
-			b.readings = snapshot.Merge(b.readings)
-			b.refreshAt = time.Now().Add(30 * time.Second)
-		})
-	}()
+	a.refreshBattery()
 }
 
 func (a *island) overviewLeadHeight() int {
