@@ -107,14 +107,21 @@ func (a *island) header(c *ui.Context, open float32) {
 	idle := a.compactIdle()
 	track := a.media.track
 	playing := track.Playing && track.Title != ""
+	now := c.Now()
+	alertActive, alertProgress, alertExiting := false, float32(0), false
+	if !docked && !a.expanded {
+		alertActive, alertProgress, alertExiting = a.activeCapsuleAlert(now, c.Preferences().ReduceMotion)
+	}
 	height := float32(compactHeight)
-	if !docked && (idle || playing) {
+	if !docked && (idle || playing || alertActive) {
 		height = idleCapsuleHeight
 	}
 	height += (panelHeaderHeight - height) * open
 	offset := -float32(a.dock.side) * (dockTuck / 2.0) * (1 - open)
 	compactAlpha := 1 - animationPhase(open, 0, 0.6)
-	showIdle := compactAlpha > 0 && idle
+	baseAlpha := compactAlpha * (1 - alertProgress)
+	baseShiftY := -7 * alertProgress
+	showIdle := baseAlpha > 0.01 && idle
 	showFace := showIdle && a.settings.showsIdleItem(idleItemFace)
 	if !showFace {
 		a.face = idleFaceState{}
@@ -135,45 +142,40 @@ func (a *island) header(c *ui.Context, open float32) {
 		}
 	}
 	header.Children(func() {
+		if compactAlpha > 0 && alertActive {
+			if !c.Preferences().ReduceMotion {
+				c.AnimationFrame()
+			} else if remaining := a.alert.until.Sub(now); remaining > 0 {
+				c.After(remaining)
+			}
+			if alertProgress > 0.01 {
+				a.capsuleAlertView(c, compactAlpha*alertProgress, alertProgress, alertExiting)
+			}
+		}
 		if showIdle {
 			if docked {
 				if showFace {
 					slot := ui.Box(c.Key("idle-face")).Absolute().Left(0).Right(0).Top(0).Height(compactHeight).
-						Translate(offset, 0).Opacity(compactAlpha)
-					a.drawIdleFace(c, slot, compactAlpha, offset)
+						Translate(offset, 0).Opacity(baseAlpha)
+					a.drawIdleFace(c, slot, baseAlpha, offset)
 				}
 			} else {
-				a.idleCapsule(c, compactAlpha)
+				a.idleCapsule(c, baseAlpha, baseShiftY)
 			}
 			return
 		}
-		if compactAlpha > 0 && playing {
+		if baseAlpha > 0.01 && playing {
 			const coverSize, timeWidth, waveHeight = 26, 42, 20
 			mediaHeight := float32(idleCapsuleHeight)
 			mediaWidth, waveInset, bandsPerBar := float32(compactMediaWidth-20), float32(46), 4
 			if docked {
 				mediaHeight = compactHeight
 				mediaWidth, waveInset, bandsPerBar = 18, 0, 13
-			}
-			now := c.Now()
-			lowAlert := !docked && a.settings.LowBatteryAlert && a.battery.alertDevice != nil && now.Before(a.battery.alertUntil)
-			if lowAlert {
-				c.After(a.battery.alertUntil.Sub(now))
-			} else if !docked {
+			} else {
 				c.After(200 * time.Millisecond)
 			}
 			ui.Box(c.Key("compact-media")).Absolute().Left(0).Right(0).Top(0).Height(mediaHeight).
-				Opacity(compactAlpha).Translate(offset, 0).IgnoreInput(true).Center().Children(func() {
-				if lowAlert {
-					alert := *a.battery.alertDevice
-					lowColor := colorsFor(c.Theme().Dark).lowBattery
-					ui.Row(c.Key("compact-low-battery")).Size(mediaWidth, mediaHeight).Shrink(0).Gap(6).AlignItems(ui.Center).Justify(ui.Center).Children(func() {
-						ui.Icon(c, batteryDeviceIcon(alert)).Size(14, 14).Shrink(0).TextColor(lowColor)
-						ui.Text(c, batteryDeviceName(alert)).Grow(1).MinWidth(0).SingleLine().Ellipsis("…").FontSize(12).FontWeight(600).TextColor(c.Theme().Text)
-						ui.Text(c, fmt.Sprintf("%d%%", alert.Percent)).Shrink(0).SingleLine().FontSize(12).FontWeight(650).TextColor(lowColor)
-					})
-					return
-				}
+				Opacity(baseAlpha).Translate(offset, baseShiftY).IgnoreInput(true).Center().Children(func() {
 				ui.Box(c).Size(mediaWidth, mediaHeight).Shrink(0).Children(func() {
 					ui.Box(c.Key("compact-wave")).Absolute().Left(waveInset).Right(waveInset).
 						Top((mediaHeight - waveHeight) / 2).Height(waveHeight).Label("播放律动").
@@ -190,7 +192,7 @@ func (a *island) header(c *ui.Context, open float32) {
 				})
 			})
 		}
-		if compactAlpha > 0 && !playing {
+		if baseAlpha > 0.01 && !playing {
 			item := a.todos.next()
 			fileCount := len(a.files.Items)
 			if fileCount == 0 && item == nil {

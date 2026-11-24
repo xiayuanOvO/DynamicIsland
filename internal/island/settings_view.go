@@ -175,7 +175,7 @@ func (a *island) settingsView(c *ui.Context) {
 							ui.Column(c).Grow(1).Gap(1).Children(func() {
 								ui.Text(c, "软件更新").FontSize(13).TextColor(c.Theme().Text)
 								if version := mygo.App.Version(); version != "" {
-									ver := ui.ButtonBase(c.Key("app-version")).Row().AlignItems(ui.Center).
+									ver := ui.ButtonBase(c.Key("app-version")).Row().AlignSelf(ui.Start).Justify(ui.Start).AlignItems(ui.Center).
 										Label("版本 " + version)
 									ver.Children(func() {
 										ui.Text(c, "版本 "+version).FontSize(11).TextColor(c.Theme().TextMuted)
@@ -355,8 +355,7 @@ func (a *island) appDebugSettings(c *ui.Context) {
 			ui.Text(c, "蓝牙低电量提醒").Grow(1).FontSize(13).TextColor(c.Theme().Text)
 			if ui.Button(c.Key("trigger-debug-low-battery"), "模拟触发").Height(34).FontSize(12).Clicked() {
 				mock := battery.Reading{ID: "debug-mouse", Name: "测试鼠标", Kind: battery.Mouse, Percent: 5}
-				a.battery.alertDevice = &mock
-				a.battery.alertUntil = c.Now().Add(lowBatteryBannerDuration)
+				a.showCapsuleAlert(capsuleAlertLowBattery, mock, c.Now())
 				if a.battery.notifyLow != nil {
 					a.battery.notifyLow(mock)
 				} else {
@@ -367,40 +366,25 @@ func (a *island) appDebugSettings(c *ui.Context) {
 					})
 					go func() { _ = notice.Show() }()
 				}
-				if a.win != nil {
-					a.win.Invalidate()
-				}
 			}
 		})
 		settingsDivider(c)
 		settingsRow(c.Key("debug-tomorrow-rain")).Children(func() {
 			ui.Text(c, "明日有雨提醒").Grow(1).FontSize(13).TextColor(c.Theme().Text)
 			if ui.Button(c.Key("trigger-debug-rain"), "模拟显示").Height(34).FontSize(12).Clicked() {
-				now := c.Now()
-				if a.idle.weather.condition == "" {
-					a.idle.weather = idleWeather{condition: "晴", temperature: 22, icon: weatherSunIcon}
-				}
-				tomorrow := now.AddDate(0, 0, 1).Format(time.DateOnly)
-				a.idle.weather.rainDates = []string{tomorrow}
-				a.idle.forecastUntil = now.Add(2 * time.Hour)
-				if a.win != nil {
-					a.win.Invalidate()
-				}
+				a.showCapsuleAlert(capsuleAlertTomorrowRain, battery.Reading{}, c.Now())
 			}
 		})
 		settingsDivider(c)
 		settingsRow(c.Key("debug-reset")).Children(func() {
 			ui.Text(c, "调试状态").Grow(1).FontSize(13).TextColor(c.Theme().Text)
 			if ui.Button(c.Key("reset-debug-state"), "重置").Height(34).FontSize(12).Clicked() {
-				a.battery.alertDevice = nil
-				a.battery.alertUntil = time.Time{}
+				a.clearCapsuleAlert()
 				a.battery.notifiedLow = nil
+				a.idle.rainAlertDate = ""
 				a.idle.weather.rainDates = nil
 				a.idle.forecastUntil = time.Time{}
 				a.idle.refreshAt = time.Time{}
-				if a.win != nil {
-					a.win.Invalidate()
-				}
 			}
 		})
 	})

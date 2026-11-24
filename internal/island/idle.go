@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"dynamicisland/internal/battery"
 	"github.com/egoist/mygo/ui"
 )
 
@@ -37,6 +38,7 @@ type idleInfo struct {
 	cache         weatherCache
 	cacheLoaded   bool
 	forecastUntil time.Time
+	rainAlertDate string
 	refreshAt     time.Time
 	reading       bool
 }
@@ -58,11 +60,11 @@ func (a *island) showsIdleCapsule() bool {
 }
 
 func (a *island) idleCapsuleWidth() int {
-	base, batteries := a.idleCapsuleMetrics(a.settings.idleItems(), a.idle.showsTomorrowRain(time.Now()))
+	base, batteries := a.idleCapsuleMetrics(a.settings.idleItems())
 	return max(compactHeight, base+batteries*idleBatteryStep)
 }
 
-func (a *island) idleCapsuleMetrics(items idleItemSettings, rainReminder bool) (baseWidth, batteries int) {
+func (a *island) idleCapsuleMetrics(items idleItemSettings) (baseWidth, batteries int) {
 	baseWidth = 2*idleCapsulePadding - idleCapsuleGap
 	hasWeather := a.idle.weather.condition != ""
 	for _, item := range items {
@@ -76,14 +78,23 @@ func (a *island) idleCapsuleMetrics(items idleItemSettings, rainReminder bool) (
 				continue
 			}
 			baseWidth += idleItemSpecs[item.ID].width + idleCapsuleGap
-			if rainReminder {
-				baseWidth += idleRainReminderWidth
-			}
 		} else {
 			baseWidth += idleItemSpecs[item.ID].width + idleCapsuleGap
 		}
 	}
 	return baseWidth, min(batteries, (panelWidth-baseWidth)/idleBatteryStep)
+}
+
+func (a *island) maybeTriggerRainAlert(now time.Time) {
+	if !a.settings.showsIdleItem(idleItemWeather) || !a.idle.showsTomorrowRain(now) {
+		return
+	}
+	tomorrow := now.AddDate(0, 0, 1).Format(time.DateOnly)
+	if a.idle.rainAlertDate == tomorrow {
+		return
+	}
+	a.idle.rainAlertDate = tomorrow
+	a.showCapsuleAlert(capsuleAlertTomorrowRain, battery.Reading{}, now)
 }
 
 func (a *island) updateIdleWeather(c *ui.Context) {
@@ -97,6 +108,7 @@ func (a *island) updateIdleWeather(c *ui.Context) {
 			info.cache = cached
 			if w, until, ok := weatherFromCache(cached, c.Now()); ok {
 				info.weather, info.forecastUntil = w, until
+				a.maybeTriggerRainAlert(c.Now())
 				if next := cached.UpdatedAt.Add(weatherRefreshInterval); next.After(c.Now()) {
 					info.refreshAt = next
 				}
@@ -130,6 +142,7 @@ func (a *island) updateIdleWeather(c *ui.Context) {
 				}
 				if w, until, ok := weatherFromCache(info.cache, now); ok {
 					info.weather, info.forecastUntil = w, until
+					a.maybeTriggerRainAlert(now)
 				}
 				info.refreshAt = now.Add(weatherRefreshInterval)
 			} else if info.weather.condition == "" {
@@ -141,15 +154,10 @@ func (a *island) updateIdleWeather(c *ui.Context) {
 	}()
 }
 
-func (a *island) idleCapsule(c *ui.Context, opacity float32) {
+func (a *island) idleCapsule(c *ui.Context, opacity, translateY float32) {
 	items := a.settings.idleItems()
 	now := c.Now()
-	rainReminder := a.idle.showsTomorrowRain(now)
-	base, batteries := a.idleCapsuleMetrics(items, rainReminder)
-	if rainReminder && a.shownFrame.width < float32(base) {
-		rainReminder = false
-		base, batteries = a.idleCapsuleMetrics(items, false)
-	}
+	base, batteries := a.idleCapsuleMetrics(items)
 	targetWidth := max(compactHeight, base+batteries*idleBatteryStep)
 	minimumWidth := max(compactHeight, base)
 	available := min(float32(targetWidth), max(float32(minimumWidth), a.shownFrame.width))
@@ -160,7 +168,7 @@ func (a *island) idleCapsule(c *ui.Context, opacity float32) {
 	left := max(0, (a.shownFrame.width-available)/2) + available - width
 	x := left + (width-contentWidth)/2 + idleCapsulePadding
 	ui.Row(c.Key("idle-status")).Absolute().Left(left).Top(0).Size(width, idleCapsuleHeight).
-		Opacity(opacity).IgnoreInput(true).AlignItems(ui.Center).Justify(ui.Center).Gap(idleCapsuleGap).
+		Opacity(opacity).Translate(0, translateY).IgnoreInput(true).AlignItems(ui.Center).Justify(ui.Center).Gap(idleCapsuleGap).
 		FontSize(13).FontWeight(600).FontFeatures("tnum").TextColor(c.Theme().Text).Padding(0, idleCapsulePadding).
 		Children(func() {
 			for _, item := range items {
@@ -177,20 +185,10 @@ func (a *island) idleCapsule(c *ui.Context, opacity float32) {
 					if weather.condition == "" {
 						continue
 					}
-					if rainReminder {
-						itemWidth += idleRainReminderWidth
-					}
-					if now.Before(a.idle.forecastUntil) && len(weather.rainDates) > 0 {
-						midnight := time.Date(now.Year(), now.Month(), now.Day()+1, 0, 0, 0, 0, now.Location())
-						c.After(min(midnight.Sub(now), a.idle.forecastUntil.Sub(now)))
-					}
 					ui.Row(c.Key(item.ID)).Width(float32(itemWidth)).Shrink(0).AlignItems(ui.Center).Justify(ui.Center).Gap(3).Children(func() {
 						ui.Icon(c.Key("condition"), weather.icon).Size(14, 14).Shrink(0).TextColor(c.Theme().Text).
 							Role(ui.RoleImage).Label(weather.condition)
 						ui.Text(c.Key("temperature"), fmt.Sprintf("%d°C", weather.temperature)).Shrink(0).SingleLine()
-						if rainReminder {
-							ui.Text(c.Key("rain-reminder"), "明日有雨").Width(idleRainReminderWidth).Shrink(0).TextAlign(ui.Center).SingleLine()
-						}
 					})
 				case idleItemBattery:
 					if batteries > 0 {
