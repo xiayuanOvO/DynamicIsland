@@ -50,13 +50,87 @@ func (a *island) clipboardWindowBlurred() {
 	}
 }
 
+func (a *island) registerToggleShortcut(keys string) error {
+	err := mygo.GlobalShortcut.RegisterWith(keys, mygo.GlobalShortcutOptions{Description: "展开 / 收起灵动岛"}, func() {
+		if a.settingsWindow != nil && a.settingsWindow.IsFocused() {
+			if a.editingHotkey {
+				a.editingHotkey, a.hotkeyProblem = false, ""
+				a.settingsWindow.Invalidate()
+				return
+			}
+			if a.clipboard.editingShortcut {
+				a.clipboard.shortcutProblem = "快捷键已被灵动岛使用"
+				a.settingsWindow.Invalidate()
+				return
+			}
+		}
+		a.toggle()
+	})
+	if err != nil {
+		log.Printf("global shortcut: %v", err)
+	}
+	return err
+}
+
+func (a *island) changeToggleShortcut(keys string) bool {
+	previous := a.settings.toggleHotkey()
+	bind := a.win != nil
+	if keys == previous && (!bind || keys == a.registeredHotkey) {
+		a.hotkeyFailed = false
+		return true
+	}
+	if bind {
+		if err := a.registerToggleShortcut(keys); err != nil {
+			a.hotkeyProblem = "无法注册此快捷键"
+			return false
+		}
+	}
+	if keys != previous {
+		next := a.settings
+		next.ToggleShortcut = keys
+		if err := next.save(a.settingsPath()); err != nil {
+			if bind {
+				mygo.GlobalShortcut.Unregister(keys)
+			}
+			log.Printf("save toggle shortcut: %v", err)
+			a.hotkeyProblem = "快捷键保存失败"
+			return false
+		}
+		a.settings = next
+		a.settingsSaveFailed = false
+	}
+	if bind {
+		if a.registeredHotkey != "" {
+			mygo.GlobalShortcut.Unregister(a.registeredHotkey)
+		}
+		a.registeredHotkey = keys
+	}
+	a.hotkeyFailed = false
+	return true
+}
+
+func (a *island) toggleShortcutSettings(c *ui.Context) {
+	fallback := ""
+	if a.hotkeyFailed {
+		fallback = "快捷键被占用"
+	}
+	shortcutSettingsRow(c, "hotkey-settings", "展开 / 收起快捷键", "edit-toggle-shortcut", "修改展开 / 收起快捷键",
+		a.settings.toggleHotkey(), fallback, &a.editingHotkey, &a.hotkeyProblem, a.changeToggleShortcut)
+}
+
 func (a *island) registerClipboardShortcut(keys string) error {
 	return mygo.GlobalShortcut.RegisterWith(keys, mygo.GlobalShortcutOptions{Description: "打开剪贴板历史"}, func() {
-		if a.clipboard.editingShortcut && a.settingsWindow != nil && a.settingsWindow.IsFocused() {
-			a.clipboard.editingShortcut = false
-			a.clipboard.shortcutProblem = ""
-			a.settingsWindow.Invalidate()
-			return
+		if a.settingsWindow != nil && a.settingsWindow.IsFocused() {
+			if a.clipboard.editingShortcut {
+				a.clipboard.editingShortcut, a.clipboard.shortcutProblem = false, ""
+				a.settingsWindow.Invalidate()
+				return
+			}
+			if a.editingHotkey {
+				a.hotkeyProblem = "快捷键已被灵动岛使用"
+				a.settingsWindow.Invalidate()
+				return
+			}
 		}
 		a.openClipboard(true)
 	})
@@ -105,39 +179,48 @@ func (a *island) changeClipboardShortcut(keys string) bool {
 
 func (a *island) clipboardShortcutSettings(c *ui.Context) {
 	history := &a.clipboard
-	settingsRow(c.Key("clipboard-shortcut")).Children(func() {
+	fallback := ""
+	if history.Recording && a.win != nil && history.registeredShortcut == "" {
+		fallback = "剪贴板快捷键不可用"
+	}
+	shortcutSettingsRow(c, "clipboard-shortcut", "快捷键", "edit-shortcut", "修改剪贴板快捷键",
+		history.hotkey(), fallback, &history.editingShortcut, &history.shortcutProblem, a.changeClipboardShortcut)
+}
+
+func shortcutSettingsRow(c *ui.Context, rowKey, title, buttonKey, ariaPrefix, currentKeys, fallbackProblem string, editing *bool, problem *string, apply func(string) bool) {
+	settingsRow(c.Key(rowKey)).Children(func() {
 		ui.Column(c).Grow(1).MinWidth(0).Gap(1).Children(func() {
-			ui.Text(c, "快捷键").FontSize(13).TextColor(c.Theme().Text)
-			problem := history.shortcutProblem
-			if problem == "" && history.Recording && a.win != nil && history.registeredShortcut == "" {
-				problem = "剪贴板快捷键不可用"
+			ui.Text(c, title).FontSize(13).TextColor(c.Theme().Text)
+			msg := *problem
+			if msg == "" {
+				msg = fallbackProblem
 			}
-			if problem != "" {
-				ui.Text(c, problem).FontSize(11).TextColor(colorsFor(c.Theme().Dark).problem)
+			if msg != "" {
+				ui.Text(c, msg).FontSize(11).TextColor(colorsFor(c.Theme().Dark).problem)
 			}
 		})
-		label := formatHotkey(history.hotkey())
-		if history.editingShortcut {
+		label := formatHotkey(currentKeys)
+		if *editing {
 			label = "按下快捷键…"
 		}
-		button := ui.Button(c.Key("edit-shortcut"), label).Height(36).FontSize(12).
-			Label("修改剪贴板快捷键 " + label)
+		button := ui.Button(c.Key(buttonKey), label).Height(36).FontSize(12).
+			Label(ariaPrefix + " " + label)
 		if button.FocusLeft() {
-			history.editingShortcut, history.shortcutProblem = false, ""
+			*editing, *problem = false, ""
 		}
 		if button.Clicked() {
-			history.editingShortcut, history.shortcutProblem = true, ""
+			*editing, *problem = true, ""
 			button.Focus()
 		}
 		button.HandleInput(func(event ui.InputEvent) bool {
-			if !history.editingShortcut || event.Kind != ui.InputKeyDown {
+			if !*editing || event.Kind != ui.InputKeyDown {
 				return false
 			}
 			if event.Key == ui.KeyTab && event.Mods&(ui.Ctrl|ui.Alt|ui.Super) == 0 {
 				return false
 			}
 			if event.Key == ui.KeyEscape && event.Mods == 0 {
-				history.editingShortcut, history.shortcutProblem = false, ""
+				*editing, *problem = false, ""
 				return true
 			}
 			if event.Repeat || (event.Key == ui.KeyUnknown && event.PhysicalKey == ui.KeyUnknown) {
@@ -145,9 +228,9 @@ func (a *island) clipboardShortcutSettings(c *ui.Context) {
 			}
 			keys := clipboardShortcutFromKey(event)
 			if keys == "" {
-				history.shortcutProblem = "请使用组合键或功能键"
-			} else if a.changeClipboardShortcut(keys) {
-				history.editingShortcut, history.shortcutProblem = false, ""
+				*problem = "请使用组合键或功能键"
+			} else if apply(keys) {
+				*editing, *problem = false, ""
 			}
 			return true
 		})

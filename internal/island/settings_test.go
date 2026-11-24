@@ -505,3 +505,36 @@ func TestGlobalHotkeyConflictShowsInAppSettingsNotPanel(t *testing.T) {
 		t.Fatalf("app settings should hide conflict text when hotkey is available: %v", settings.Texts())
 	}
 }
+
+func TestToggleShortcutCanBeRecordedAndSavedFromSettings(t *testing.T) {
+	a := island{
+		statePath:    filepath.Join(t.TempDir(), "shelf.json"),
+		hotkeyFailed: true,
+		settingsPage: settingsPageApp,
+	}
+	view := ui.NewTester(a.settingsView, settingsWidth, settingsHeight)
+	defaultLabel := formatHotkey(hotkey)
+	newLabel := formatHotkey("Ctrl+Shift+Space")
+	if err := view.Click("修改展开 / 收起快捷键 " + defaultLabel); err != nil {
+		t.Fatal(err)
+	}
+	view.Key(0, ui.KeySpace)
+	if a.settings.toggleHotkey() != hotkey || !view.HasText("请使用组合键或功能键") {
+		t.Fatal("bare typing keys should leave the current toggle shortcut intact")
+	}
+	view.Key(ui.Ctrl|ui.Shift, ui.KeySpace)
+	if a.editingHotkey || a.hotkeyFailed || a.settings.toggleHotkey() != "Ctrl+Shift+Space" || !view.HasText(newLabel) || view.HasText("快捷键被占用") {
+		t.Fatalf("recording a combination should update the button, clear conflict state, and finish editing: %v", view.Texts())
+	}
+	saved, err := loadSettings(a.settingsPath())
+	if err != nil || saved.toggleHotkey() != "Ctrl+Shift+Space" {
+		t.Fatalf("the customized toggle shortcut should persist across restarts: %+v, %v", saved, err)
+	}
+	if err := view.Click("修改展开 / 收起快捷键 " + newLabel); err != nil {
+		t.Fatal(err)
+	}
+	view.Key(0, ui.KeyEscape)
+	if a.editingHotkey || a.settings.toggleHotkey() != "Ctrl+Shift+Space" {
+		t.Fatal("Escape should cancel the toggle shortcut edit")
+	}
+}

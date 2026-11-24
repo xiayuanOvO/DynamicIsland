@@ -78,6 +78,9 @@ func (a *island) settingsView(c *ui.Context) {
 		if a.settingsPage != settingsPageClipboard {
 			a.clipboard.editingShortcut, a.clipboard.shortcutProblem = false, ""
 		}
+		if a.settingsPage != settingsPageApp {
+			a.editingHotkey, a.hotkeyProblem = false, ""
+		}
 		ui.Box(c).Width(1).Shrink(0).FillHeight().Background(c.Theme().Border)
 		ui.Column(c.Key("settings-content")).Grow(1).FillHeight().MinWidth(0).Children(func() {
 			for _, page := range settingsPages {
@@ -131,15 +134,7 @@ func (a *island) settingsView(c *ui.Context) {
 							})
 							settingsDivider(c)
 						}
-						settingsRow(c.Key("hotkey-settings")).Children(func() {
-							ui.Column(c).Grow(1).MinWidth(0).Gap(1).Children(func() {
-								ui.Text(c, "展开 / 收起快捷键").FontSize(13).TextColor(c.Theme().Text)
-								if a.hotkeyFailed {
-									ui.Text(c, "快捷键被占用").FontSize(11).TextColor(colorsFor(c.Theme().Dark).problem)
-								}
-							})
-							ui.Text(c, formatHotkey(hotkey)).FontSize(12).TextColor(c.Theme().TextMuted)
-						})
+						a.toggleShortcutSettings(c)
 						settingsDivider(c)
 						settingsRow(c.Key("update-settings")).Children(func() {
 							ui.Column(c).Grow(1).Gap(1).Children(func() {

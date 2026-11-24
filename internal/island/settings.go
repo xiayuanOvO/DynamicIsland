@@ -39,6 +39,14 @@ type appSettings struct {
 	IdleItems        idleItemSettings `json:"idleItems,omitzero"`
 	MediaCardStyle   int              `json:"mediaCardStyle,omitempty"`
 	HideInFullscreen bool             `json:"hideInFullscreen"`
+	ToggleShortcut   string           `json:"toggleShortcut,omitempty"`
+}
+
+func (s appSettings) toggleHotkey() string {
+	if s.ToggleShortcut != "" {
+		return s.ToggleShortcut
+	}
+	return hotkey
 }
 
 func (s appSettings) waveColor(artwork ui.Color) ui.Color {
@@ -152,6 +160,7 @@ func (a *island) openSettings() {
 			a.citySearch = weatherCitySearch{}
 			a.idleSettingsList = ui.ListState{}
 			a.clipboard.editingShortcut, a.clipboard.shortcutProblem = false, ""
+			a.editingHotkey, a.hotkeyProblem = false, ""
 			if a.updates.phase == updateLatest {
 				a.updates.phase = updateIdle
 			}

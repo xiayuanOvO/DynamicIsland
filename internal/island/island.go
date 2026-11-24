@@ -51,6 +51,9 @@ type island struct {
 	choosing              bool
 	leaveSince            time.Time
 	hotkeyFailed          bool
+	registeredHotkey      string
+	editingHotkey         bool
+	hotkeyProblem         string
 	centerX               int
 	top                   int
 	dock                  edgeDock
@@ -125,19 +128,13 @@ func (a *island) start() {
 			a.tray.Destroy()
 		}
 	})
-	if err := mygo.GlobalShortcut.Register(hotkey, func() {
-		if a.clipboard.editingShortcut && a.settingsWindow != nil && a.settingsWindow.IsFocused() {
-			a.clipboard.shortcutProblem = "快捷键已被灵动岛使用"
-			a.settingsWindow.Invalidate()
-			return
-		}
-		a.toggle()
-	}); err != nil {
-		log.Printf("global shortcut: %v", err)
+	if keys := a.settings.toggleHotkey(); a.registerToggleShortcut(keys) != nil {
 		a.hotkeyFailed = true
 		if a.settingsWindow != nil {
 			a.settingsWindow.Invalidate()
 		}
+	} else {
+		a.registeredHotkey = keys
 	}
 	a.createTray()
 	a.syncClipboardRecording()
