@@ -30,3 +30,5 @@ func Read(context.Context) Snapshot {
 		Charging: status.flags != unknownStatus && status.flags&charging != 0,
 	}}}
 }
+
+func ReadIncremental(ctx context.Context, _ func(Snapshot)) Snapshot { return Read(ctx) }

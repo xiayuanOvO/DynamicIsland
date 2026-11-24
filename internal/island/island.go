@@ -159,6 +159,7 @@ func (a *island) start() {
 	a.watchClipboardExpiry()
 	a.watchTodoReminders()
 	a.watchFullscreen()
+	a.refreshBattery()
 	if !a.hiddenForFullscreen {
 		a.win.ShowInactive()
 	}
