@@ -16,6 +16,7 @@ const clipboardPanelHeight = 284
 var (
 	clearClipboardIcon = svg(`<path d="M4 6h16M4 12h9M4 18h9m3-5 5 5m0-5-5 5"/>`)
 	pinIcon            = svg(`<path d="M12 17v5M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"/>`)
+	pinnedIcon         = svg(`<path d="M12 17v5"/><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z" fill="currentColor"/>`)
 )
 
 func (a *island) openClipboard(fromShortcut bool) {
@@ -298,13 +299,13 @@ func (a *island) clipboardRow(c *ui.Context, entry clipboardEntry, selected bool
 				a.useClipboardEntry(c, entry, false, write)
 			}
 		}
-		pinTooltip, pinAction := "置顶", "置顶记录 "
+		pinTooltip, pinAction, icon := "置顶", "置顶记录 ", pinIcon
 		if entry.Pinned {
-			pinTooltip, pinAction = "取消置顶", "取消置顶记录 "
+			pinTooltip, pinAction, icon = "取消置顶", "取消置顶记录 ", pinnedIcon
 		}
-		pin := iconButton(c.Key("pin"), pinIcon, pinTooltip).Size(34, 34).Label(pinAction + label)
+		pin := iconButton(c.Key("pin"), icon, pinTooltip).Size(34, 34).Label(pinAction + label)
 		if entry.Pinned {
-			pin.TextColor(c.Theme().Accent)
+			pin.TextColor(c.Theme().Accent).Background(c.Theme().Accent.Alpha(0.16))
 		}
 		if pin.Clicked() {
 			if err := history.store.setPinned(entry.ID, !entry.Pinned); err != nil {
