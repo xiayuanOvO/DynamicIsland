@@ -3,6 +3,8 @@ package island
 import (
 	"fmt"
 	"math"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -188,5 +190,49 @@ func TestPanelOpeningKeepsMediaCardGeometry(t *testing.T) {
 		if !view.HasText("示例记录") || view.HasText("示例曲目") {
 			t.Fatalf("style %d: the music card should finish fading out as the history appears", style)
 		}
+	}
+}
+
+func TestTodoRepeatReschedulesOnCompletionAndFormatsLabel(t *testing.T) {
+	// Friday -> next weekday should jump to Monday.
+	fri := time.Date(2026, time.November, 20, 18, 0, 0, 0, time.Local)
+	nextMon := nextTodoDue(fri, todoRepeatWeekdays, fri)
+	if nextMon.Weekday() != time.Monday || nextMon.Day() != 23 || nextMon.Hour() != 18 {
+		t.Fatalf("weekdays repeat from Friday should land on Monday 18:00, got %v", nextMon)
+	}
+	nextDay := nextTodoDue(fri, todoRepeatDaily, fri)
+	if nextDay.Day() != 21 {
+		t.Fatalf("daily repeat should add 1 day, got %v", nextDay)
+	}
+	nextWeek := nextTodoDue(fri, todoRepeatWeekly, fri)
+	if nextWeek.Day() != 27 {
+		t.Fatalf("weekly repeat should add 7 days, got %v", nextWeek)
+	}
+
+	a := island{statePath: filepath.Join(t.TempDir(), "shelf.json")}
+	due := time.Now().Add(time.Hour).Truncate(time.Minute)
+	item := todoItem{ID: "drink", Title: "喝水", Due: due, LeadMinutes: 15, Repeat: todoRepeatDaily, Notified: true}
+	if !a.changeTodo(item, false) {
+		t.Fatal("failed to save repeating todo")
+	}
+	if label := a.todos.items[0].deadlineLabel(time.Now()); !strings.Contains(label, "每天") {
+		t.Fatalf("repeating todo deadline label should include repeat text, got %q", label)
+	}
+
+	// Marking a repeating todo done should reschedule it, keep it undone, and reset Notified.
+	completed := a.todos.items[0]
+	completed.Done = true
+	if !a.changeTodo(completed, false) {
+		t.Fatal("failed to complete repeating todo")
+	}
+	got := a.todos.items[0]
+	if got.Done || got.Notified || !got.Due.After(due) {
+		t.Fatalf("completing repeating todo should reschedule and re-arm reminder: %+v", got)
+	}
+
+	reloaded := island{statePath: a.statePath}
+	reloaded.loadTodos()
+	if reloaded.todos.loadFailed || len(reloaded.todos.items) != 1 || reloaded.todos.items[0].Repeat != todoRepeatDaily {
+		t.Fatalf("repeat setting should survive reload: %+v", reloaded.todos.items)
 	}
 }

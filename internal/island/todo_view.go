@@ -22,10 +22,13 @@ const (
 	todoEditorRow        = 30
 	todoEditorStatus     = 16
 	todoEditorHeight     = todoEditorTitle + todoEditorName + 2*todoEditorRow + 3*todoEditorGap
-	todoEditorSchedule   = 2*todoEditorRow + 2*todoEditorGap
+	todoEditorSchedule   = 3*todoEditorRow + 3*todoEditorGap
 )
 
-var todoReminderLabels = []string{"不提醒", "准时提醒", "提前 5 分钟", "提前 15 分钟", "提前 30 分钟", "提前 1 小时"}
+var (
+	todoReminderLabels = []string{"不提醒", "准时提醒", "提前 5 分钟", "提前 15 分钟", "提前 30 分钟", "提前 1 小时"}
+	todoRepeatLabels   = []string{"不重复", "每天", "工作日", "每周"}
+)
 
 type todoDraft struct {
 	item      todoItem
@@ -41,6 +44,9 @@ func (item todoItem) deadlineLabel(now time.Time) string {
 		format = "今天 15:04"
 	}
 	text := due.Format(format)
+	if idx := slices.Index(todoRepeatValues, item.Repeat); idx > 0 {
+		text += " · " + todoRepeatLabels[idx]
+	}
 	if !item.Done && due.Before(now) {
 		text = "已逾期 · " + text
 	}
@@ -282,6 +288,14 @@ func (a *island) todoEditor(c *ui.Context, d *todoDraft, schedule float32) {
 							d.item.LeadMinutes = todoLeadMinutes[slices.Index(todoReminderLabels, label)]
 						}
 					})
+					ui.Row(c).FillWidth().Height(todoEditorRow).Shrink(0).AlignItems(ui.Center).Children(func() {
+						ui.Text(c, "重复").Grow(1).FontSize(13).TextColor(c.Theme().Text)
+						idx := max(0, slices.Index(todoRepeatValues, d.item.Repeat))
+						repeatLabel := todoRepeatLabels[idx]
+						if ui.Select(c.Key("repeat"), &repeatLabel, todoRepeatLabels).Width(148).Height(30).Label("重复周期").Changed() {
+							d.item.Repeat = todoRepeatValues[slices.Index(todoRepeatLabels, repeatLabel)]
+						}
+					})
 				})
 			})
 		}
@@ -302,7 +316,7 @@ func (a *island) todoEditor(c *ui.Context, d *todoDraft, schedule float32) {
 				item.ID = rand.Text()
 			}
 			if !d.scheduled {
-				item.Due, item.LeadMinutes = time.Time{}, noTodoReminder
+				item.Due, item.LeadMinutes, item.Repeat = time.Time{}, noTodoReminder, todoRepeatNone
 			}
 			if a.changeTodo(item, false) {
 				a.todos.closeEditor()
