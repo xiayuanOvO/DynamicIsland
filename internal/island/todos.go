@@ -153,9 +153,11 @@ func (a *island) checkTodoReminders(now time.Time, deliver func(context.Context,
 				// Retry on an edit or restart without repeatedly requesting permission.
 				log.Printf("notify todo: %v", err)
 				t.problem = "系统通知未送达 · " + item.Title
-				a.message(t.problem, true)
-				if a.win != nil && a.win.IsVisible() {
-					a.setExpanded(true)
+				if a.win != nil {
+					a.win.Invalidate()
+					if a.win.IsVisible() {
+						a.setExpanded(true)
+					}
 				}
 			} else {
 				delete(t.delivering, item.ID)
@@ -169,7 +171,9 @@ func (a *island) checkTodoReminders(now time.Time, deliver func(context.Context,
 				if err := saveJSON(a.todosPath(), t.items); err != nil {
 					log.Printf("save todo reminder: %v", err)
 					t.problem = "提醒记录保存失败"
-					a.message(t.problem, true)
+					if a.win != nil {
+						a.win.Invalidate()
+					}
 				}
 			}
 		})

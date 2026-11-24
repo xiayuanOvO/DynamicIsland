@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"image"
+	"log"
 	"time"
 
 	"dynamicisland/internal/audiolevel"
@@ -162,7 +163,7 @@ func (a *island) requestMedia(command nowplaying.Command) {
 				}
 			}
 			if controlErr != nil {
-				a.message("无法控制播放", true)
+				log.Printf("media control: %v", controlErr)
 			}
 			if pending := m.pending; pending.Action != "" {
 				m.pending = nowplaying.Command{}

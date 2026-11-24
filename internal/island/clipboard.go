@@ -239,6 +239,9 @@ func (a *island) syncClipboardRecording() {
 			keys := history.hotkey()
 			if err := a.registerClipboardShortcut(keys); err != nil {
 				log.Printf("clipboard shortcut: %v", err)
+				if a.settingsWindow != nil {
+					a.settingsWindow.Invalidate()
+				}
 			} else {
 				history.registeredShortcut = keys
 			}

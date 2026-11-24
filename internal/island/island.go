@@ -1,11 +1,9 @@
 package island
 
 import (
-	"fmt"
 	"log"
 	"os"
 	"runtime"
-	"strings"
 	"time"
 
 	"dynamicisland/internal/nowplaying"
@@ -52,8 +50,7 @@ type island struct {
 	busy                  int
 	choosing              bool
 	leaveSince            time.Time
-	status                string
-	statusError           bool
+	hotkeyFailed          bool
 	centerX               int
 	top                   int
 	dock                  edgeDock
@@ -137,7 +134,10 @@ func (a *island) start() {
 		a.toggle()
 	}); err != nil {
 		log.Printf("global shortcut: %v", err)
-		a.message("快捷键被占用", true)
+		a.hotkeyFailed = true
+		if a.settingsWindow != nil {
+			a.settingsWindow.Invalidate()
+		}
 	}
 	a.createTray()
 	a.syncClipboardRecording()
@@ -175,7 +175,6 @@ func (a *island) createTray() {
 	})
 	if err != nil {
 		log.Printf("tray: %v", err)
-		a.message("托盘创建失败", true)
 		return
 	}
 	a.tray = tray
@@ -190,14 +189,12 @@ func (a *island) overviewHeights() (height, gridHeight int) {
 	hasFiles := len(a.files.Items) > 0
 	height = panelHeaderHeight + 20
 	if hasFiles {
-		height += 143
+		height += 109
 		rows := min((len(a.files.Items)+cardColumns-1)/cardColumns, maxCardRows)
 		gridHeight = rows*cardHeight + max(rows-1, 0)*cardGap + 8
-	} else if a.status != "" {
-		height += 20
 	}
 	height += a.overviewLeadHeight() + a.todos.previewHeight()
-	if hasFiles || a.status != "" {
+	if hasFiles {
 		height += 14
 	}
 	if a.dock.side != dockNone {
@@ -355,17 +352,9 @@ func (a *island) applyWindowFrame(frame islandFrame, animated bool) {
 	}
 }
 
-func (a *island) message(message string, failed bool) {
-	a.status, a.statusError = message, failed
-	if a.win != nil {
-		a.win.Invalidate()
-	}
-}
-
 func (a *island) save() {
 	if err := a.files.Save(a.statePath); err != nil {
 		log.Printf("save shelf: %v", err)
-		a.message("列表保存失败", true)
 	}
 }
 
@@ -374,27 +363,14 @@ func (a *island) addFiles(paths []string) {
 		return
 	}
 	a.busy++
-	a.message("加载中…", false)
 	go func() {
-		items, rejected := shelf.Inspect(paths)
+		items, _ := shelf.Inspect(paths)
 		a.win.Update(func() {
 			a.busy--
 			report := a.files.Add(items)
 			for _, item := range items {
 				delete(a.previews, shelf.Key(item.Path))
 			}
-			report.Rejected = rejected
-			parts := make([]string, 0, 3)
-			if report.Added > 0 {
-				parts = append(parts, fmt.Sprintf("已暂存 %d 项", report.Added))
-			}
-			if report.Duplicates > 0 {
-				parts = append(parts, fmt.Sprintf("%d 项已存在", report.Duplicates))
-			}
-			if rejected > 0 {
-				parts = append(parts, fmt.Sprintf("%d 项不可访问", rejected))
-			}
-			a.message(strings.Join(parts, " · "), rejected > 0)
 			if report.Added > 0 {
 				a.save()
 			}
@@ -416,7 +392,6 @@ func (a *island) choose(directory bool) {
 			a.choosing = false
 			a.leaveSince = time.Now()
 			if err != nil {
-				a.message("打开文件选择器失败", true)
 				log.Printf("file dialog: %v", err)
 				return
 			}
@@ -447,13 +422,10 @@ func (a *island) outgoingPaths(path string) []string {
 }
 
 func (a *island) dragData(path string) transfer.Data {
-	paths, missing := available(a.outgoingPaths(path))
-	if missing > 0 {
-		a.message(fmt.Sprintf("%d 项不可访问", missing), true)
-	}
+	paths, _ := available(a.outgoingPaths(path))
 	data, err := transfer.FileData(paths...)
 	if err != nil {
-		a.message("拖放数据创建失败", true)
+		log.Printf("file drag data: %v", err)
 		return transfer.Data{}
 	}
 	a.dragging = len(paths) > 0
@@ -467,14 +439,8 @@ func (a *island) dragDone(result transfer.Result) {
 	a.dragging = false
 	a.leaveSince = time.Now()
 	a.animation.resume(a.leaveSince)
-	switch {
-	case result.Err != nil:
+	if result.Err != nil {
 		log.Printf("file drag: %v", result.Err)
-		a.message("拖放失败", true)
-	case result.Canceled:
-		a.message("拖放已取消", false)
-	case result.Operation == transfer.Copy:
-		a.message("拖放完成", false)
 	}
 	a.win.Invalidate()
 }
@@ -490,23 +456,17 @@ func available(paths []string) ([]string, int) {
 }
 
 func (a *island) copyFiles(paths []string) {
-	paths, missing := available(paths)
+	paths, _ = available(paths)
 	if len(paths) == 0 {
-		a.message("文件不可访问", true)
 		return
 	}
 	if err := mygo.Clipboard.WriteFiles(paths...); err != nil {
-		a.message("复制失败", true)
+		log.Printf("copy files: %v", err)
 		return
 	}
 	if err := mygo.Clipboard.Flush(); err != nil {
 		log.Printf("flush clipboard: %v", err)
 	}
-	message := fmt.Sprintf("已复制 %d 项", len(paths))
-	if missing > 0 {
-		message += fmt.Sprintf("（跳过 %d 项）", missing)
-	}
-	a.message(message, false)
 }
 
 func (a *island) removeFiles(paths []string) {
@@ -518,6 +478,8 @@ func (a *island) removeFiles(paths []string) {
 		delete(a.selected, shelf.Key(path))
 		delete(a.previews, shelf.Key(path))
 	}
-	a.message(fmt.Sprintf("已移除 %d 项", len(paths)), false)
 	a.save()
+	if a.win != nil {
+		a.win.Invalidate()
+	}
 }
