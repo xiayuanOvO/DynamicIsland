@@ -113,9 +113,10 @@ func (a *island) capsuleAlertView(c *ui.Context, opacity, progress float32, exit
 			frameColor := c.Theme().Text.Alpha(0.78)
 			ui.Row(c.Key("alert-low-battery")).Size(contentWidth, idleCapsuleHeight).Shrink(0).
 				Gap(7).AlignItems(ui.Center).Justify(ui.Center).Children(func() {
+				startedAt := a.alert.startedAt
 				ui.Box(c.Key("battery-anim-icon")).Size(24, 16).Shrink(0).Label("低电量动画").
 					Draw(func(p *ui.Painter, r ui.Rect) {
-						paintDepletingBatteryIcon(p, r, now, lowColor, frameColor)
+						paintDepletingBatteryIcon(p, r, now.Sub(startedAt), lowColor, frameColor)
 					})
 				ui.Text(c.Key("low-battery-name"), batteryDeviceName(alert)).Grow(1).MinWidth(0).
 					SingleLine().Ellipsis("…").FontSize(12).FontWeight(600).TextColor(c.Theme().Text)
@@ -161,12 +162,14 @@ func paintAnimatedRainIcon(p *ui.Painter, r ui.Rect, now time.Time, cloudColor, 
 	}
 }
 
-func paintDepletingBatteryIcon(p *ui.Painter, r ui.Rect, now time.Time, lowColor, frameColor ui.Color) {
-	const cycleMs = 1400.0
-	phase := float64(now.UnixMilli()%int64(cycleMs)) / cycleMs
+func paintDepletingBatteryIcon(p *ui.Painter, r ui.Rect, elapsed time.Duration, lowColor, frameColor ui.Color) {
+	const (
+		drainEnd = 900 * time.Millisecond
+		blinkEnd = 2100 * time.Millisecond
+	)
 	if p.Preferences().ReduceMotion {
-		phase = 0.55
-	} else {
+		elapsed = blinkEnd
+	} else if elapsed < blinkEnd {
 		p.AnimationFrame()
 	}
 
@@ -175,25 +178,19 @@ func paintDepletingBatteryIcon(p *ui.Painter, r ui.Rect, now time.Time, lowColor
 	body := ui.Rect{X: r.X, Y: r.Y + 1, W: bodyW, H: bodyH}
 	capRect := ui.Rect{X: body.X + body.W + 1.2, Y: body.Y + body.H*0.30, W: 2.0, H: body.H * 0.40}
 
-	// Drain from 42% down to 8%, then pulse urgently at empty.
-	var fillFrac float32
+	// Drain once from 50% down to 8%, pulse twice at empty, then stay empty without refilling.
+	var fillFrac float32 = 0.08
 	var fillAlpha float32 = 1
-	borderColor := frameColor
-	if phase < 0.55 {
-		t := float32(phase / 0.55)
-		fillFrac = 0.42*(1-t) + 0.08*t
-		borderColor = frameColor.Mix(lowColor, 0.35+0.45*t)
-	} else if phase < 0.88 {
-		t := (phase - 0.55) / 0.33
-		pulse := float32(0.35 + 0.65*math.Abs(math.Sin(t*math.Pi*2)))
-		fillFrac = 0.08
+	borderColor := frameColor.Mix(lowColor, 0.85)
+	if elapsed < drainEnd {
+		t := ui.EaseOut(max(0, float32(elapsed)/float32(drainEnd)))
+		fillFrac = 0.50*(1-t) + 0.08*t
+		borderColor = frameColor.Mix(lowColor, 0.30+0.55*t)
+	} else if elapsed < blinkEnd {
+		t := float64(elapsed-drainEnd) / float64(blinkEnd-drainEnd)
+		pulse := float32(0.25 + 0.75*math.Abs(math.Cos(t*math.Pi*2)))
 		fillAlpha = pulse
-		borderColor = frameColor.Mix(lowColor, 0.5+0.5*pulse)
-	} else {
-		t := float32((phase - 0.88) / 0.12)
-		fillFrac = 0.08 + 0.34*t
-		fillAlpha = 0.4 + 0.6*t
-		borderColor = frameColor.Mix(lowColor, 0.4)
+		borderColor = frameColor.Mix(lowColor, 0.45+0.55*pulse)
 	}
 
 	p.Stroke(body, borderColor, 3.2, 1.5)
