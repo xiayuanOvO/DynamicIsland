@@ -28,6 +28,7 @@ func Run(appIcon []byte) {
 		log.Fatal(err)
 	}
 	statePath := filepath.Join(config, "DynamicIsland", "shelf.json")
+	initAppLogging(statePath)
 	files, _, loadErr := shelf.Load(statePath)
 	a := &island{
 		files: files, statePath: statePath, selected: make(map[string]bool),

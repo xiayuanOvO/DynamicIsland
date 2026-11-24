@@ -36,6 +36,7 @@ type appSettings struct {
 	LyricTransition  int              `json:"lyricTransition,omitempty"`
 	LyricStyle       lyricStyle       `json:"lyricStyle,omitzero"`
 	WeatherCity      weatherCity      `json:"weatherCity,omitzero"`
+	WeatherSource    int              `json:"weatherSource,omitempty"`
 	IdleItems        idleItemSettings `json:"idleItems,omitzero"`
 	MediaCardStyle   int              `json:"mediaCardStyle,omitempty"`
 	HideInFullscreen bool             `json:"hideInFullscreen"`
@@ -93,6 +94,9 @@ func loadSettings(path string) (appSettings, error) {
 	}
 	if !settings.WeatherCity.valid() {
 		settings.WeatherCity = weatherCity{}
+	}
+	if settings.WeatherSource < weatherSourceOpenMeteo || settings.WeatherSource > weatherSourceWttr {
+		settings.WeatherSource = weatherSourceOpenMeteo
 	}
 	settings.IdleItems = settings.IdleItems.normalized()
 	if settings.MediaCardStyle != mediaCardLargeCover {
@@ -166,6 +170,7 @@ func (a *island) openSettings() {
 			a.clipboard.editingShortcut, a.clipboard.shortcutProblem = false, ""
 			a.editingHotkey, a.hotkeyProblem = false, ""
 			a.openAtLoginErr = ""
+			a.showLogs, a.logClearErr = false, ""
 			if a.updates.phase == updateLatest {
 				a.updates.phase = updateIdle
 			}

@@ -2,7 +2,11 @@ package island
 
 import (
 	"bytes"
+	"context"
 	"errors"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -595,5 +599,82 @@ func TestOpenAtLoginSwitchUpdatesStateAndReportsFailure(t *testing.T) {
 	view.Key(0, ui.KeySpace)
 	if a.openAtLogin || systemEnabled || !view.HasText("设置开机启动失败") {
 		t.Fatalf("a failed update should revert the switch and report the error: switch=%v system=%v texts=%v", a.openAtLogin, systemEnabled, view.Texts())
+	}
+}
+
+func TestWeatherCacheAndOpenMeteo14DayForecast(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, `{
+			"current":{"temperature_2m":21.6,"weather_code":0},
+			"daily":{
+				"time":["2026-11-24","2026-11-25"],
+				"weather_code":[0,61],
+				"temperature_2m_max":[22.1,18.4]
+			}
+		}`)
+	}))
+	t.Cleanup(server.Close)
+
+	cache, err := fetchOpenMeteoWeather(context.Background(), server.URL, 39.9, 116.4, "1:39.90000,116.40000")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cache.Current.Temperature != 22 || cache.Current.Condition != "晴" || len(cache.Days) != 2 || !cache.Days[1].Rain {
+		t.Fatalf("unexpected open-meteo cache: %+v", cache)
+	}
+	path := filepath.Join(t.TempDir(), "weather-cache.json")
+	if err := saveWeatherCache(path, cache); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := loadWeatherCache(path)
+	if err != nil || !weatherDataEqual(cache, loaded) {
+		t.Fatalf("weather cache should round-trip identically: %+v, %v", loaded, err)
+	}
+	// When current cache is older than 2 hours, weatherFromCache should fall back to matching day in Days.
+	nextDay := time.Date(2026, time.November, 25, 10, 0, 0, 0, time.Local)
+	loaded.UpdatedAt = nextDay.Add(-12 * time.Hour)
+	w, _, ok := weatherFromCache(loaded, nextDay)
+	if !ok || w.temperature != 18 || w.condition != "雨" {
+		t.Fatalf("expected fallback to cached daily forecast: %+v, ok=%v", w, ok)
+	}
+}
+
+func TestAppLogViewerAndClearInSettings(t *testing.T) {
+	prev := appLogs
+	appLogs = &appLogStore{}
+	t.Cleanup(func() { appLogs = prev })
+	appLogs.init(filepath.Join(t.TempDir(), "app.log"))
+	_, _ = appLogs.Write([]byte("2026/11/24 weather wttr.in failed: timeout\n"))
+
+	a := island{
+		statePath:    filepath.Join(t.TempDir(), "shelf.json"),
+		settingsPage: settingsPageApp,
+	}
+	view := ui.NewTester(a.settingsView, settingsWidth, settingsHeight)
+	if err := view.Click("查看日志"); err != nil {
+		t.Fatal(err)
+	}
+	if !a.showLogs || !view.HasText("2026/11/24 weather wttr.in failed: timeout") {
+		t.Fatalf("log viewer should display recorded log lines: %v", view.Texts())
+	}
+	if err := view.Click("清理日志"); err != nil {
+		t.Fatal(err)
+	}
+	if appLogs.count() != 0 || !view.HasText("暂无日志") {
+		t.Fatalf("clearing logs should empty the store and show empty state: count=%d texts=%v", appLogs.count(), view.Texts())
+	}
+}
+
+func TestSearchChinaCitiesFindsCounties(t *testing.T) {
+	results := searchChinaCities("平邑", 10)
+	if len(results) == 0 || results[0].Name != "平邑县" || results[0].Region != "临沂市 · 山东省 · 中国" || !results[0].valid() {
+		t.Fatalf("expected 平邑县 from offline China dataset, got %+v", results)
+	}
+	multi := searchChinaCities("山东 平邑", 10)
+	if len(multi) == 0 || multi[0].Name != "平邑县" {
+		t.Fatalf("expected multi-term query to find 平邑县, got %+v", multi)
+	}
+	if overseas := searchChinaCities("Tokyo", 10); len(overseas) != 0 {
+		t.Fatalf("overseas city should fall back to Open-Meteo, got %+v", overseas)
 	}
 }

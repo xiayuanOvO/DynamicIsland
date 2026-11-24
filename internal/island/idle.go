@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"slices"
 	"strconv"
@@ -33,6 +34,8 @@ const (
 
 type idleInfo struct {
 	weather       idleWeather
+	cache         weatherCache
+	cacheLoaded   bool
 	forecastUntil time.Time
 	refreshAt     time.Time
 	reading       bool
@@ -61,17 +64,23 @@ func (a *island) idleCapsuleWidth() int {
 
 func (a *island) idleCapsuleMetrics(items idleItemSettings, rainReminder bool) (baseWidth, batteries int) {
 	baseWidth = 2*idleCapsulePadding - idleCapsuleGap
+	hasWeather := a.idle.weather.condition != ""
 	for _, item := range items {
 		if item.Hidden {
 			continue
 		}
 		if item.ID == idleItemBattery {
 			batteries = len(a.battery.readings)
-		} else {
+		} else if item.ID == idleItemWeather {
+			if !hasWeather {
+				continue
+			}
 			baseWidth += idleItemSpecs[item.ID].width + idleCapsuleGap
-			if item.ID == idleItemWeather && rainReminder {
+			if rainReminder {
 				baseWidth += idleRainReminderWidth
 			}
+		} else {
+			baseWidth += idleItemSpecs[item.ID].width + idleCapsuleGap
 		}
 	}
 	return baseWidth, min(batteries, (panelWidth-baseWidth)/idleBatteryStep)
@@ -82,26 +91,51 @@ func (a *island) updateIdleWeather(c *ui.Context) {
 	if !a.showsIdleCapsule() || !a.settings.showsIdleItem(idleItemWeather) || !a.win.IsVisible() || info.reading {
 		return
 	}
+	if !info.cacheLoaded {
+		info.cacheLoaded = true
+		if cached, err := loadWeatherCache(a.weatherCachePath()); err == nil && cached.CityKey == a.settings.WeatherCity.cacheKey() {
+			info.cache = cached
+			if w, until, ok := weatherFromCache(cached, c.Now()); ok {
+				info.weather, info.forecastUntil = w, until
+				if next := cached.UpdatedAt.Add(weatherRefreshInterval); next.After(c.Now()) {
+					info.refreshAt = next
+				}
+			}
+		}
+	}
 	if delay := info.refreshAt.Sub(c.Now()); delay > 0 {
 		c.After(delay)
 		return
 	}
 	info.reading = true
 	city := a.settings.WeatherCity
+	source := a.settings.WeatherSource
+	cachePath := a.weatherCachePath()
 	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), weatherFetchTimeout)
 		defer cancel()
-		weather, err := fetchIdleWeather(ctx, city.weatherEndpoint())
+		remote, err := fetchWeatherWithFallback(ctx, source, city)
 		a.win.Update(func() {
 			info.reading = false
-			if city != a.settings.WeatherCity {
+			if city != a.settings.WeatherCity || source != a.settings.WeatherSource {
 				return
 			}
 			now := time.Now()
-			info.refreshAt = now.Add(5 * time.Minute)
 			if err == nil {
-				info.weather, info.forecastUntil = weather, now.Add(2*time.Hour)
-				info.refreshAt = now.Add(30 * time.Minute)
+				if !weatherDataEqual(info.cache, remote) {
+					info.cache = remote
+					if saveErr := saveWeatherCache(cachePath, remote); saveErr != nil {
+						log.Printf("save weather cache: %v", saveErr)
+					}
+				}
+				if w, until, ok := weatherFromCache(info.cache, now); ok {
+					info.weather, info.forecastUntil = w, until
+				}
+				info.refreshAt = now.Add(weatherRefreshInterval)
+			} else if info.weather.condition == "" {
+				info.refreshAt = now.Add(30 * time.Second)
+			} else {
+				info.refreshAt = now.Add(5 * time.Minute)
 			}
 		})
 	}()
@@ -140,6 +174,9 @@ func (a *island) idleCapsule(c *ui.Context, opacity float32) {
 					a.drawIdleFace(c, slot, opacity, x+idleFaceWidth/2-a.shownFrame.width/2)
 				case idleItemWeather:
 					weather := a.idle.weather
+					if weather.condition == "" {
+						continue
+					}
 					if rainReminder {
 						itemWidth += idleRainReminderWidth
 					}
@@ -148,11 +185,9 @@ func (a *island) idleCapsule(c *ui.Context, opacity float32) {
 						c.After(min(midnight.Sub(now), a.idle.forecastUntil.Sub(now)))
 					}
 					ui.Row(c.Key(item.ID)).Width(float32(itemWidth)).Shrink(0).AlignItems(ui.Center).Justify(ui.Center).Gap(3).Children(func() {
-						if weather.condition != "" {
-							ui.Icon(c.Key("condition"), weather.icon).Size(14, 14).Shrink(0).TextColor(c.Theme().Text).
-								Role(ui.RoleImage).Label(weather.condition)
-							ui.Text(c.Key("temperature"), fmt.Sprintf("%d°C", weather.temperature)).Shrink(0).SingleLine()
-						}
+						ui.Icon(c.Key("condition"), weather.icon).Size(14, 14).Shrink(0).TextColor(c.Theme().Text).
+							Role(ui.RoleImage).Label(weather.condition)
+						ui.Text(c.Key("temperature"), fmt.Sprintf("%d°C", weather.temperature)).Shrink(0).SingleLine()
 						if rainReminder {
 							ui.Text(c.Key("rain-reminder"), "明日有雨").Width(idleRainReminderWidth).Shrink(0).TextAlign(ui.Center).SingleLine()
 						}
@@ -177,17 +212,26 @@ func (a *island) idleCapsule(c *ui.Context, opacity float32) {
 }
 
 func fetchIdleWeather(ctx context.Context, endpoint string) (idleWeather, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	cache, err := fetchWttrWeatherCache(ctx, endpoint, "")
 	if err != nil {
 		return idleWeather{}, err
+	}
+	weather, _, _ := weatherFromCache(cache, time.Now())
+	return weather, nil
+}
+
+func fetchWttrWeatherCache(ctx context.Context, endpoint, cityKey string) (weatherCache, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return weatherCache{}, err
 	}
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return idleWeather{}, err
+		return weatherCache{}, err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return idleWeather{}, fmt.Errorf("weather HTTP %d", resp.StatusCode)
+		return weatherCache{}, fmt.Errorf("weather HTTP %d", resp.StatusCode)
 	}
 	type description struct{ Value string }
 	var payload struct {
@@ -199,17 +243,18 @@ func fetchIdleWeather(ctx context.Context, endpoint string) (idleWeather, error)
 			Description []description `json:"weatherDesc"`
 		} `json:"current_condition"`
 		Forecast []struct {
-			Date   string `json:"date"`
-			Hourly []struct {
+			Date    string `json:"date"`
+			AvgTemp string `json:"avgtempC"`
+			Hourly  []struct {
 				Code string `json:"weatherCode"`
 			} `json:"hourly"`
 		} `json:"weather"`
 	}
 	if err := json.NewDecoder(io.LimitReader(resp.Body, 128<<10)).Decode(&payload); err != nil {
-		return idleWeather{}, err
+		return weatherCache{}, err
 	}
 	if len(payload.Current) == 0 {
-		return idleWeather{}, errors.New("invalid weather response")
+		return weatherCache{}, errors.New("invalid weather response")
 	}
 	current := payload.Current[0]
 	var condition string
@@ -224,20 +269,47 @@ func fetchIdleWeather(ctx context.Context, endpoint string) (idleWeather, error)
 	temperature, err := strconv.Atoi(strings.TrimSpace(current.Temperature))
 	if condition == "" || len(condition) > 96 || strings.ContainsAny(condition, "\n\r\t") ||
 		err != nil || temperature < -100 || temperature > 80 {
-		return idleWeather{}, errors.New("invalid weather response")
+		return weatherCache{}, errors.New("invalid weather response")
 	}
 	code, _ := strconv.Atoi(strings.TrimSpace(current.Code))
-	weather := idleWeather{condition: condition, temperature: temperature, icon: idleWeatherIcon(code, condition)}
+	now := time.Now()
+	cache := weatherCache{
+		CityKey:   cityKey,
+		Source:    "wttr.in",
+		UpdatedAt: now,
+		Current: weatherCacheDay{
+			Date:        now.Format(time.DateOnly),
+			Code:        code,
+			Condition:   condition,
+			Temperature: temperature,
+			Rain:        idleWeatherIcon(code, condition) == weatherRainIcon || code == 386 || code == 389,
+		},
+	}
 	for _, day := range payload.Forecast {
+		dayRain := false
+		dayCode := code
 		for _, hour := range day.Hourly {
-			code, _ := strconv.Atoi(hour.Code)
-			if idleWeatherIcon(code, "") == weatherRainIcon || code == 386 || code == 389 {
-				weather.rainDates = append(weather.rainDates, day.Date)
-				break
+			hCode, _ := strconv.Atoi(hour.Code)
+			if dayCode == code && hCode != 0 {
+				dayCode = hCode
+			}
+			if idleWeatherIcon(hCode, "") == weatherRainIcon || hCode == 386 || hCode == 389 {
+				dayRain = true
 			}
 		}
+		dayTemp, tErr := strconv.Atoi(strings.TrimSpace(day.AvgTemp))
+		if tErr != nil {
+			dayTemp = temperature
+		}
+		cache.Days = append(cache.Days, weatherCacheDay{
+			Date:        day.Date,
+			Code:        dayCode,
+			Condition:   condition,
+			Temperature: dayTemp,
+			Rain:        dayRain,
+		})
 	}
-	return weather, nil
+	return cache, nil
 }
 
 func idleWeatherIcon(code int, condition string) *ui.SVG {

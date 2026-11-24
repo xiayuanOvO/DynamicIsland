@@ -190,10 +190,14 @@ func TestFetchIdleWeatherTomorrowRain(t *testing.T) {
 
 func TestIdleCapsuleRainReminder(t *testing.T) {
 	a := island{files: &shelf.Shelf{}}
-	baseWidth := a.targetFrame().width
 	now := time.Now()
-	a.idle.weather = idleWeather{condition: "晴", temperature: -100, icon: weatherSunIcon,
-		rainDates: []string{now.AddDate(0, 0, 1).Format(time.DateOnly)}}
+	noWeatherWidth := a.targetFrame().width
+	a.idle.weather = idleWeather{condition: "晴", temperature: -100, icon: weatherSunIcon}
+	baseWidth := a.targetFrame().width
+	if baseWidth != noWeatherWidth+idleWeatherWidth+idleCapsuleGap {
+		t.Fatalf("empty weather should not reserve capsule width: %.0f vs %.0f", noWeatherWidth, baseWidth)
+	}
+	a.idle.weather.rainDates = []string{now.AddDate(0, 0, 1).Format(time.DateOnly)}
 	a.idle.forecastUntil = now.Add(time.Hour)
 	a.shownFrame = a.targetFrame()
 	if a.shownFrame.width != baseWidth+idleRainReminderWidth {

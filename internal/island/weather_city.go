@@ -134,19 +134,24 @@ func (a *island) weatherSettings(c *ui.Context) bool {
 					submitted := field.Submitted()
 					button := ui.Button(c.Key("search-city"), "搜索").Height(30).Disabled(query == "" || search.loading)
 					if (button.Clicked() || submitted) && query != "" && !search.loading && a.settingsWindow != nil {
-						win := a.settingsWindow
-						search.searched, search.loading, search.failed = query, true, false
-						search.results = nil
-						go func() {
-							ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
-							defer cancel()
-							cities, err := searchWeatherCities(ctx, weatherCitySearchEndpoint, query)
-							win.Update(func() {
-								if a.settingsWindow == win {
-									search.results, search.loading, search.failed = cities, false, err != nil
-								}
-							})
-						}()
+						search.searched, search.failed = query, false
+						if local := searchChinaCities(query, 10); len(local) > 0 {
+							search.results, search.loading = local, false
+						} else {
+							win := a.settingsWindow
+							search.loading = true
+							search.results = nil
+							go func() {
+								ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+								defer cancel()
+								cities, err := searchWeatherCities(ctx, weatherCitySearchEndpoint, query)
+								win.Update(func() {
+									if a.settingsWindow == win {
+										search.results, search.loading, search.failed = cities, false, err != nil
+									}
+								})
+							}()
+						}
 					}
 				})
 				if selected.ID != 0 && ui.Button(c.Key("auto-weather-city"), "恢复自动定位").Height(26).FillWidth().Clicked() {
@@ -196,7 +201,7 @@ func (a *island) weatherSettings(c *ui.Context) bool {
 		return false
 	}
 	a.settings.WeatherCity = selected
-	a.idle.weather, a.idle.forecastUntil, a.idle.refreshAt = idleWeather{}, time.Time{}, time.Time{}
+	a.idle.weather, a.idle.cache, a.idle.forecastUntil, a.idle.refreshAt = idleWeather{}, weatherCache{}, time.Time{}, time.Time{}
 	if a.win != nil {
 		a.win.Invalidate()
 	}
