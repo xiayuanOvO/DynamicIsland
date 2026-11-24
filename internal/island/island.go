@@ -82,6 +82,7 @@ type island struct {
 	getOpenAtLogin     func() bool
 	setOpenAtLogin     func(bool) error
 	isSystemDark       func() bool
+	listDisplays       func() ([]mygo.Display, mygo.Display)
 	showLogs           bool
 	logClearErr        string
 	versionClicks      int
@@ -91,14 +92,15 @@ type island struct {
 
 func (a *island) start() {
 	a.applyTheme()
-	area := mygo.Screen.PrimaryDisplay().WorkArea
-	a.centerX, a.top = area.X+area.Width/2, area.Y+14
+	displays, primary := a.connectedDisplays()
+	a.centerX, a.top, a.dock = resolvePlacement(a.settings, displays, primary)
 	frame := a.targetFrame()
 	a.shownFrame = frame
 	a.animation = islandAnimation{from: frame, to: frame, started: time.Now()}
+	bounds := a.windowBounds(int(frame.width), int(frame.height))
 	options := mygo.WindowOptions{
 		Title: "灵动岛", Content: ui.View(a.view),
-		X: a.centerX - int(frame.width)/2, Y: a.top,
+		X: bounds.X, Y: bounds.Y,
 		Width: int(frame.width), Height: int(frame.height), MinWidth: compactHeight, MinHeight: idleCapsuleHeight,
 		Frameless: true, Transparent: true, Panel: true, AlwaysOnTop: true,
 		Hidden: true, SkipTaskbar: true, DisableResize: true, DisableMaximize: true,
@@ -122,7 +124,7 @@ func (a *island) start() {
 	a.hasWindowBackdrop = configureWindowGlass(a.win, windowRadius)
 	a.win.OnMove(a.windowMoved)
 	a.win.OnBlur(a.clipboardWindowBlurred)
-	mygo.Screen.OnDisplaysChanged(a.recenter)
+	mygo.Screen.OnDisplaysChanged(a.restorePlacement)
 	mygo.Theme.OnUpdated(func() {
 		if a.settings.Theme != themeSystem {
 			return
@@ -311,11 +313,22 @@ func (a *island) toggle() {
 }
 
 func (a *island) recenter() {
-	area := mygo.Screen.PrimaryDisplay().WorkArea
+	displays, primary := a.connectedDisplays()
+	target := primary
+	if d, ok := findDisplayByID(displays, a.settings.DisplayID); ok {
+		target = d
+	}
+	area := target.WorkArea
 	a.dock = edgeDock{}
 	a.centerX, a.top = area.X+area.Width/2, area.Y+14
-	a.applyWindowFrame(a.shownFrame, false)
-	a.win.Invalidate()
+	a.settings.Position = islandPosition{}
+	if a.statePath != "" {
+		_ = a.settings.save(a.settingsPath())
+	}
+	if a.win != nil {
+		a.applyWindowFrame(a.shownFrame, false)
+		a.win.Invalidate()
+	}
 }
 
 func (a *island) applyWindowFrame(frame islandFrame, animated bool) {

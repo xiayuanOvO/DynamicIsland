@@ -156,6 +156,10 @@ func (a *island) settingsView(c *ui.Context) {
 							}
 						})
 						settingsDivider(c)
+						if a.displaySettings(c) {
+							changed = true
+						}
+						settingsDivider(c)
 						if supportsFullscreenHiding {
 							settingsRow(c.Key("fullscreen-settings")).Children(func() {
 								const label = "全屏时隐藏灵动岛"
