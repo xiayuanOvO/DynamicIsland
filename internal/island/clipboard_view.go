@@ -195,6 +195,7 @@ func (a *island) clipboardView(c *ui.Context, interactive bool, write func(trans
 				if reveal {
 					history.list.ScrollIntoView(selected)
 				}
+				history.list.KeepOffset = true
 				history.list.EndReached = nil
 				if interactive && history.hasMore {
 					now := c.Now()
