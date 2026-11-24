@@ -154,11 +154,26 @@ func (a *island) header(c *ui.Context, open float32) {
 			if docked {
 				mediaHeight = compactHeight
 				mediaWidth, waveInset, bandsPerBar = 18, 0, 13
-			} else {
+			}
+			now := c.Now()
+			lowAlert := !docked && a.settings.LowBatteryAlert && a.battery.alertDevice != nil && now.Before(a.battery.alertUntil)
+			if lowAlert {
+				c.After(a.battery.alertUntil.Sub(now))
+			} else if !docked {
 				c.After(200 * time.Millisecond)
 			}
 			ui.Box(c.Key("compact-media")).Absolute().Left(0).Right(0).Top(0).Height(mediaHeight).
 				Opacity(compactAlpha).Translate(offset, 0).IgnoreInput(true).Center().Children(func() {
+				if lowAlert {
+					alert := *a.battery.alertDevice
+					lowColor := colorsFor(c.Theme().Dark).lowBattery
+					ui.Row(c.Key("compact-low-battery")).Size(mediaWidth, mediaHeight).Shrink(0).Gap(6).AlignItems(ui.Center).Justify(ui.Center).Children(func() {
+						ui.Icon(c, batteryDeviceIcon(alert)).Size(14, 14).Shrink(0).TextColor(lowColor)
+						ui.Text(c, batteryDeviceName(alert)).Grow(1).MinWidth(0).SingleLine().Ellipsis("…").FontSize(12).FontWeight(600).TextColor(c.Theme().Text)
+						ui.Text(c, fmt.Sprintf("%d%%", alert.Percent)).Shrink(0).SingleLine().FontSize(12).FontWeight(650).TextColor(lowColor)
+					})
+					return
+				}
 				ui.Box(c).Size(mediaWidth, mediaHeight).Shrink(0).Children(func() {
 					ui.Box(c.Key("compact-wave")).Absolute().Left(waveInset).Right(waveInset).
 						Top((mediaHeight - waveHeight) / 2).Height(waveHeight).Label("播放律动").
@@ -168,7 +183,7 @@ func (a *island) header(c *ui.Context, open float32) {
 					if !docked {
 						a.media.cover(c.Key("compact-cover"), coverSize).
 							Absolute().Left(0).Top((mediaHeight - coverSize) / 2)
-						ui.Text(c.Key("compact-time"), mediaTime(track.Elapsed(c.Now()))).
+						ui.Text(c.Key("compact-time"), mediaTime(track.Elapsed(now))).
 							Absolute().Right(0).Top((mediaHeight-16)/2).Size(timeWidth, 16).
 							SingleLine().TextAlign(ui.Center).FontSize(11.5).FontWeight(600).TextColor(c.Theme().Text.Alpha(0.72))
 					}

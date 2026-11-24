@@ -112,6 +112,15 @@ func (a *island) settingsView(c *ui.Context) {
 							}
 						})
 					})
+					settingsCard(c.Key("idle-battery-settings"), func() {
+						settingsRow(c.Key("low-battery-alert-settings")).Children(func() {
+							const label = "蓝牙低电量提醒"
+							ui.Text(c, label).Grow(1).FontSize(13).TextColor(c.Theme().Text).AccessHidden(true)
+							if ui.Switch(c.Key("low-battery-alert"), &a.settings.LowBatteryAlert).Label(label).Changed() {
+								changed = true
+							}
+						})
+					})
 				case settingsPageMedia:
 					changed = a.mediaSettings(c)
 				case settingsPageClipboard:
