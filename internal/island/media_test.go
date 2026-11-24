@@ -126,3 +126,27 @@ func TestMediaCardShowsProgressWithCatalogDuration(t *testing.T) {
 		})
 	}
 }
+
+func TestDecodeArtworkDownscalesLargeImage(t *testing.T) {
+	src := image.NewRGBA(image.Rect(0, 0, 800, 600))
+	for y := range 600 {
+		for x := range 800 {
+			src.Set(x, y, color.RGBA{R: 40, G: 120, B: 200, A: 255})
+		}
+	}
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, src); err != nil {
+		t.Fatal(err)
+	}
+	cover, dominant := decodeArtwork(buf.Bytes())
+	if cover == nil {
+		t.Fatal("expected decoded cover")
+	}
+	w, h := ui.ImageSize(cover)
+	if w != maxArtworkDimension || h != 198 {
+		t.Fatalf("expected downscaled artwork %dx198, got %.0fx%.0f", maxArtworkDimension, w, h)
+	}
+	if dominant == ui.Transparent {
+		t.Fatal("expected dominant color from artwork")
+	}
+}
