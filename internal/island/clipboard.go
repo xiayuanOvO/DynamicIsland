@@ -32,6 +32,7 @@ type clipboardEntry struct {
 	Preview       string
 	Width, Height int
 	CopiedAt      time.Time
+	Pinned        bool
 }
 
 type clipboardState struct {
@@ -158,7 +159,7 @@ func (a *island) refreshClipboardEntries(now time.Time, reset bool) {
 	}
 	if len(entries) > 0 || strings.TrimSpace(history.query) == "" {
 		history.hasEntries = len(entries) != 0
-	} else if err := history.store.QueryRow("SELECT EXISTS(SELECT 1 FROM entries WHERE copied_at > ?)",
+	} else if err := history.store.QueryRow("SELECT EXISTS(SELECT 1 FROM entries WHERE pinned = 1 OR copied_at > ?)",
 		now.Add(-clipboardRetention).UnixNano()).Scan(&history.hasEntries); err != nil {
 		log.Printf("check clipboard entries: %v", err)
 		history.problem = "剪贴板历史读取失败"

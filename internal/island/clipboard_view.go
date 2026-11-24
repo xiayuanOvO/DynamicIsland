@@ -13,7 +13,10 @@ import (
 
 const clipboardPanelHeight = 284
 
-var clearClipboardIcon = svg(`<path d="M4 6h16M4 12h9M4 18h9m3-5 5 5m0-5-5 5"/>`)
+var (
+	clearClipboardIcon = svg(`<path d="M4 6h16M4 12h9M4 18h9m3-5 5 5m0-5-5 5"/>`)
+	pinIcon            = svg(`<path d="M12 17v5M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"/>`)
+)
 
 func (a *island) openClipboard(fromShortcut bool) {
 	if !a.clipboard.Recording {
@@ -295,7 +298,24 @@ func (a *island) clipboardRow(c *ui.Context, entry clipboardEntry, selected bool
 				a.useClipboardEntry(c, entry, false, write)
 			}
 		}
-		if iconButton(c.Key("remove"), trashIcon, "删除此条记录").Size(40, 40).Label("删除记录 " + label).Clicked() {
+		pinTooltip, pinAction := "置顶", "置顶记录 "
+		if entry.Pinned {
+			pinTooltip, pinAction = "取消置顶", "取消置顶记录 "
+		}
+		pin := iconButton(c.Key("pin"), pinIcon, pinTooltip).Size(34, 34).Label(pinAction + label)
+		if entry.Pinned {
+			pin.TextColor(c.Theme().Accent)
+		}
+		if pin.Clicked() {
+			if err := history.store.setPinned(entry.ID, !entry.Pinned); err != nil {
+				log.Printf("pin clipboard entry: %v", err)
+				history.problem = "置顶状态保存失败"
+			} else {
+				a.refreshClipboardEntries(c.Now(), false)
+				c.Invalidate()
+			}
+		}
+		if iconButton(c.Key("remove"), trashIcon, "删除此条记录").Size(34, 34).Label("删除记录 " + label).Clicked() {
 			if err := history.store.deleteEntry(entry.ID); err != nil {
 				log.Printf("delete clipboard entry: %v", err)
 				history.problem = "删除记录失败"

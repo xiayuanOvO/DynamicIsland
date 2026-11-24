@@ -639,3 +639,52 @@ func TestClipboardDistinguishesScrollFromPointerMovement(t *testing.T) {
 		t.Fatal("rows scrolling under a stationary mouse must not change the selection")
 	}
 }
+
+func TestClipboardPinMovesToTopAndSurvivesExpiry(t *testing.T) {
+	a := newTestClipboard(t, true, "最新记录", "常用邮箱", "较早记录")
+	a.openClipboard(false)
+	view := ui.NewTester(func(c *ui.Context) { a.clipboardView(c, true, nil) }, panelWidth, clipboardPanelHeight)
+
+	if err := view.Click("置顶记录 常用邮箱"); err != nil {
+		t.Fatal(err)
+	}
+	if len(a.clipboard.entries) != 3 || a.clipboard.entries[0].Preview != "常用邮箱" || !a.clipboard.entries[0].Pinned {
+		t.Fatalf("pinning should move the entry to the top: %+v", a.clipboard.entries)
+	}
+
+	// Verify pagination across pinned and unpinned entries.
+	page1, more, err := a.clipboard.store.entryPage("", time.Now(), clipboardEntry{}, 2)
+	if err != nil || !more || len(page1) != 2 || page1[0].Preview != "常用邮箱" || page1[1].Preview != "最新记录" {
+		t.Fatalf("first page should return pinned then newest unpinned: %+v, more=%v, err=%v", page1, more, err)
+	}
+	page2, more, err := a.clipboard.store.entryPage("", time.Now(), page1[1], 2)
+	if err != nil || more || len(page2) != 1 || page2[0].Preview != "较早记录" {
+		t.Fatalf("second page should return remaining unpinned entry: %+v, more=%v, err=%v", page2, more, err)
+	}
+
+	// Verify pinned entry survives 90-day expiry while unpinned entries expire.
+	future := time.Now().Add(clipboardRetention + time.Hour)
+	changed, err := a.clipboard.store.expire(future)
+	if err != nil || !changed {
+		t.Fatalf("unpinned entries should expire after retention: changed=%v, err=%v", changed, err)
+	}
+	remaining := readTestClipboardEntries(t, a.clipboard.store, future)
+	if len(remaining) != 1 || remaining[0].Preview != "常用邮箱" || !remaining[0].Pinned {
+		t.Fatalf("pinned entry should survive expiry: %+v", remaining)
+	}
+
+	// Unpinning should restore normal state and allow expiry.
+	if err := view.Click("取消置顶记录 常用邮箱"); err != nil {
+		t.Fatal(err)
+	}
+	if len(a.clipboard.entries) != 1 || a.clipboard.entries[0].Pinned {
+		t.Fatalf("unpinning should clear the pinned flag: %+v", a.clipboard.entries)
+	}
+	changed, err = a.clipboard.store.expire(future)
+	if err != nil || !changed {
+		t.Fatalf("unpinned entry should expire after retention: changed=%v, err=%v", changed, err)
+	}
+	if remaining := readTestClipboardEntries(t, a.clipboard.store, future); len(remaining) != 0 {
+		t.Fatalf("unpinned expired entry should be removed: %+v", remaining)
+	}
+}

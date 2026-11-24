@@ -71,14 +71,54 @@ func openClipboardStore(path string) (*clipboardStore, error) {
 			content_key BLOB NOT NULL UNIQUE,
 			search_text TEXT NOT NULL,
 			text TEXT NOT NULL,
-			image BLOB
+			image BLOB,
+			pinned INTEGER NOT NULL DEFAULT 0
 		);
 		CREATE INDEX IF NOT EXISTS entries_recent ON entries (copied_at DESC, id DESC);
 	`); err != nil {
 		db.Close()
 		return nil, err
 	}
+	if err := ensureClipboardPinnedColumn(db); err != nil {
+		db.Close()
+		return nil, err
+	}
+	if _, err := db.Exec(`CREATE INDEX IF NOT EXISTS entries_pinned_recent ON entries (pinned DESC, copied_at DESC, id DESC)`); err != nil {
+		db.Close()
+		return nil, err
+	}
 	return &clipboardStore{DB: db}, nil
+}
+
+func ensureClipboardPinnedColumn(db *sql.DB) error {
+	rows, err := db.Query("PRAGMA table_info(entries)")
+	if err != nil {
+		return err
+	}
+	hasPinned := false
+	for rows.Next() {
+		var cid int
+		var name, typ string
+		var notNull, pk int
+		var dflt sql.NullString
+		if err := rows.Scan(&cid, &name, &typ, &notNull, &dflt, &pk); err != nil {
+			rows.Close()
+			return err
+		}
+		if name == "pinned" {
+			hasPinned = true
+		}
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return err
+	}
+	rows.Close()
+	if hasPinned {
+		return nil
+	}
+	_, err = db.Exec("ALTER TABLE entries ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0")
+	return err
 }
 
 func (s *clipboardStore) settings() (clipboardState, error) {
@@ -139,12 +179,12 @@ func storeClipboardRecord(tx *sql.Tx, record clipboardRecord) (sql.Result, error
 }
 
 func pruneClipboardRecords(tx *sql.Tx, now time.Time) (bool, error) {
-	expired, err := tx.Exec("DELETE FROM entries WHERE copied_at <= ?", now.Add(-clipboardRetention).UnixNano())
+	expired, err := tx.Exec("DELETE FROM entries WHERE pinned = 0 AND copied_at <= ?", now.Add(-clipboardRetention).UnixNano())
 	if err != nil {
 		return false, err
 	}
-	overflow, err := tx.Exec(`DELETE FROM entries WHERE id IN (
-		SELECT id FROM entries ORDER BY copied_at DESC, id DESC LIMIT -1 OFFSET ?
+	overflow, err := tx.Exec(`DELETE FROM entries WHERE pinned = 0 AND id IN (
+		SELECT id FROM entries ORDER BY pinned DESC, copied_at DESC, id DESC LIMIT -1 OFFSET ?
 	)`, clipboardHistoryLimit)
 	if err != nil {
 		return false, err
@@ -158,7 +198,7 @@ func pruneClipboardRecords(tx *sql.Tx, now time.Time) (bool, error) {
 }
 
 func (s *clipboardStore) expire(now time.Time) (bool, error) {
-	result, err := s.Exec("DELETE FROM entries WHERE copied_at <= ?", now.Add(-clipboardRetention).UnixNano())
+	result, err := s.Exec("DELETE FROM entries WHERE pinned = 0 AND copied_at <= ?", now.Add(-clipboardRetention).UnixNano())
 	if err != nil {
 		return false, err
 	}
@@ -167,18 +207,22 @@ func (s *clipboardStore) expire(now time.Time) (bool, error) {
 }
 
 func (s *clipboardStore) entryPage(query string, now time.Time, after clipboardEntry, limit int) ([]clipboardEntry, bool, error) {
-	statement := "SELECT id, preview, copied_at, image_width, image_height FROM entries WHERE copied_at > ?"
+	statement := "SELECT id, preview, copied_at, image_width, image_height, pinned FROM entries WHERE (pinned = 1 OR copied_at > ?)"
 	args := []any{now.Add(-clipboardRetention).UnixNano()}
 	if after.ID != 0 {
-		statement += " AND (copied_at, id) < (?, ?)"
-		args = append(args, after.CopiedAt.UnixNano(), after.ID)
+		afterPinned := 0
+		if after.Pinned {
+			afterPinned = 1
+		}
+		statement += " AND (pinned, copied_at, id) < (?, ?, ?)"
+		args = append(args, afterPinned, after.CopiedAt.UnixNano(), after.ID)
 	}
 	if terms := strings.Fields(strings.ToLower(query)); len(terms) > 0 {
 		encoded, _ := json.Marshal(terms)
 		statement += " AND NOT EXISTS (SELECT 1 FROM json_each(?) WHERE instr(entries.search_text, value) = 0)"
 		args = append(args, string(encoded))
 	}
-	rows, err := s.Query(statement+" ORDER BY copied_at DESC, id DESC LIMIT ?", append(args, limit+1)...)
+	rows, err := s.Query(statement+" ORDER BY pinned DESC, copied_at DESC, id DESC LIMIT ?", append(args, limit+1)...)
 	if err != nil {
 		return nil, false, err
 	}
@@ -190,13 +234,24 @@ func (s *clipboardStore) entryPage(query string, now time.Time, after clipboardE
 		}
 		var entry clipboardEntry
 		var copiedAt int64
-		if err := rows.Scan(&entry.ID, &entry.Preview, &copiedAt, &entry.Width, &entry.Height); err != nil {
+		var pinned int
+		if err := rows.Scan(&entry.ID, &entry.Preview, &copiedAt, &entry.Width, &entry.Height, &pinned); err != nil {
 			return nil, false, err
 		}
 		entry.CopiedAt = time.Unix(0, copiedAt)
+		entry.Pinned = pinned != 0
 		entries = append(entries, entry)
 	}
 	return entries, false, rows.Err()
+}
+
+func (s *clipboardStore) setPinned(id int64, pinned bool) error {
+	value := 0
+	if pinned {
+		value = 1
+	}
+	_, err := s.Exec("UPDATE entries SET pinned=? WHERE id=?", value, id)
+	return err
 }
 
 func (s *clipboardStore) deleteEntry(id int64) error {
