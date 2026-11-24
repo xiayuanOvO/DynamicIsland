@@ -91,6 +91,9 @@ func (a *island) setLyricOffset(song lyrics.Song, value float64) {
 	if a.win != nil {
 		a.win.Invalidate()
 	}
+	if a.settingsWindow != nil {
+		a.settingsWindow.Invalidate()
+	}
 }
 
 func formatLyricOffset(offset float64) string {
