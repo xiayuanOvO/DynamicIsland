@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+	"unicode"
 )
 
 type Song struct {
@@ -34,36 +35,86 @@ func (c Cache) Load(ctx context.Context, folder string, song Song) (lines Lines,
 			}
 		}
 	}
+	var cachedFallback Lines
 	if data, err := os.ReadFile(c.path(song)); err == nil {
 		var cached Lines
 		if json.Unmarshal(data, &cached) == nil && len(cached) > 0 {
-			return cached, false
+			if lyricsMatchSongLanguage(song, cached) {
+				return cached, false
+			}
+			cachedFallback = cached
 		}
 	}
 	if song.Artist == "" || ctx.Err() != nil {
-		return nil, false
+		return cachedFallback, false
 	}
 	lines = loadOnline(ctx, http.DefaultClient, song)
+	if len(lines) == 0 && len(cachedFallback) > 0 {
+		return cachedFallback, false
+	}
 	return lines, len(lines) > 0
 }
 
+func containsHan(s string) bool {
+	for _, r := range s {
+		if unicode.Is(unicode.Han, r) {
+			return true
+		}
+	}
+	return false
+}
+
+func songExpectsHanLyrics(song Song) bool {
+	if !containsHan(song.Title) {
+		return false
+	}
+	lower := strings.ToLower(song.Title)
+	return !strings.Contains(lower, "english") && !strings.Contains(song.Title, "英文")
+}
+
+func lyricsMatchSongLanguage(song Song, lines Lines) bool {
+	if !songExpectsHanLyrics(song) {
+		return true
+	}
+	for _, line := range lines {
+		if containsHan(line.Text) {
+			return true
+		}
+	}
+	return false
+}
+
 func loadOnline(ctx context.Context, client *http.Client, song Song) Lines {
-	for _, source := range []func(context.Context, *http.Client, Song) Lines{
+	sources := []func(context.Context, *http.Client, Song) Lines{
 		func(ctx context.Context, client *http.Client, song Song) Lines {
 			return search(ctx, client, "https://lrclib.net/api/search", song)
 		},
 		searchNetEase,
 		searchQQ,
 		searchKugou,
-	} {
+	}
+	var fallback Lines
+	for _, source := range sources {
 		attempt, cancel := context.WithTimeout(ctx, 3*time.Second)
 		lines := source(attempt, client, song)
 		cancel()
-		if len(lines) > 0 || ctx.Err() != nil {
+		if ctx.Err() != nil {
+			if len(lines) > 0 && lyricsMatchSongLanguage(song, lines) {
+				return lines
+			}
+			return fallback
+		}
+		if len(lines) == 0 {
+			continue
+		}
+		if lyricsMatchSongLanguage(song, lines) {
 			return lines
 		}
+		if len(fallback) == 0 {
+			fallback = lines
+		}
 	}
-	return nil
+	return fallback
 }
 
 func search(ctx context.Context, client *http.Client, endpoint string, song Song) Lines {
