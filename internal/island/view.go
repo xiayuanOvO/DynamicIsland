@@ -454,6 +454,20 @@ func (a *island) actions(c *ui.Context) {
 }
 
 func (a *island) menu(m *ui.Menu) {
+	if !a.settings.HideLyrics && a.media.track.Playing && a.media.track.Title != "" {
+		song := songForTrack(a.media.track)
+		offset := a.lyricOffset(song)
+		if m.Item("歌词提前 0.5 秒").Disabled(offset >= lyricOffsetMax).Chosen() {
+			a.setLyricOffset(song, offset+lyricOffsetStep)
+		}
+		if m.Item("歌词延后 0.5 秒").Disabled(offset <= -lyricOffsetMax).Chosen() {
+			a.setLyricOffset(song, offset-lyricOffsetStep)
+		}
+		if offset != 0 && m.Item("重置歌词偏移 ("+formatLyricOffset(offset)+")").Chosen() {
+			a.setLyricOffset(song, 0)
+		}
+		m.Separator()
+	}
 	if m.Item("回到屏幕顶部").Chosen() {
 		a.recenter()
 	}
