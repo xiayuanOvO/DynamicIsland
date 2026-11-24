@@ -105,8 +105,10 @@ func (a *island) hover(c *ui.Context, hovered bool) {
 func (a *island) header(c *ui.Context, open float32) {
 	docked := a.dock.side != dockNone
 	idle := a.compactIdle()
+	track := a.media.track
+	playing := track.Playing && track.Title != ""
 	height := float32(compactHeight)
-	if idle && !docked {
+	if !docked && (idle || playing) {
 		height = idleCapsuleHeight
 	}
 	height += (panelHeaderHeight - height) * open
@@ -114,8 +116,6 @@ func (a *island) header(c *ui.Context, open float32) {
 	compactAlpha := 1 - animationPhase(open, 0, 0.6)
 	showIdle := compactAlpha > 0 && idle
 	showFace := showIdle && a.settings.showsIdleItem(idleItemFace)
-	track := a.media.track
-	playing := track.Playing && track.Title != ""
 	if !showFace {
 		a.face = idleFaceState{}
 	}
@@ -148,26 +148,28 @@ func (a *island) header(c *ui.Context, open float32) {
 			return
 		}
 		if compactAlpha > 0 && playing {
-			const coverSize, timeWidth = 34, 42
-			mediaWidth, waveInset, bandsPerBar := float32(compactMediaWidth-20), float32(51), 4
+			const coverSize, timeWidth, waveHeight = 26, 42, 20
+			mediaHeight := float32(idleCapsuleHeight)
+			mediaWidth, waveInset, bandsPerBar := float32(compactMediaWidth-20), float32(46), 4
 			if docked {
+				mediaHeight = compactHeight
 				mediaWidth, waveInset, bandsPerBar = 18, 0, 13
 			} else {
 				c.After(200 * time.Millisecond)
 			}
-			ui.Box(c.Key("compact-media")).Absolute().Left(0).Right(0).Top(0).Height(compactHeight).
+			ui.Box(c.Key("compact-media")).Absolute().Left(0).Right(0).Top(0).Height(mediaHeight).
 				Opacity(compactAlpha).Translate(offset, 0).IgnoreInput(true).Center().Children(func() {
-				ui.Box(c).Size(mediaWidth, compactHeight).Shrink(0).Children(func() {
+				ui.Box(c).Size(mediaWidth, mediaHeight).Shrink(0).Children(func() {
 					ui.Box(c.Key("compact-wave")).Absolute().Left(waveInset).Right(waveInset).
-						Top((compactHeight - 24) / 2).Height(24).Label("播放律动").
+						Top((mediaHeight - waveHeight) / 2).Height(waveHeight).Label("播放律动").
 						Draw(func(p *ui.Painter, r ui.Rect) {
 							paintMediaBars(p, r, a.media.wave[:], bandsPerBar, 1, a.settings.waveColor(a.media.artworkColor, c.Theme().Dark))
 						})
 					if !docked {
 						a.media.cover(c.Key("compact-cover"), coverSize).
-							Absolute().Left(0).Top((compactHeight - coverSize) / 2)
+							Absolute().Left(0).Top((mediaHeight - coverSize) / 2)
 						ui.Text(c.Key("compact-time"), mediaTime(track.Elapsed(c.Now()))).
-							Absolute().Right(0).Top((compactHeight-16)/2).Size(timeWidth, 16).
+							Absolute().Right(0).Top((mediaHeight-16)/2).Size(timeWidth, 16).
 							SingleLine().TextAlign(ui.Center).FontSize(11.5).FontWeight(600).TextColor(c.Theme().Text.Alpha(0.72))
 					}
 				})

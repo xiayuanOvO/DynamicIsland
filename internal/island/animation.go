@@ -134,7 +134,7 @@ func (a *island) targetFrame() islandFrame {
 	} else if a.compactIdle() {
 		return islandFrame{width: float32(a.idleCapsuleWidth()), height: idleCapsuleHeight}
 	} else if a.media.track.Playing && a.media.track.Title != "" {
-		width = compactMediaWidth
+		return islandFrame{width: compactMediaWidth, height: idleCapsuleHeight}
 	}
 	return islandFrame{width: width, height: compactHeight}
 }
