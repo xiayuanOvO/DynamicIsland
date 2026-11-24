@@ -18,6 +18,7 @@ import (
 const (
 	mediaCardHeight     = 110
 	largeMediaCoverSize = 132
+	maxArtworkDimension = largeMediaCoverSize * 2
 )
 
 func (s appSettings) cardHeight() int {
@@ -79,7 +80,7 @@ func (a *island) requestMedia(command nowplaying.Command) {
 	m.reading = command.Action == ""
 	m.action = command.Action
 	adapter, oldHash, oldSong, cacheDir := m.adapter, m.artworkHash, m.track, m.artworkCacheDir
-	withArtwork := a.expanded || oldSong.Playing || oldSong.Title == "" || command.Action != ""
+	withArtwork := m.artwork == nil || oldSong.Title == "" || command.Action != ""
 	go func() {
 		var controlErr error
 		if command.Action != "" {
@@ -139,7 +140,7 @@ func (a *island) requestMedia(command nowplaying.Command) {
 				} else if !keepCover && m.artwork != nil {
 					a.setArtwork(nil, ui.Transparent, [32]byte{})
 				}
-				if track.Playing && !withArtwork && m.artwork == nil {
+				if (track.Playing || a.expanded) && !withArtwork && m.artwork == nil {
 					m.refreshAt = now
 				}
 				if load := track.ArtworkLoader; load != nil && (a.expanded || track.Playing) && m.artwork == nil && !m.artworkLoading {
@@ -186,15 +187,37 @@ func decodeArtwork(data []byte) (ui.ImageSource, ui.Color) {
 	if len(data) == 0 || len(data) > maxArtworkBytes {
 		return nil, ui.Transparent
 	}
-	cover, _ := ui.DecodeImage(data)
-	if cover == nil {
-		return nil, ui.Transparent
-	}
 	img, _, err := image.Decode(bytes.NewReader(data))
 	if err != nil {
+		cover, _ := ui.DecodeImage(data)
 		return cover, ui.Transparent
 	}
-	return cover, dominantArtworkColor(img)
+	color := dominantArtworkColor(img)
+	scaled := downscaleArtwork(img, maxArtworkDimension)
+	return ui.NewBitmap(scaled), color
+}
+
+func downscaleArtwork(src image.Image, maxDim int) image.Image {
+	b := src.Bounds()
+	sw, sh := b.Dx(), b.Dy()
+	if sw <= 0 || sh <= 0 || (sw <= maxDim && sh <= maxDim) {
+		return src
+	}
+	dw, dh := maxDim, maxDim
+	if sw >= sh {
+		dh = max(1, sh*maxDim/sw)
+	} else {
+		dw = max(1, sw*maxDim/sh)
+	}
+	dst := image.NewRGBA(image.Rect(0, 0, dw, dh))
+	for y := range dh {
+		sy := b.Min.Y + y*sh/dh
+		for x := range dw {
+			sx := b.Min.X + x*sw/dw
+			dst.Set(x, y, src.At(sx, sy))
+		}
+	}
+	return dst
 }
 
 func dominantArtworkColor(img image.Image) ui.Color {
