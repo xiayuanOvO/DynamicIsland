@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"dynamicisland/internal/lyrics"
+	"dynamicisland/internal/shelf"
 	"github.com/egoist/mygo/ui"
 )
 
@@ -471,5 +472,36 @@ func TestClearLyricCacheFromSettings(t *testing.T) {
 	}
 	if size, err := cache.Size(); err != nil || size != 0 {
 		t.Fatalf("settings left %d bytes of cache: %v", size, err)
+	}
+}
+
+func TestGlobalHotkeyConflictShowsInAppSettingsNotPanel(t *testing.T) {
+	a := island{
+		files:        &shelf.Shelf{},
+		selected:     make(map[string]bool),
+		expanded:     true,
+		hotkeyFailed: true,
+		settingsPage: settingsPageApp,
+	}
+	a.shownFrame = a.targetFrame()
+	panel := ui.NewTester(func(c *ui.Context) {
+		ui.Column(c).Fill().Clip().Children(func() {
+			ui.Box(c).Height(panelHeaderHeight).Shrink(0)
+			a.body(c, a.shownFrame)
+		})
+	}, panelWidth, int(a.shownFrame.height))
+	if panel.HasText("快捷键被占用") || panel.HasText("剪贴板无文件") {
+		t.Fatalf("panel should not display status banner texts: %v", panel.Texts())
+	}
+
+	settings := ui.NewTester(a.settingsView, settingsWidth, settingsHeight)
+	if !settings.HasText("展开 / 收起快捷键") || !settings.HasText(formatHotkey(hotkey)) || !settings.HasText("快捷键被占用") {
+		t.Fatalf("app settings should show global hotkey conflict: %v", settings.Texts())
+	}
+
+	a.hotkeyFailed = false
+	settings.Frame()
+	if settings.HasText("快捷键被占用") {
+		t.Fatalf("app settings should hide conflict text when hotkey is available: %v", settings.Texts())
 	}
 }

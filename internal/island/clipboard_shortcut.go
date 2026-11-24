@@ -116,12 +116,7 @@ func (a *island) clipboardShortcutSettings(c *ui.Context) {
 				ui.Text(c, problem).FontSize(11).TextColor(colorsFor(c.Theme().Dark).problem)
 			}
 		})
-		label := strings.ReplaceAll(history.hotkey(), "+", " + ")
-		if runtime.GOOS == "darwin" {
-			label = strings.NewReplacer("Super", "Command", "Ctrl", "Control", "Alt", "Option").Replace(label)
-		} else if runtime.GOOS == "windows" {
-			label = strings.ReplaceAll(label, "Super", "Win")
-		}
+		label := formatHotkey(history.hotkey())
 		if history.editingShortcut {
 			label = "按下快捷键…"
 		}
@@ -157,6 +152,17 @@ func (a *island) clipboardShortcutSettings(c *ui.Context) {
 			return true
 		})
 	})
+}
+
+func formatHotkey(keys string) string {
+	label := strings.ReplaceAll(keys, "+", " + ")
+	if runtime.GOOS == "darwin" {
+		return strings.NewReplacer("CmdOrCtrl", "Command", "Super", "Command", "Ctrl", "Control", "Alt", "Option").Replace(label)
+	}
+	if runtime.GOOS == "windows" {
+		return strings.NewReplacer("CmdOrCtrl", "Ctrl", "Super", "Win").Replace(label)
+	}
+	return strings.ReplaceAll(label, "CmdOrCtrl", "Ctrl")
 }
 
 func clipboardShortcutFromKey(event ui.InputEvent) string {

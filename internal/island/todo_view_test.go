@@ -102,7 +102,6 @@ func TestClipboardOpeningFadesOverviewBeforeRemovingIt(t *testing.T) {
 	}
 	a.media.track = nowplaying.Track{Title: "示例曲目"}
 	a.todos.items = []todoItem{{ID: "example", Title: "示例待办"}}
-	a.status = "示例状态"
 	a.expanded = true
 	overview := a.targetFrame()
 	a.shownFrame = overview
@@ -114,7 +113,7 @@ func TestClipboardOpeningFadesOverviewBeforeRemovingIt(t *testing.T) {
 			a.body(c, a.shownFrame)
 		})
 	}, panelWidth, int(overview.height))
-	overviewLabels := []string{"示例曲目", "待办卡片", "示例待办", "示例文件 6.txt", "拖出全部", "示例状态"}
+	overviewLabels := []string{"示例曲目", "待办卡片", "示例待办", "示例文件 6.txt", "拖出全部"}
 	initial := make([]ui.Rect, len(overviewLabels))
 	for i, label := range overviewLabels {
 		var ok bool

@@ -28,7 +28,7 @@ func Run(appIcon []byte) {
 		log.Fatal(err)
 	}
 	statePath := filepath.Join(config, "DynamicIsland", "shelf.json")
-	files, missing, loadErr := shelf.Load(statePath)
+	files, _, loadErr := shelf.Load(statePath)
 	a := &island{
 		files: files, statePath: statePath, selected: make(map[string]bool),
 	}
@@ -44,10 +44,6 @@ func Run(appIcon []byte) {
 	}
 	if loadErr != nil {
 		log.Printf("load shelf: %v", loadErr)
-		a.status = "列表读取失败"
-		a.statusError = true
-	} else if missing > 0 {
-		a.status = "已跳过失效文件"
 	}
 
 	mygo.App.OnNotificationClick(func(id string) {

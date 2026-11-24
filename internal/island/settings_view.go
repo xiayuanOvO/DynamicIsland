@@ -131,6 +131,16 @@ func (a *island) settingsView(c *ui.Context) {
 							})
 							settingsDivider(c)
 						}
+						settingsRow(c.Key("hotkey-settings")).Children(func() {
+							ui.Column(c).Grow(1).MinWidth(0).Gap(1).Children(func() {
+								ui.Text(c, "展开 / 收起快捷键").FontSize(13).TextColor(c.Theme().Text)
+								if a.hotkeyFailed {
+									ui.Text(c, "快捷键被占用").FontSize(11).TextColor(colorsFor(c.Theme().Dark).problem)
+								}
+							})
+							ui.Text(c, formatHotkey(hotkey)).FontSize(12).TextColor(c.Theme().TextMuted)
+						})
+						settingsDivider(c)
 						settingsRow(c.Key("update-settings")).Children(func() {
 							ui.Column(c).Grow(1).Gap(1).Children(func() {
 								ui.Text(c, "软件更新").FontSize(13).TextColor(c.Theme().Text)

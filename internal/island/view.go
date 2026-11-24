@@ -50,10 +50,7 @@ func (a *island) view(c *ui.Context) {
 	_, over := ui.DataDragOver(root, fileDrop)
 	glassSurface(c, root, a.hasWindowBackdrop || c.Vibrancy(), over, a.canvas.restore != nil)
 	if drop, ok := ui.DropData(root, fileDrop); ok {
-		paths, err := drop.Data.Files()
-		if err != nil || len(paths) == 0 {
-			a.message("无有效文件", true)
-		} else {
+		if paths, err := drop.Data.Files(); err == nil && len(paths) > 0 {
 			a.addFiles(paths)
 		}
 	}
@@ -273,7 +270,7 @@ func (a *island) body(c *ui.Context, frame islandFrame) {
 					a.expanded && opacity >= 0.80).Translate(0, float32(leadHeight)*clipboardFade)
 			}
 		})
-		if overviewOpacity > 0 && (len(a.files.Items) > 0 || a.status != "") {
+		if overviewOpacity > 0 && len(a.files.Items) > 0 {
 			overviewHeight, gridHeight := a.overviewHeights()
 			files := ui.Column(c.Key("overview-files")).Width(panelBodyWidth).Shrink(0).Margin(14, 0, 0).Gap(14).
 				Opacity(overviewOpacity).IgnoreInput(progress > 0 || a.todos.open || a.clipboard.open)
@@ -284,30 +281,19 @@ func (a *island) body(c *ui.Context, frame islandFrame) {
 					Top(float32(leadHeight+a.todos.previewHeight()) + min(0, frame.height-float32(overviewHeight)))
 			}
 			files.Children(func() {
-				hasFiles := len(a.files.Items) > 0
-				if hasFiles {
-					ui.Text(c.Key("files-heading"), fmt.Sprintf("暂存文件  /  %02d", len(a.files.Items))).
-						Height(24).Shrink(0).FontSize(10.5).TextColor(c.Theme().TextMuted)
-					ui.Scroll(c.Key("files")).Height(float32(gridHeight)).Shrink(0).
-						Children(func() {
-							ui.Grid(c.Key("file-cards")).FillWidth().Columns(cardColumns).Gap(cardGap).Padding(4).Children(func() {
-								for _, item := range slices.Clone(a.files.Items) {
-									a.fileCard(c, item)
-								}
-							})
+				ui.Text(c.Key("files-heading"), fmt.Sprintf("暂存文件  /  %02d", len(a.files.Items))).
+					Height(24).Shrink(0).FontSize(10.5).TextColor(c.Theme().TextMuted)
+				ui.Scroll(c.Key("files")).Height(float32(gridHeight)).Shrink(0).
+					Children(func() {
+						ui.Grid(c.Key("file-cards")).FillWidth().Columns(cardColumns).Gap(cardGap).Padding(4).Children(func() {
+							for _, item := range slices.Clone(a.files.Items) {
+								a.fileCard(c, item)
+							}
 						})
-					ui.Box(c.Key("divider")).FillWidth().Height(1).Shrink(0).
-						Gradient(c.Theme().Text.Alpha(0.055), colorsFor(c.Theme().Dark).glass.Alpha(0.5), 90)
-					a.actions(c)
-				}
-				if hasFiles || a.status != "" {
-					color := c.Theme().TextMuted
-					if a.statusError {
-						color = colorsFor(c.Theme().Dark).problem
-					}
-					ui.Text(c.Key("status"), a.status).Height(20).Shrink(0).FontSize(10).SingleLine().TextColor(color).
-						Tooltip(a.status)
-				}
+					})
+				ui.Box(c.Key("divider")).FillWidth().Height(1).Shrink(0).
+					Gradient(c.Theme().Text.Alpha(0.055), colorsFor(c.Theme().Dark).glass.Alpha(0.5), 90)
+				a.actions(c)
 			})
 		}
 	})
@@ -493,8 +479,6 @@ func (a *island) shortcuts(c *ui.Context) {
 	if c.Shortcut(ui.Cmd, ui.KeyV) {
 		if paths, err := mygo.Clipboard.ReadFiles(); err == nil && len(paths) > 0 {
 			a.addFiles(paths)
-		} else {
-			a.message("剪贴板无文件", true)
 		}
 	}
 	if c.Shortcut(0, ui.KeyDelete) {
