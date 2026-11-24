@@ -175,7 +175,7 @@ func (a *island) settingsView(c *ui.Context) {
 							ui.Column(c).Grow(1).Gap(1).Children(func() {
 								ui.Text(c, "软件更新").FontSize(13).TextColor(c.Theme().Text)
 								if version := mygo.App.Version(); version != "" {
-									ver := ui.ButtonBase(c.Key("app-version")).Row().AlignItems(ui.Center).
+									ver := ui.ButtonBase(c.Key("app-version")).Row().AlignSelf(ui.Start).Justify(ui.Start).AlignItems(ui.Center).
 										Label("版本 " + version)
 									ver.Children(func() {
 										ui.Text(c, "版本 "+version).FontSize(11).TextColor(c.Theme().TextMuted)
