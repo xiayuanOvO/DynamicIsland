@@ -2,8 +2,10 @@ package island
 
 import (
 	"testing"
+	"time"
 
 	"dynamicisland/internal/battery"
+	"dynamicisland/internal/nowplaying"
 	"dynamicisland/internal/shelf"
 	"github.com/egoist/mygo/ui"
 )
@@ -43,5 +45,50 @@ func TestBatteryRowInOverview(t *testing.T) {
 	view.SetSize(panelWidth, int(a.shownFrame.height))
 	if view.HasText("100%") || !view.HasText("待办事项") {
 		t.Fatal("the battery row should give way to the full todo panel")
+	}
+}
+
+func TestLowBatteryAlertNotifiesOnceAndShowsPlaybackBanner(t *testing.T) {
+	var notified []battery.Reading
+	a := &island{
+		files:    &shelf.Shelf{},
+		settings: appSettings{LowBatteryAlert: true},
+		media: islandMedia{
+			track: nowplaying.Track{Title: "夜行列车", Playing: true, Position: 12, Duration: 200, Rate: 1, Sampled: time.Now()},
+		},
+		battery: islandBattery{
+			readings: []battery.Reading{
+				{ID: "computer", Name: "本机", Kind: battery.Computer, Percent: 10},
+				{ID: "mouse-1", Name: "ROG Keris", Kind: battery.Mouse, Percent: 5},
+			},
+			notifyLow: func(r battery.Reading) { notified = append(notified, r) },
+		},
+	}
+
+	view := ui.NewTester(func(c *ui.Context) { a.header(c, 0) }, compactMediaWidth, idleCapsuleHeight)
+	now := view.Now()
+	a.checkLowBattery(now)
+	a.checkLowBattery(now.Add(30 * time.Second))
+	if len(notified) != 1 || notified[0].ID != "mouse-1" {
+		t.Fatalf("expected one low-battery notification for bluetooth mouse only, got %+v", notified)
+	}
+
+	view.Frame()
+	if !view.HasText("ROG Keris") || !view.HasText("5%") {
+		t.Fatalf("playback capsule should show floating low-battery banner: %v", view.Texts())
+	}
+
+	view.Advance(lowBatteryBannerDuration + time.Second)
+	if view.HasText("ROG Keris") || !view.HasText("播放律动") {
+		t.Fatalf("playback capsule should restore wave after banner duration: %v", view.Texts())
+	}
+
+	// Charging resets the alert so a subsequent drop notifies again.
+	a.battery.readings[1].Charging = true
+	a.checkLowBattery(view.Now())
+	a.battery.readings[1].Charging = false
+	a.checkLowBattery(view.Now())
+	if len(notified) != 2 {
+		t.Fatalf("expected notification to re-arm after charging, got %d", len(notified))
 	}
 }

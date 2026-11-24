@@ -40,6 +40,7 @@ type appSettings struct {
 	IdleItems        idleItemSettings `json:"idleItems,omitzero"`
 	MediaCardStyle   int              `json:"mediaCardStyle,omitempty"`
 	HideInFullscreen bool             `json:"hideInFullscreen"`
+	LowBatteryAlert  bool             `json:"lowBatteryAlert"`
 	ToggleShortcut   string           `json:"toggleShortcut,omitempty"`
 }
 
@@ -74,7 +75,7 @@ func (s appSettings) waveColor(artwork ui.Color, dark bool) ui.Color {
 }
 
 func loadSettings(path string) (appSettings, error) {
-	defaults := appSettings{Color: accent, HideInFullscreen: true}
+	defaults := appSettings{Color: accent, HideInFullscreen: true, LowBatteryAlert: true}
 	data, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
 		return defaults, nil

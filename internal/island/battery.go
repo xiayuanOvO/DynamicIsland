@@ -7,18 +7,26 @@ import (
 	"time"
 
 	"dynamicisland/internal/battery"
+	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
 )
 
 const (
-	batteryRowHeight = 50
-	batteryRowGap    = 10
+	batteryRowHeight         = 50
+	batteryRowGap            = 10
+	lowBatteryThreshold      = 15
+	lowBatteryResetThreshold = 20
+	lowBatteryBannerDuration = 5 * time.Second
 )
 
 type islandBattery struct {
-	readings  []battery.Reading
-	refreshAt time.Time
-	reading   bool
+	readings    []battery.Reading
+	refreshAt   time.Time
+	reading     bool
+	notifiedLow map[string]bool
+	alertDevice *battery.Reading
+	alertUntil  time.Time
+	notifyLow   func(battery.Reading)
 }
 
 var (
@@ -45,11 +53,13 @@ func (a *island) refreshBattery() {
 		snapshot := battery.ReadIncremental(ctx, func(partial battery.Snapshot) {
 			a.win.Update(func() {
 				b.readings = partial.Merge(b.readings)
+				a.checkLowBattery(time.Now())
 			})
 		})
 		a.win.Update(func() {
 			b.reading = false
 			b.readings = snapshot.Merge(b.readings)
+			a.checkLowBattery(time.Now())
 			b.refreshAt = time.Now().Add(30 * time.Second)
 		})
 	}()
@@ -59,7 +69,8 @@ func (a *island) updateBattery(c *ui.Context) {
 	b := &a.battery
 	showOverview := a.expanded && !a.todos.open && !a.clipboard.open
 	showIdle := a.showsIdleCapsule() && a.settings.showsIdleItem(idleItemBattery)
-	if !battery.Supported || (!showOverview && !showIdle) || !a.win.IsVisible() || b.reading {
+	watchLow := a.settings.LowBatteryAlert && a.media.track.Playing && a.media.track.Title != ""
+	if !battery.Supported || (!showOverview && !showIdle && !watchLow) || !a.win.IsVisible() || b.reading {
 		return
 	}
 	if delay := b.refreshAt.Sub(c.Now()); delay > 0 {
@@ -67,6 +78,79 @@ func (a *island) updateBattery(c *ui.Context) {
 		return
 	}
 	a.refreshBattery()
+}
+
+func batteryDeviceName(reading battery.Reading) string {
+	switch reading.Part {
+	case battery.Left:
+		return reading.Name + " 左耳"
+	case battery.Right:
+		return reading.Name + " 右耳"
+	case battery.Case:
+		return reading.Name + " 充电盒"
+	default:
+		return reading.Name
+	}
+}
+
+func batteryDeviceIcon(reading battery.Reading) *ui.SVG {
+	switch reading.Part {
+	case battery.Left, battery.Right:
+		return earbudIcon
+	case battery.Case:
+		return batteryCaseIcon
+	}
+	switch reading.Kind {
+	case battery.Computer:
+		return computerIcon
+	case battery.Mouse:
+		return mouseIcon
+	case battery.Keyboard:
+		return keyboardIcon
+	case battery.Trackpad:
+		return trackpadIcon
+	case battery.Headphones:
+		return headphonesIcon
+	default:
+		return batteryIcon
+	}
+}
+
+func (a *island) checkLowBattery(now time.Time) {
+	b := &a.battery
+	if !a.settings.LowBatteryAlert {
+		return
+	}
+	if b.notifiedLow == nil {
+		b.notifiedLow = make(map[string]bool)
+	}
+	for _, reading := range b.readings {
+		if reading.Kind == battery.Computer || reading.Percent == battery.UnknownPercent {
+			continue
+		}
+		key := fmt.Sprintf("%s:%d", reading.ID, reading.Part)
+		if reading.Charging || reading.Percent > lowBatteryResetThreshold {
+			delete(b.notifiedLow, key)
+			continue
+		}
+		if reading.Percent <= lowBatteryThreshold && !b.notifiedLow[key] {
+			b.notifiedLow[key] = true
+			r := reading
+			b.alertDevice = &r
+			b.alertUntil = now.Add(lowBatteryBannerDuration)
+			if b.notifyLow != nil {
+				b.notifyLow(r)
+			} else {
+				name := batteryDeviceName(r)
+				notice := mygo.NewNotification(mygo.NotificationOptions{
+					ID: "battery-" + key, Group: "battery",
+					Title: name + " 电量低",
+					Body:  fmt.Sprintf("剩余电量 %d%%", r.Percent),
+				})
+				go func() { _ = notice.Show() }()
+			}
+		}
+	}
 }
 
 func (a *island) overviewLeadHeight() int {
