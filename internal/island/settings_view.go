@@ -81,6 +81,7 @@ func (a *island) settingsView(c *ui.Context) {
 		if a.settingsPage != settingsPageApp {
 			a.editingHotkey, a.hotkeyProblem = false, ""
 			a.openAtLoginErr = ""
+			a.showLogs, a.logClearErr = false, ""
 		}
 		ui.Box(c).Width(1).Shrink(0).FillHeight().Background(c.Theme().Border)
 		ui.Column(c.Key("settings-content")).Grow(1).FillHeight().MinWidth(0).Children(func() {
@@ -100,6 +101,16 @@ func (a *island) settingsView(c *ui.Context) {
 						if a.weatherSettings(c) {
 							changed = true
 						}
+						settingsDivider(c)
+						settingsRow(c.Key("weather-source-settings")).Children(func() {
+							const label = "天气源"
+							ui.Text(c, label).Grow(1).FontSize(13).TextColor(c.Theme().Text).AccessHidden(true)
+							if ui.Segmented(c.Key("weather-source"), &a.settings.WeatherSource, "Open-Meteo", "wttr.in").
+								FillEqually().Width(settingsControlWidth).Height(32).FontSize(12).Label(label).Changed() {
+								a.idle.refreshAt = time.Time{}
+								changed = true
+							}
+						})
 					})
 				case settingsPageMedia:
 					changed = a.mediaSettings(c)
@@ -159,6 +170,8 @@ func (a *island) settingsView(c *ui.Context) {
 							})
 							a.updateControl(c)
 						})
+						settingsDivider(c)
+						a.appLogSettings(c)
 					})
 				}
 			})

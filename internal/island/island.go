@@ -81,6 +81,8 @@ type island struct {
 	getOpenAtLogin     func() bool
 	setOpenAtLogin     func(bool) error
 	isSystemDark       func() bool
+	showLogs           bool
+	logClearErr        string
 }
 
 func (a *island) start() {
