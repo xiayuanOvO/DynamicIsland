@@ -111,7 +111,7 @@ func (a *island) settingsView(c *ui.Context) {
 							const label = "外观"
 							ui.Text(c, label).Grow(1).FontSize(13).AccessHidden(true)
 							if ui.Segmented(c.Key("appearance"), &a.settings.Theme, "浅色", "深色", "跟随系统").
-								FillEqually().Width(settingsControlWidth).Height(40).FontSize(13).Label(label).Changed() {
+								FillEqually().Width(246).Height(36).FontSize(12).Label(label).Changed() {
 								changed = true
 								if a.settingsWindow != nil {
 									a.applyTheme()
