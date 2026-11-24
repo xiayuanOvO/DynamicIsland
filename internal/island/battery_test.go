@@ -73,14 +73,14 @@ func TestLowBatteryAlertNotifiesOnceAndShowsPlaybackBanner(t *testing.T) {
 		t.Fatalf("expected one low-battery notification for bluetooth mouse only, got %+v", notified)
 	}
 
-	view.Frame()
-	if !view.HasText("ROG Keris") || !view.HasText("5%") {
-		t.Fatalf("playback capsule should show floating low-battery banner: %v", view.Texts())
+	view.Advance(capsuleAlertEnter)
+	if !view.HasText("ROG Keris") || !view.HasText("5%") || !view.HasText("低电量动画") {
+		t.Fatalf("playback capsule should show standalone animated low-battery alert: %v", view.Texts())
 	}
 
-	view.Advance(lowBatteryBannerDuration + time.Second)
+	view.Advance(capsuleAlertHold + capsuleAlertExit + 50*time.Millisecond)
 	if view.HasText("ROG Keris") || !view.HasText("播放律动") {
-		t.Fatalf("playback capsule should restore wave after banner duration: %v", view.Texts())
+		t.Fatalf("playback capsule should restore wave after alert exits: %v", view.Texts())
 	}
 
 	// Charging resets the alert so a subsequent drop notifies again.

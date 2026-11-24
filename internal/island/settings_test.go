@@ -709,19 +709,19 @@ func TestVersionFiveClicksUnlocksDebugPanel(t *testing.T) {
 	if err := view.Click("模拟触发"); err != nil {
 		t.Fatal(err)
 	}
-	if notified != 1 || a.battery.alertDevice == nil {
-		t.Fatalf("debug low battery button should trigger alert and notification: notified=%d alert=%+v", notified, a.battery.alertDevice)
+	if notified != 1 || a.alert.kind != capsuleAlertLowBattery {
+		t.Fatalf("debug low battery button should trigger alert and notification: notified=%d alert=%+v", notified, a.alert)
 	}
 	if err := view.Click("模拟显示"); err != nil {
 		t.Fatal(err)
 	}
-	if !a.idle.showsTomorrowRain(view.Now()) {
-		t.Fatal("debug tomorrow rain button should enable rain reminder")
+	if a.alert.kind != capsuleAlertTomorrowRain {
+		t.Fatalf("debug tomorrow rain button should trigger standalone rain alert: %+v", a.alert)
 	}
 	if err := view.Click("重置"); err != nil {
 		t.Fatal(err)
 	}
-	if a.battery.alertDevice != nil || a.idle.showsTomorrowRain(view.Now()) {
+	if a.alert.kind != capsuleAlertNone {
 		t.Fatal("reset should clear debug states")
 	}
 }

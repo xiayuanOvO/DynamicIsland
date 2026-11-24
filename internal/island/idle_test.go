@@ -190,52 +190,36 @@ func TestFetchIdleWeatherTomorrowRain(t *testing.T) {
 
 func TestIdleCapsuleRainReminder(t *testing.T) {
 	a := island{files: &shelf.Shelf{}}
-	now := time.Now()
 	noWeatherWidth := a.targetFrame().width
 	a.idle.weather = idleWeather{condition: "晴", temperature: -100, icon: weatherSunIcon}
 	baseWidth := a.targetFrame().width
 	if baseWidth != noWeatherWidth+idleWeatherWidth+idleCapsuleGap {
 		t.Fatalf("empty weather should not reserve capsule width: %.0f vs %.0f", noWeatherWidth, baseWidth)
 	}
+
+	view := ui.NewTester(func(c *ui.Context) { a.header(c, 0) }, capsuleAlertWidth, idleCapsuleHeight)
+	now := view.Now()
 	a.idle.weather.rainDates = []string{now.AddDate(0, 0, 1).Format(time.DateOnly)}
 	a.idle.forecastUntil = now.Add(time.Hour)
-	a.shownFrame = a.targetFrame()
-	if a.shownFrame.width != baseWidth+idleRainReminderWidth {
-		t.Fatalf("rain reminder should widen the capsule: %.0f to %.0f", baseWidth, a.shownFrame.width)
-	}
-	view := ui.NewTester(func(c *ui.Context) { a.header(c, a.shownFrame.open) }, int(a.shownFrame.width), idleCapsuleHeight)
-	reminder, hasReminder := view.Find("明日有雨")
-	temp, hasTemp := view.Find("-100°C")
-	clock, hasClock := view.Find(view.Now().Format("15:04"))
-	if !hasReminder || !hasTemp || !hasClock || temp.X+temp.W > reminder.X || reminder.X+reminder.W > clock.X {
-		t.Fatalf("temperature, reminder and clock should fit in one row: %+v, %+v, %+v, %v", temp, reminder, clock, view.Texts())
+	a.maybeTriggerRainAlert(now)
+	view.Frame()
+
+	// Enter animation completes after capsuleAlertEnter and shows standalone rain alert (without inline weather).
+	view.Advance(capsuleAlertEnter)
+	if !view.HasText("明日有雨") || !view.HasText("下雨动画") || view.HasText("-100°C") {
+		t.Fatalf("tomorrow rain should display as standalone animated alert: %v", view.Texts())
 	}
 
-	a.settings.IdleItems = a.settings.idleItems()
-	a.settings.IdleItems[1].Hidden = true
-	view.Frame()
-	if view.HasText("明日有雨") || view.HasText("-100°C") {
-		t.Fatalf("hiding weather should hide the reminder and temperature: %v", view.Texts())
-	}
-	a.settings.IdleItems[1].Hidden = false
-	a.settings.IdleItems[0].Hidden = true
-	a.settings.IdleItems[3].Hidden = true
-	beforeMidnight := view.Now()
-	midnight := time.Date(beforeMidnight.Year(), beforeMidnight.Month(), beforeMidnight.Day()+1, 0, 0, 0, 0, beforeMidnight.Location())
-	a.idle.forecastUntil = midnight.Add(time.Hour)
-	view.Frame()
-	if !view.HasText("明日有雨") {
-		t.Fatalf("the reminder should appear with the clock hidden: %v", view.Texts())
-	}
-	view.Advance(midnight.Sub(view.Now()))
+	// After alert duration elapses, normal idle capsule restores cleanly.
+	view.Advance(capsuleAlertHold + capsuleAlertExit + 50*time.Millisecond)
 	if view.HasText("明日有雨") || !view.HasText("-100°C") {
-		t.Fatalf("the reminder should clear at midnight while current weather remains: %v", view.Texts())
+		t.Fatalf("idle capsule should restore after rain alert exits: %v", view.Texts())
 	}
 }
 
 func TestIdleCapsuleLimitsBatteryCountAndTucksOnDock(t *testing.T) {
 	a := island{files: &shelf.Shelf{}}
-	base, _ := a.idleCapsuleMetrics(a.settings.idleItems(), false)
+	base, _ := a.idleCapsuleMetrics(a.settings.idleItems())
 	maxBatteries := (panelWidth - base) / idleBatteryStep
 	for i := 0; i <= maxBatteries; i++ {
 		a.battery.readings = append(a.battery.readings, battery.Reading{

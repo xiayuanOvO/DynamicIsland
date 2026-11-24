@@ -16,7 +16,6 @@ const (
 	batteryRowGap            = 10
 	lowBatteryThreshold      = 15
 	lowBatteryResetThreshold = 20
-	lowBatteryBannerDuration = 5 * time.Second
 )
 
 type islandBattery struct {
@@ -24,8 +23,6 @@ type islandBattery struct {
 	refreshAt   time.Time
 	reading     bool
 	notifiedLow map[string]bool
-	alertDevice *battery.Reading
-	alertUntil  time.Time
 	notifyLow   func(battery.Reading)
 }
 
@@ -136,8 +133,7 @@ func (a *island) checkLowBattery(now time.Time) {
 		if reading.Percent <= lowBatteryThreshold && !b.notifiedLow[key] {
 			b.notifiedLow[key] = true
 			r := reading
-			b.alertDevice = &r
-			b.alertUntil = now.Add(lowBatteryBannerDuration)
+			a.showCapsuleAlert(capsuleAlertLowBattery, r, now)
 			if b.notifyLow != nil {
 				b.notifyLow(r)
 			} else {

@@ -43,6 +43,7 @@ type island struct {
 	lyrics                lyricOverlay
 	idle                  idleInfo
 	face                  idleFaceState
+	alert                 capsuleAlert
 	expanded              bool
 	hiddenForFullscreen   bool
 	hiddenByUser          bool
