@@ -61,17 +61,23 @@ func (a *island) idleCapsuleWidth() int {
 
 func (a *island) idleCapsuleMetrics(items idleItemSettings, rainReminder bool) (baseWidth, batteries int) {
 	baseWidth = 2*idleCapsulePadding - idleCapsuleGap
+	hasWeather := a.idle.weather.condition != ""
 	for _, item := range items {
 		if item.Hidden {
 			continue
 		}
 		if item.ID == idleItemBattery {
 			batteries = len(a.battery.readings)
-		} else {
+		} else if item.ID == idleItemWeather {
+			if !hasWeather {
+				continue
+			}
 			baseWidth += idleItemSpecs[item.ID].width + idleCapsuleGap
-			if item.ID == idleItemWeather && rainReminder {
+			if rainReminder {
 				baseWidth += idleRainReminderWidth
 			}
+		} else {
+			baseWidth += idleItemSpecs[item.ID].width + idleCapsuleGap
 		}
 	}
 	return baseWidth, min(batteries, (panelWidth-baseWidth)/idleBatteryStep)
@@ -98,10 +104,13 @@ func (a *island) updateIdleWeather(c *ui.Context) {
 				return
 			}
 			now := time.Now()
-			info.refreshAt = now.Add(5 * time.Minute)
 			if err == nil {
 				info.weather, info.forecastUntil = weather, now.Add(2*time.Hour)
 				info.refreshAt = now.Add(30 * time.Minute)
+			} else if info.weather.condition == "" {
+				info.refreshAt = now.Add(30 * time.Second)
+			} else {
+				info.refreshAt = now.Add(5 * time.Minute)
 			}
 		})
 	}()
@@ -140,6 +149,9 @@ func (a *island) idleCapsule(c *ui.Context, opacity float32) {
 					a.drawIdleFace(c, slot, opacity, x+idleFaceWidth/2-a.shownFrame.width/2)
 				case idleItemWeather:
 					weather := a.idle.weather
+					if weather.condition == "" {
+						continue
+					}
 					if rainReminder {
 						itemWidth += idleRainReminderWidth
 					}
@@ -148,11 +160,9 @@ func (a *island) idleCapsule(c *ui.Context, opacity float32) {
 						c.After(min(midnight.Sub(now), a.idle.forecastUntil.Sub(now)))
 					}
 					ui.Row(c.Key(item.ID)).Width(float32(itemWidth)).Shrink(0).AlignItems(ui.Center).Justify(ui.Center).Gap(3).Children(func() {
-						if weather.condition != "" {
-							ui.Icon(c.Key("condition"), weather.icon).Size(14, 14).Shrink(0).TextColor(c.Theme().Text).
-								Role(ui.RoleImage).Label(weather.condition)
-							ui.Text(c.Key("temperature"), fmt.Sprintf("%d°C", weather.temperature)).Shrink(0).SingleLine()
-						}
+						ui.Icon(c.Key("condition"), weather.icon).Size(14, 14).Shrink(0).TextColor(c.Theme().Text).
+							Role(ui.RoleImage).Label(weather.condition)
+						ui.Text(c.Key("temperature"), fmt.Sprintf("%d°C", weather.temperature)).Shrink(0).SingleLine()
 						if rainReminder {
 							ui.Text(c.Key("rain-reminder"), "明日有雨").Width(idleRainReminderWidth).Shrink(0).TextAlign(ui.Center).SingleLine()
 						}
