@@ -24,3 +24,24 @@ func TestSimplifiedLyrics(t *testing.T) {
 		t.Fatalf("Simplified() changed the source lyrics: %v", source)
 	}
 }
+
+func TestLyricsMatchSongLanguage(t *testing.T) {
+	englishOnly := Lines{{At: 19.62, Text: "There are always some words too late to say"}}
+	chinese := Lines{{At: 19.62, Text: "总有些话来不及说"}}
+
+	song := Song{Title: "如果爱忘了", Artist: "汪苏泷"}
+	if lyricsMatchSongLanguage(song, englishOnly) {
+		t.Fatal("Chinese-titled song should not accept pure-English translated lyrics when Chinese sources exist")
+	}
+	if !lyricsMatchSongLanguage(song, chinese) {
+		t.Fatal("Chinese-titled song should accept Chinese lyrics")
+	}
+	englishVer := Song{Title: "如果爱忘了 (English Version)", Artist: "汪苏泷"}
+	if !lyricsMatchSongLanguage(englishVer, englishOnly) {
+		t.Fatal("explicit English version should allow English lyrics")
+	}
+	foreign := Song{Title: "Shape of You", Artist: "Ed Sheeran"}
+	if !lyricsMatchSongLanguage(foreign, englishOnly) {
+		t.Fatal("non-Chinese song should accept English lyrics")
+	}
+}
