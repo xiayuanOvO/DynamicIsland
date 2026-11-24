@@ -134,4 +134,5 @@ func (a *island) finishMove(c *ui.Context) {
 		a.setExpanded(false)
 		a.win.Update(func() { a.applyWindowFrame(a.shownFrame, false) })
 	}
+	a.saveCurrentPosition(display)
 }

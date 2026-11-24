@@ -725,3 +725,58 @@ func TestVersionFiveClicksUnlocksDebugPanel(t *testing.T) {
 		t.Fatal("reset should clear debug states")
 	}
 }
+
+func TestDisplaySelectionAndPositionPersistence(t *testing.T) {
+	primary := mygo.Display{
+		ID: 1, Label: "Built-in Retina Display", Primary: true,
+		Bounds:   mygo.Rectangle{X: 0, Y: 0, Width: 1512, Height: 982},
+		WorkArea: mygo.Rectangle{X: 0, Y: 38, Width: 1512, Height: 944},
+	}
+	external := mygo.Display{
+		ID: 2, Label: "DELL U2723QE", Primary: false,
+		Bounds:   mygo.Rectangle{X: 1512, Y: 0, Width: 2560, Height: 1440},
+		WorkArea: mygo.Rectangle{X: 1512, Y: 25, Width: 2560, Height: 1415},
+	}
+	displays := []mygo.Display{primary, external}
+
+	a := island{
+		statePath:    filepath.Join(t.TempDir(), "shelf.json"),
+		settingsPage: settingsPageApp,
+		listDisplays: func() ([]mygo.Display, mygo.Display) { return displays, primary },
+	}
+	// Save a docked position on the external monitor.
+	a.centerX, a.top = external.WorkArea.X+external.WorkArea.Width-10, external.WorkArea.Y+220
+	a.dock = edgeDock{side: dockRight, display: external}
+	a.saveCurrentPosition(external)
+
+	saved, err := loadSettings(a.settingsPath())
+	if err != nil || !saved.Position.Saved || saved.Position.DisplayID != external.ID || saved.Position.DockSide != int(dockRight) {
+		t.Fatalf("saved position did not persist: %+v, %v", saved.Position, err)
+	}
+
+	// Restoring with both monitors connected should place it back on the external monitor docked right.
+	cx, top, dock := resolvePlacement(saved, displays, primary)
+	if dock.side != dockRight || dock.display.ID != external.ID || top != external.WorkArea.Y+220 || cx < external.WorkArea.X {
+		t.Fatalf("expected restored external docked placement, got cx=%d top=%d dock=%+v", cx, top, dock)
+	}
+
+	// Unplugging the external monitor should fall back cleanly inside the primary monitor.
+	cx, top, dock = resolvePlacement(saved, []mygo.Display{primary}, primary)
+	if dock.display.ID != primary.ID || cx < primary.WorkArea.X || cx > primary.WorkArea.X+primary.WorkArea.Width || top < primary.WorkArea.Y {
+		t.Fatalf("expected fallback inside primary monitor, got cx=%d top=%d dock=%+v", cx, top, dock)
+	}
+
+	// Switching display in App settings should move to the chosen display's top center and save DisplayID.
+	view := ui.NewTester(a.settingsView, settingsWidth, settingsHeight)
+	if err := view.Click("主显示器"); err != nil {
+		t.Fatal(err)
+	}
+	if err := view.Click("DELL U2723QE"); err != nil {
+		t.Fatal(err)
+	}
+	view.Advance(time.Second)
+	saved, err = loadSettings(a.settingsPath())
+	if err != nil || saved.DisplayID != external.ID || a.centerX != external.WorkArea.X+external.WorkArea.Width/2 || a.top != external.WorkArea.Y+14 || a.dock.side != dockNone {
+		t.Fatalf("selecting external display should center on it and persist DisplayID: saved=%+v cx=%d top=%d dock=%+v err=%v", saved, a.centerX, a.top, a.dock, err)
+	}
+}

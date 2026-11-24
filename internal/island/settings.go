@@ -42,6 +42,8 @@ type appSettings struct {
 	HideInFullscreen bool             `json:"hideInFullscreen"`
 	LowBatteryAlert  bool             `json:"lowBatteryAlert"`
 	ToggleShortcut   string           `json:"toggleShortcut,omitempty"`
+	DisplayID        int64            `json:"displayId,omitempty"`
+	Position         islandPosition   `json:"position,omitzero"`
 }
 
 func (s appSettings) toggleHotkey() string {
