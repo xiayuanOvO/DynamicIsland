@@ -8,6 +8,7 @@ import (
 const (
 	themeLight = iota
 	themeDark
+	themeSystem
 )
 
 const (
@@ -101,10 +102,29 @@ func panelTheme(c *ui.Context) *ui.Theme {
 	return panelThemes[themeLight]
 }
 
-func (a *island) applyTheme() {
+func (a *island) resolvedTheme() int {
 	if a.settings.Theme == themeDark {
+		return themeDark
+	}
+	if a.settings.Theme == themeSystem {
+		isDark := a.isSystemDark
+		if isDark == nil {
+			isDark = mygo.Theme.IsDark
+		}
+		if isDark() {
+			return themeDark
+		}
+	}
+	return themeLight
+}
+
+func (a *island) applyTheme() {
+	switch a.settings.Theme {
+	case themeDark:
 		mygo.Theme.SetSource(mygo.ThemeDark)
-	} else {
+	case themeSystem:
+		mygo.Theme.SetSource(mygo.ThemeSystem)
+	default:
 		mygo.Theme.SetSource(mygo.ThemeLight)
 	}
 }

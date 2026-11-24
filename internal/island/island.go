@@ -80,6 +80,7 @@ type island struct {
 	openAtLoginErr     string
 	getOpenAtLogin     func() bool
 	setOpenAtLogin     func(bool) error
+	isSystemDark       func() bool
 }
 
 func (a *island) start() {
@@ -116,6 +117,17 @@ func (a *island) start() {
 	a.win.OnMove(a.windowMoved)
 	a.win.OnBlur(a.clipboardWindowBlurred)
 	mygo.Screen.OnDisplaysChanged(a.recenter)
+	mygo.Theme.OnUpdated(func() {
+		if a.settings.Theme != themeSystem {
+			return
+		}
+		if a.win != nil {
+			a.win.Invalidate()
+		}
+		if a.settingsWindow != nil {
+			a.settingsWindow.Invalidate()
+		}
+	})
 	mygo.App.OnWillQuit(func(*mygo.QuitEvent) {
 		a.saveSettings()
 		if a.clipboard.stop != nil {

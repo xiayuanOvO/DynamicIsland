@@ -27,7 +27,7 @@ const (
 )
 
 func (a *island) view(c *ui.Context) {
-	c.SetTheme(islandThemes[a.settings.Theme])
+	c.SetTheme(islandThemes[a.resolvedTheme()])
 	c.Root().Background(ui.Transparent)
 	frame := a.shownFrame
 	w, h := int(frame.width), int(frame.height)
@@ -161,7 +161,7 @@ func (a *island) header(c *ui.Context, open float32) {
 					ui.Box(c.Key("compact-wave")).Absolute().Left(waveInset).Right(waveInset).
 						Top((compactHeight - 24) / 2).Height(24).Label("播放律动").
 						Draw(func(p *ui.Painter, r ui.Rect) {
-							paintMediaBars(p, r, a.media.wave[:], bandsPerBar, 1, a.settings.waveColor(a.media.artworkColor))
+							paintMediaBars(p, r, a.media.wave[:], bandsPerBar, 1, a.settings.waveColor(a.media.artworkColor, c.Theme().Dark))
 						})
 					if !docked {
 						a.media.cover(c.Key("compact-cover"), coverSize).
