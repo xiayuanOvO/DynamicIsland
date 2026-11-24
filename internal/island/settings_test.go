@@ -664,3 +664,17 @@ func TestAppLogViewerAndClearInSettings(t *testing.T) {
 		t.Fatalf("clearing logs should empty the store and show empty state: count=%d texts=%v", appLogs.count(), view.Texts())
 	}
 }
+
+func TestSearchChinaCitiesFindsCounties(t *testing.T) {
+	results := searchChinaCities("平邑", 10)
+	if len(results) == 0 || results[0].Name != "平邑县" || results[0].Region != "临沂市 · 山东省 · 中国" || !results[0].valid() {
+		t.Fatalf("expected 平邑县 from offline China dataset, got %+v", results)
+	}
+	multi := searchChinaCities("山东 平邑", 10)
+	if len(multi) == 0 || multi[0].Name != "平邑县" {
+		t.Fatalf("expected multi-term query to find 平邑县, got %+v", multi)
+	}
+	if overseas := searchChinaCities("Tokyo", 10); len(overseas) != 0 {
+		t.Fatalf("overseas city should fall back to Open-Meteo, got %+v", overseas)
+	}
+}
