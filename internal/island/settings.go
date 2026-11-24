@@ -172,6 +172,7 @@ func (a *island) openSettings() {
 			a.editingHotkey, a.hotkeyProblem = false, ""
 			a.openAtLoginErr = ""
 			a.showLogs, a.logClearErr = false, ""
+			a.versionClicks, a.debugUnlocked = 0, false
 			if a.updates.phase == updateLatest {
 				a.updates.phase = updateIdle
 			}

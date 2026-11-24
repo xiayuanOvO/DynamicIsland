@@ -14,8 +14,10 @@ import (
 	"testing"
 	"time"
 
+	"dynamicisland/internal/battery"
 	"dynamicisland/internal/lyrics"
 	"dynamicisland/internal/shelf"
+	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
 )
 
@@ -676,5 +678,50 @@ func TestSearchChinaCitiesFindsCounties(t *testing.T) {
 	}
 	if overseas := searchChinaCities("Tokyo", 10); len(overseas) != 0 {
 		t.Fatalf("overseas city should fall back to Open-Meteo, got %+v", overseas)
+	}
+}
+
+func TestVersionFiveClicksUnlocksDebugPanel(t *testing.T) {
+	prevVer := mygo.App.Version()
+	mygo.App.SetVersion("0.3.0")
+	t.Cleanup(func() { mygo.App.SetVersion(prevVer) })
+
+	notified := 0
+	a := island{
+		statePath:    filepath.Join(t.TempDir(), "shelf.json"),
+		settingsPage: settingsPageApp,
+		battery: islandBattery{
+			notifyLow: func(battery.Reading) { notified++ },
+		},
+	}
+	view := ui.NewTester(a.settingsView, settingsWidth, settingsHeight+180)
+	if view.HasText("模拟触发") {
+		t.Fatal("debug panel should stay hidden before 5 clicks")
+	}
+	for range 5 {
+		if err := view.Click("版本 0.3.0"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if !a.debugUnlocked || !view.HasText("模拟触发") || !view.HasText("模拟显示") {
+		t.Fatalf("5 clicks on version should unlock debug panel: unlocked=%v texts=%v", a.debugUnlocked, view.Texts())
+	}
+	if err := view.Click("模拟触发"); err != nil {
+		t.Fatal(err)
+	}
+	if notified != 1 || a.battery.alertDevice == nil {
+		t.Fatalf("debug low battery button should trigger alert and notification: notified=%d alert=%+v", notified, a.battery.alertDevice)
+	}
+	if err := view.Click("模拟显示"); err != nil {
+		t.Fatal(err)
+	}
+	if !a.idle.showsTomorrowRain(view.Now()) {
+		t.Fatal("debug tomorrow rain button should enable rain reminder")
+	}
+	if err := view.Click("重置"); err != nil {
+		t.Fatal(err)
+	}
+	if a.battery.alertDevice != nil || a.idle.showsTomorrowRain(view.Now()) {
+		t.Fatal("reset should clear debug states")
 	}
 }

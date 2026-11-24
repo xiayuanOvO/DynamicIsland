@@ -83,6 +83,9 @@ type island struct {
 	isSystemDark       func() bool
 	showLogs           bool
 	logClearErr        string
+	versionClicks      int
+	versionClickAt     time.Time
+	debugUnlocked      bool
 }
 
 func (a *island) start() {
