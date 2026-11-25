@@ -20,7 +20,7 @@ func TestBatteryRowInOverview(t *testing.T) {
 		{ID: "earbuds-left", Name: "测试耳机", Kind: battery.Headphones, Part: battery.Left, Percent: 0},
 	}
 	a.shownFrame = a.targetFrame()
-	if got, want := a.shownFrame.height-withoutBattery.height, widgetSpanPx(2)+widgetGridGap; got != want {
+	if got, want := a.shownFrame.height-withoutBattery.height, widgetRowSpanPx(2)+widgetGridGap; got != want {
 		t.Fatalf("battery card added %.1f points to the overview, want %.1f", got, want)
 	}
 	view := ui.NewTester(func(c *ui.Context) {

@@ -161,7 +161,7 @@ func (a *island) overviewLeadHeight() int {
 }
 
 func (a *island) batteryRow(c *ui.Context) {
-	a.batteryWidget(c, widgetSizeMedium, panelBodyWidth, widgetSpanPx(2))
+	a.batteryWidget(c, widgetSizeMedium, panelBodyWidth, widgetRowSpanPx(2))
 }
 
 func (a *island) batteryWidget(c *ui.Context, size widgetSize, width, height float32) {
@@ -178,11 +178,11 @@ func (a *island) batteryWidget(c *ui.Context, size widgetSize, width, height flo
 func (a *island) batteryMediumCard(c *ui.Context, width, height float32) {
 	tint := colorsFor(c.Theme().Dark).glass
 	card := ui.Column(c.Key("battery-medium")).Size(width, height).Shrink(0).Radius(13).Clip().
-		Padding(14, 14).Justify(ui.Center).
+		Padding(12, 14).Justify(ui.Center).
 		Background(tint.Alpha(0.4)).Border(0.75, tint.Alpha(0.65)).Label("设备电量")
 	card.Children(func() {
 		if len(a.battery.readings) > 4 {
-			ui.ScrollHorizontal(c.Key("battery-medium-scroll")).FillWidth().Height(140).Shrink(0).
+			ui.ScrollHorizontal(c.Key("battery-medium-scroll")).FillWidth().Height(110).Shrink(0).
 				AlignItems(ui.Center).Gap(10).Children(func() {
 				for _, reading := range a.battery.readings {
 					batteryMediumCell(c, reading)
@@ -203,8 +203,8 @@ func (a *island) batteryMediumCard(c *ui.Context, width, height float32) {
 }
 
 func batteryMediumCell(c *ui.Context, reading battery.Reading) {
-	const ringSize, iconSize, stroke float32 = 58, 22, 4.5
-	radius := ringSize/2 - 4
+	const ringSize, iconSize, stroke float32 = 50, 20, 4.0
+	radius := ringSize/2 - 3.5
 	name := batteryDeviceName(reading)
 	display, value := "—", "电量未知"
 	known := reading.Percent != battery.UnknownPercent
@@ -222,7 +222,7 @@ func batteryMediumCell(c *ui.Context, reading battery.Reading) {
 	} else if !known {
 		color = text.Alpha(0.45)
 	}
-	cell := ui.Column(c.Key(reading.ID)).Size(80, 118).Shrink(0).Gap(6).AlignItems(ui.Center).Justify(ui.Center).
+	cell := ui.Column(c.Key(reading.ID)).Size(80, 102).Shrink(0).Gap(5).AlignItems(ui.Center).Justify(ui.Center).
 		Label(name).Value(value)
 	if known {
 		cell.Role(ui.RoleMeter).Range(0, 100, float64(reading.Percent))
@@ -236,26 +236,26 @@ func batteryMediumCell(c *ui.Context, reading battery.Reading) {
 			}).Children(func() {
 			ui.Icon(c, batteryDeviceIcon(reading)).Size(iconSize, iconSize).TextColor(text).IgnoreInput(true)
 			if reading.Charging {
-				ui.Box(c).Absolute().Right(0).Bottom(0).Size(16, 16).Radius(8).
+				ui.Box(c).Absolute().Right(0).Bottom(0).Size(15, 15).Radius(7.5).
 					Background(lightColors.charging).Border(1.5, white).Center().IgnoreInput(true).Children(func() {
-					ui.Icon(c, chargingIcon).Size(10, 10).TextColor(white)
+					ui.Icon(c, chargingIcon).Size(9, 9).TextColor(white)
 				})
 			}
 		})
 		ui.Column(c).FillWidth().Gap(2).AlignItems(ui.Center).AccessHidden(true).IgnoreInput(true).Children(func() {
 			ui.Text(c, name).FillWidth().SingleLine().Ellipsis("…").TextAlign(ui.Center).
 				FontSize(11).FontWeight(500).TextColor(c.Theme().TextMuted)
-			ui.Text(c, display).FontSize(13).FontWeight(650).FontFeatures("tnum").SingleLine().
+			ui.Text(c, display).FontSize(12.5).FontWeight(650).FontFeatures("tnum").SingleLine().
 				TextColor(text)
 		})
 	})
 }
 
 func batteryMediumEmptyRing(c *ui.Context) {
-	const ringSize, stroke float32 = 58, 4.5
-	radius := ringSize/2 - 4
+	const ringSize, stroke float32 = 50, 4.0
+	radius := ringSize/2 - 3.5
 	text := c.Theme().Text
-	ui.Column(c).Size(80, 118).Shrink(0).AlignItems(ui.Center).Justify(ui.Center).AccessHidden(true).Children(func() {
+	ui.Column(c).Size(80, 102).Shrink(0).AlignItems(ui.Center).Justify(ui.Center).AccessHidden(true).Children(func() {
 		ui.Box(c).Size(ringSize, ringSize).Shrink(0).Draw(func(p *ui.Painter, r ui.Rect) {
 			cx, cy := r.X+r.W/2, r.Y+r.H/2
 			var ring ui.Path
@@ -268,7 +268,7 @@ func batteryMediumEmptyRing(c *ui.Context) {
 func (a *island) batterySmallCard(c *ui.Context, width, height float32) {
 	tint := colorsFor(c.Theme().Dark).glass
 	card := ui.Column(c.Key("battery-small")).Size(width, height).Shrink(0).Radius(13).Clip().
-		Padding(14, 14).Justify(ui.SpaceAround).Gap(8).
+		Padding(10, 12).Justify(ui.SpaceAround).Gap(4).
 		Background(tint.Alpha(0.4)).Border(0.75, tint.Alpha(0.65)).Label("设备电量")
 	card.Children(func() {
 		for row := range 2 {
@@ -287,8 +287,8 @@ func (a *island) batterySmallCard(c *ui.Context, width, height float32) {
 }
 
 func batterySmallCell(c *ui.Context, reading battery.Reading) {
-	const ringSize, iconSize, stroke float32 = 48, 18, 3.8
-	radius := ringSize/2 - 3.5
+	const ringSize, iconSize, stroke float32 = 38, 16, 3.2
+	radius := ringSize/2 - 3
 	name := batteryDeviceName(reading)
 	display, value := "—", "电量未知"
 	known := reading.Percent != battery.UnknownPercent
@@ -306,7 +306,7 @@ func batterySmallCell(c *ui.Context, reading battery.Reading) {
 	} else if !known {
 		color = text.Alpha(0.45)
 	}
-	cell := ui.Column(c.Key(reading.ID)).Size(74, 68).Shrink(0).Gap(4).AlignItems(ui.Center).Justify(ui.Center).
+	cell := ui.Column(c.Key(reading.ID)).Size(74, 55).Shrink(0).Gap(2).AlignItems(ui.Center).Justify(ui.Center).
 		Label(name).Value(value)
 	if known {
 		cell.Role(ui.RoleMeter).Range(0, 100, float64(reading.Percent))
@@ -320,22 +320,22 @@ func batterySmallCell(c *ui.Context, reading battery.Reading) {
 			}).Children(func() {
 			ui.Icon(c, batteryDeviceIcon(reading)).Size(iconSize, iconSize).TextColor(text).IgnoreInput(true)
 			if reading.Charging {
-				ui.Box(c).Absolute().Right(-1).Bottom(0).Size(14, 14).Radius(7).
+				ui.Box(c).Absolute().Right(-1).Bottom(0).Size(13, 13).Radius(6.5).
 					Background(lightColors.charging).Border(1.25, white).Center().IgnoreInput(true).Children(func() {
-					ui.Icon(c, chargingIcon).Size(9, 9).TextColor(white)
+					ui.Icon(c, chargingIcon).Size(8, 8).TextColor(white)
 				})
 			}
 		})
-		ui.Text(c, display).FontSize(11).FontWeight(600).FontFeatures("tnum").SingleLine().
+		ui.Text(c, display).FontSize(10.5).FontWeight(600).FontFeatures("tnum").SingleLine().
 			TextColor(text.Alpha(0.88)).AccessHidden(true).IgnoreInput(true)
 	})
 }
 
 func batteryEmptyRing(c *ui.Context) {
-	const ringSize, stroke float32 = 48, 3.8
-	radius := ringSize/2 - 3.5
+	const ringSize, stroke float32 = 38, 3.2
+	radius := ringSize/2 - 3
 	text := c.Theme().Text
-	ui.Column(c).Size(74, 68).Shrink(0).AlignItems(ui.Center).Justify(ui.Center).AccessHidden(true).Children(func() {
+	ui.Column(c).Size(74, 55).Shrink(0).AlignItems(ui.Center).Justify(ui.Center).AccessHidden(true).Children(func() {
 		ui.Box(c).Size(ringSize, ringSize).Shrink(0).Draw(func(p *ui.Painter, r ui.Rect) {
 			cx, cy := r.X+r.W/2, r.Y+r.H/2
 			var ring ui.Path

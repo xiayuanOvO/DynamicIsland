@@ -27,10 +27,11 @@ const (
 const (
 	widgetGridCols            = 4
 	widgetGridGap             = overviewCardGap
-	widgetGridCell            = float32(panelBodyWidth-(widgetGridCols-1)*widgetGridGap) / widgetGridCols
+	widgetGridColWidth        = float32(panelBodyWidth-(widgetGridCols-1)*widgetGridGap) / widgetGridCols
+	widgetGridRowHeight       = float32(66)
 	widgetLongPressDelay      = 350 * time.Millisecond
 	widgetLongPressMoveLimit  = 6
-	clipboardLargePreviewRows = 10
+	clipboardLargePreviewRows = 8
 )
 
 func widgetGridSpan(size widgetSize) (cols, rows int) {
@@ -44,15 +45,26 @@ func widgetGridSpan(size widgetSize) (cols, rows int) {
 	}
 }
 
-func widgetSpanPx(cells int) float32 {
-	if cells <= 0 {
+func widgetColSpanPx(cols int) float32 {
+	if cols <= 0 {
 		return 0
 	}
-	return float32(cells)*widgetGridCell + float32(cells-1)*widgetGridGap
+	return float32(cols)*widgetGridColWidth + float32(cols-1)*widgetGridGap
 }
 
-func widgetCellOffsetPx(index int) float32 {
-	return float32(index) * (widgetGridCell + widgetGridGap)
+func widgetRowSpanPx(rows int) float32 {
+	if rows <= 0 {
+		return 0
+	}
+	return float32(rows)*widgetGridRowHeight + float32(rows-1)*widgetGridGap
+}
+
+func widgetColOffsetPx(col int) float32 {
+	return float32(col) * (widgetGridColWidth + widgetGridGap)
+}
+
+func widgetRowOffsetPx(row int) float32 {
+	return float32(row) * (widgetGridRowHeight + widgetGridGap)
 }
 
 type panelWidgetSetting struct {
@@ -245,14 +257,14 @@ func (a *island) layoutWidgets(order []panelWidgetID) panelWidgetGrid {
 			cols: cols,
 			rows: rows,
 			rect: ui.Rect{
-				X: widgetCellOffsetPx(placedCol),
-				Y: widgetCellOffsetPx(placedRow),
-				W: widgetSpanPx(cols),
-				H: widgetSpanPx(rows),
+				X: widgetColOffsetPx(placedCol),
+				Y: widgetRowOffsetPx(placedRow),
+				W: widgetColSpanPx(cols),
+				H: widgetRowSpanPx(rows),
 			},
 		})
 	}
-	return panelWidgetGrid{slots: slots, height: widgetSpanPx(maxRow)}
+	return panelWidgetGrid{slots: slots, height: widgetRowSpanPx(maxRow)}
 }
 
 func (a *island) setWidgetSize(id panelWidgetID, size widgetSize) {

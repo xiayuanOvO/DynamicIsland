@@ -352,7 +352,7 @@ func (m *islandMedia) cover(c *ui.Context, size float32) ui.Element {
 }
 
 func (a *island) mediaCard(c *ui.Context) {
-	a.mediaWidget(c, widgetSizeMedium, panelBodyWidth, widgetSpanPx(2))
+	a.mediaWidget(c, widgetSizeMedium, panelBodyWidth, widgetRowSpanPx(2))
 }
 
 func (a *island) mediaWidget(c *ui.Context, size widgetSize, width, height float32) {
@@ -398,22 +398,22 @@ func (s appSettings) renderSmallMediaCard(c *ui.Context, m *islandMedia, expande
 	}
 	tint := colorsFor(c.Theme().Dark).glass
 	card := ui.Column(c.Key("media")).Size(width, height).Shrink(0).IgnoreInput(control == nil).
-		Padding(14, 14).Gap(10).Justify(ui.SpaceBetween).Radius(16).
+		Padding(10, 12).Gap(6).Justify(ui.SpaceBetween).Radius(16).
 		Gradient(tint.Alpha(0.48), tint.Alpha(0.19), 155).Border(0.75, tint.Alpha(0.65)).
 		InsetShadow(0, 1, 0, 0, tint.Alpha(0.46)).Label("媒体卡片")
 	card.Children(func() {
-		ui.Row(c.Key("track")).FillWidth().Height(60).Shrink(0).Gap(10).AlignItems(ui.Center).Children(func() {
-			m.cover(c.Key("cover"), 60)
-			ui.Column(c.Key("metadata")).Grow(1).MinWidth(0).Gap(3).Clip().Children(func() {
-				ui.Text(c, track.Title).FillWidth().SingleLine().Ellipsis("…").FontSize(13).FontWeight(600).
+		ui.Row(c.Key("track")).FillWidth().Height(44).Shrink(0).Gap(8).AlignItems(ui.Center).Children(func() {
+			m.cover(c.Key("cover"), 44)
+			ui.Column(c.Key("metadata")).Grow(1).MinWidth(0).Gap(2).Clip().Children(func() {
+				ui.Text(c, track.Title).FillWidth().SingleLine().Ellipsis("…").FontSize(12.5).FontWeight(600).
 					TextColor(c.Theme().Text).Tooltip(track.Title)
 				if track.Artist != "" {
-					ui.Text(c, track.Artist).FillWidth().SingleLine().Ellipsis("…").FontSize(11).
+					ui.Text(c, track.Artist).FillWidth().SingleLine().Ellipsis("…").FontSize(10.5).
 						TextColor(c.Theme().TextMuted).Tooltip(track.Artist)
 				}
 			})
 		})
-		ui.Column(c.Key("progress")).FillWidth().Gap(3).Children(func() {
+		ui.Column(c.Key("progress")).FillWidth().Gap(2).Children(func() {
 			var bar ui.Element
 			if control != nil && track.CanSeek() {
 				if !m.scrubbing {
@@ -435,22 +435,22 @@ func (s appSettings) renderSmallMediaCard(c *ui.Context, m *islandMedia, expande
 				bar = ui.Box(c.Key("waveform"))
 				m.scrubbing = false
 			}
-			bar.FillWidth().Height(12).Shrink(0).Draw(func(p *ui.Painter, r ui.Rect) {
+			bar.FillWidth().Height(10).Shrink(0).Draw(func(p *ui.Painter, r ui.Rect) {
 				color := s.waveColor(m.artworkColor, c.Theme().Dark)
 				trackRect := ui.Rect{X: r.X, Y: r.Y + (r.H-4)/2, W: r.W, H: 4}
 				p.Fill(trackRect, p.Theme().Text.Alpha(0.13), 2)
 				trackRect.W *= min(1, max(0, fraction))
 				p.Fill(trackRect, color.Alpha(0.88), min(2, trackRect.W/2))
 			})
-			ui.Row(c.Key("times")).FillWidth().Height(14).Shrink(0).AlignItems(ui.Center).Children(func() {
-				ui.Text(c, mediaTime(position)).FontSize(10).TextColor(c.Theme().TextMuted)
+			ui.Row(c.Key("times")).FillWidth().Height(12).Shrink(0).AlignItems(ui.Center).Children(func() {
+				ui.Text(c, mediaTime(position)).FontSize(9.5).TextColor(c.Theme().TextMuted)
 				ui.Box(c).Grow(1)
 				if duration > 0 {
-					ui.Text(c, mediaTime(duration)).FontSize(10).TextColor(c.Theme().TextMuted)
+					ui.Text(c, mediaTime(duration)).FontSize(9.5).TextColor(c.Theme().TextMuted)
 				}
 			})
 		})
-		ui.Row(c.Key("controls")).FillWidth().Height(36).Shrink(0).Gap(12).Center().Children(func() {
+		ui.Row(c.Key("controls")).FillWidth().Height(32).Shrink(0).Gap(10).Center().Children(func() {
 			if iconButton(c.Key("previous"), previousIcon, "上一首").Disabled(!track.Previous || m.action != "").Clicked() && control != nil {
 				control(nowplaying.Previous, 0)
 			}
@@ -458,7 +458,7 @@ func (s appSettings) renderSmallMediaCard(c *ui.Context, m *islandMedia, expande
 			if track.Playing {
 				icon, label = pauseIcon, "暂停"
 			}
-			if iconButton(c.Key("toggle"), icon, label).Size(36, 36).Radius(18).
+			if iconButton(c.Key("toggle"), icon, label).Size(32, 32).Radius(16).
 				Background(c.Theme().SurfaceHover).TextColor(c.Theme().Text).
 				Disabled(!track.Toggle || m.action != "").Clicked() && control != nil {
 				control(nowplaying.Toggle, 0)
@@ -493,20 +493,20 @@ func (s appSettings) renderLargeMediaCard(c *ui.Context, m *islandMedia, expande
 	if duration > 0 {
 		fraction = float32(position / duration)
 	}
-	const coverSize = 192
+	const coverSize = 118
 	tint := colorsFor(c.Theme().Dark).glass
 	card := ui.Column(c.Key("media")).Size(width, height).Shrink(0).IgnoreInput(control == nil).
-		Padding(18, 18).Gap(12).AlignItems(ui.Center).Justify(ui.SpaceBetween).Radius(16).
+		Padding(14, 16).Gap(8).AlignItems(ui.Center).Justify(ui.SpaceBetween).Radius(16).
 		Gradient(tint.Alpha(0.48), tint.Alpha(0.19), 155).Border(0.75, tint.Alpha(0.65)).
 		InsetShadow(0, 1, 0, 0, tint.Alpha(0.46)).Label("媒体卡片")
 	card.Children(func() {
 		m.cover(c.Key("cover"), coverSize)
-		ui.Column(c.Key("metadata")).FillWidth().MinWidth(0).Gap(3).AlignItems(ui.Center).Clip().Children(func() {
+		ui.Column(c.Key("metadata")).FillWidth().MinWidth(0).Gap(2).AlignItems(ui.Center).Clip().Children(func() {
 			ui.Text(c, track.Title).FillWidth().SingleLine().Ellipsis("…").TextAlign(ui.Center).
-				FontSize(17).FontWeight(650).TextColor(c.Theme().Text).Tooltip(track.Title)
+				FontSize(15.5).FontWeight(650).TextColor(c.Theme().Text).Tooltip(track.Title)
 			if track.Artist != "" {
 				ui.Text(c, track.Artist).FillWidth().SingleLine().Ellipsis("…").TextAlign(ui.Center).
-					FontSize(12.5).TextColor(c.Theme().TextMuted).Tooltip(track.Artist)
+					FontSize(12).TextColor(c.Theme().TextMuted).Tooltip(track.Artist)
 			}
 		})
 		ui.Column(c.Key("progress")).FillWidth().Gap(2).Children(func() {
@@ -531,32 +531,32 @@ func (s appSettings) renderLargeMediaCard(c *ui.Context, m *islandMedia, expande
 				wave = ui.Box(c.Key("waveform"))
 				m.scrubbing = false
 			}
-			wave.FillWidth().Height(26).Shrink(0).Draw(func(p *ui.Painter, r ui.Rect) {
+			wave.FillWidth().Height(24).Shrink(0).Draw(func(p *ui.Painter, r ui.Rect) {
 				color := s.waveColor(m.artworkColor, c.Theme().Dark)
 				paintMediaBars(p, r, m.wave[:], 1, fraction, color)
 			})
 			ui.Row(c.Key("times")).FillWidth().Height(14).Shrink(0).AlignItems(ui.Center).Children(func() {
-				ui.Text(c, mediaTime(position)).FontSize(10.5).TextColor(c.Theme().TextMuted)
+				ui.Text(c, mediaTime(position)).FontSize(10).TextColor(c.Theme().TextMuted)
 				ui.Box(c).Grow(1)
 				if duration > 0 {
-					ui.Text(c, mediaTime(duration)).FontSize(10.5).TextColor(c.Theme().TextMuted)
+					ui.Text(c, mediaTime(duration)).FontSize(10).TextColor(c.Theme().TextMuted)
 				}
 			})
 		})
-		ui.Row(c.Key("controls")).FillWidth().Height(40).Gap(18).Center().Children(func() {
-			if iconButton(c.Key("previous"), previousIcon, "上一首").Size(32, 32).Disabled(!track.Previous || m.action != "").Clicked() && control != nil {
+		ui.Row(c.Key("controls")).FillWidth().Height(36).Gap(16).Center().Children(func() {
+			if iconButton(c.Key("previous"), previousIcon, "上一首").Size(30, 30).Disabled(!track.Previous || m.action != "").Clicked() && control != nil {
 				control(nowplaying.Previous, 0)
 			}
 			icon, label := playIcon, "播放"
 			if track.Playing {
 				icon, label = pauseIcon, "暂停"
 			}
-			if iconButton(c.Key("toggle"), icon, label).Size(40, 40).Radius(20).
+			if iconButton(c.Key("toggle"), icon, label).Size(36, 36).Radius(18).
 				Background(c.Theme().SurfaceHover).TextColor(c.Theme().Text).
 				Disabled(!track.Toggle || m.action != "").Clicked() && control != nil {
 				control(nowplaying.Toggle, 0)
 			}
-			if iconButton(c.Key("next"), nextIcon, "下一首").Size(32, 32).Disabled(!track.Next || m.action != "").Clicked() && control != nil {
+			if iconButton(c.Key("next"), nextIcon, "下一首").Size(30, 30).Disabled(!track.Next || m.action != "").Clicked() && control != nil {
 				control(nowplaying.Next, 0)
 			}
 		})
@@ -693,11 +693,12 @@ func (s appSettings) renderMediaCardWithHeight(c *ui.Context, m *islandMedia, ex
 	if large {
 		card.Row().Padding(14).Gap(14).AlignItems(ui.Center)
 	}
+	coverSize := min(float32(largeMediaCoverSize), height-24)
 	card.Children(func() {
 		if large {
-			m.cover(c.Key("cover"), largeMediaCoverSize)
-			ui.Column(c.Key("large-details")).Grow(1).MinWidth(0).Height(largeMediaCoverSize).
-				Gap(8).Justify(ui.Center).Children(func() {
+			m.cover(c.Key("cover"), coverSize)
+			ui.Column(c.Key("large-details")).Grow(1).MinWidth(0).Height(coverSize).
+				Gap(6).Justify(ui.Center).Children(func() {
 				metadata()
 				ui.Column(c.Key("progress")).FillWidth().Gap(1).Children(progress)
 				ui.Row(c.Key("controls")).FillWidth().Height(34).Gap(12).Center().Children(controls)
