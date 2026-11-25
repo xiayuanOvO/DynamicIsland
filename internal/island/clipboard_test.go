@@ -43,9 +43,9 @@ func newTestClipboard(t *testing.T, recording bool, texts ...string) *island {
 	return a
 }
 
-func readTestClipboardEntries(t *testing.T, store *clipboardStore, now time.Time) []clipboardEntry {
+func readTestClipboardEntries(t *testing.T, store *clipboardStore) []clipboardEntry {
 	t.Helper()
-	entries, more, err := store.entryPage("", now, clipboardEntry{}, clipboardHistoryLimit)
+	entries, more, err := store.entryPage("", clipboardEntry{}, clipboardHistoryLimit)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -69,7 +69,7 @@ func TestClipboardHistoryPersistsRecentText(t *testing.T) {
 	a.recordClipboard(transfer.TextData(multiline), now)
 	a.recordClipboard(transfer.TextData("样本文字"), now.Add(time.Second))
 	a.recordClipboard(transfer.TextData(multiline), later)
-	entries := readTestClipboardEntries(t, a.clipboard.store, later)
+	entries := readTestClipboardEntries(t, a.clipboard.store)
 	if len(entries) != 2 || !entries[0].CopiedAt.Equal(later) || entries[1].Preview != "样本文字" {
 		t.Fatal("a repeated copy should refresh the date without duplicating the entry")
 	}
@@ -92,7 +92,7 @@ func TestClipboardHistoryPersistsRecentText(t *testing.T) {
 	reopened := island{statePath: a.statePath}
 	reopened.loadClipboard()
 	defer reopened.clipboard.store.Close()
-	if reopened.clipboard.Recording || !slices.Equal(readTestClipboardEntries(t, reopened.clipboard.store, later), entries) {
+	if reopened.clipboard.Recording || !slices.Equal(readTestClipboardEntries(t, reopened.clipboard.store), entries) {
 		t.Fatal("reopening did not restore paused recording and saved entries")
 	}
 }
@@ -143,7 +143,7 @@ func TestClipboardMigratesTextAndImagesFromJSON(t *testing.T) {
 	legacy := map[string]any{"recording": true, "shortcut": "Alt+Shift+K", "entries": []map[string]any{
 		{"image": map[string]any{"id": id, "size": len(bitmap), "width": 320, "height": 180}, "copiedAt": now},
 		{"text": "样本文字", "copiedAt": now.Add(-time.Second)},
-		{"text": "已过期", "copiedAt": now.Add(-clipboardRetention)},
+		{"text": "更早记录", "copiedAt": now.Add(-120 * 24 * time.Hour)},
 	}}
 	marshaled, err := json.Marshal(legacy)
 	if err != nil {
@@ -162,9 +162,9 @@ func TestClipboardMigratesTextAndImagesFromJSON(t *testing.T) {
 	a.clipboard.store = nil
 	a.loadClipboard()
 	defer a.clipboard.store.Close()
-	entries := readTestClipboardEntries(t, a.clipboard.store, time.Now())
-	if len(entries) != 2 || entries[0].Width != 320 || entries[0].Height != 180 || entries[1].Preview != "样本文字" {
-		t.Fatal("the SQLite database did not contain the unexpired legacy history")
+	entries := readTestClipboardEntries(t, a.clipboard.store)
+	if len(entries) != 3 || entries[0].Width != 320 || entries[0].Height != 180 || entries[1].Preview != "样本文字" || entries[2].Preview != "更早记录" {
+		t.Fatal("the SQLite database did not contain all migrated legacy history")
 	}
 	for _, obsolete := range []string{legacyPath, legacyImages} {
 		if _, err := os.Stat(obsolete); !os.IsNotExist(err) {
@@ -199,43 +199,28 @@ func TestClipboardMigratesTextAndImagesFromJSON(t *testing.T) {
 	if err := view.Click("删除记录 图片 320 × 180"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := a.clipboardData(entry); !errors.Is(err, sql.ErrNoRows) || len(a.clipboard.entries) != 1 {
-		t.Fatal("deleting the image should remove its bytes and leave the text entry")
+	if _, err := a.clipboardData(entry); !errors.Is(err, sql.ErrNoRows) || len(a.clipboard.entries) != 2 {
+		t.Fatal("deleting the image should remove its bytes and leave the text entries")
 	}
 }
 
-func TestClipboardRecordsExpireAndKeepNewestTenThousand(t *testing.T) {
+func TestClipboardRecordsKeepOldEntriesAndNewestTenThousand(t *testing.T) {
 	a := newTestClipboard(t, true)
 	store := a.clipboard.store
 	now := time.Now()
-	tx, err := store.Begin()
-	if err != nil {
-		t.Fatal(err)
+	old := now.Add(-120 * 24 * time.Hour)
+	if !a.recordClipboard(transfer.TextData("百天前记录"), old) {
+		t.Fatal(a.clipboard.problem)
 	}
-	defer tx.Rollback()
-	for _, record := range []clipboardRecord{
-		{text: "过期", copiedAt: now.Add(-clipboardRetention)},
-		{text: "未过期", copiedAt: now.Add(-clipboardRetention + time.Nanosecond)},
-	} {
-		if _, err := storeClipboardRecord(tx, record); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if err := tx.Commit(); err != nil {
-		t.Fatal(err)
-	}
-	if visible := readTestClipboardEntries(t, store, now); len(visible) != 1 || visible[0].Preview != "未过期" {
-		t.Fatal("entries should expire at exactly 90 days")
-	}
-	if changed, err := store.expire(now); !changed || err != nil {
-		t.Fatalf("expiry should remove the old row: %v", err)
-	}
-	var count int
-	if err := store.QueryRow("SELECT count(*) FROM entries").Scan(&count); err != nil || count != 1 {
-		t.Fatalf("expected the expired row to be removed from SQLite: count=%d, error=%v", count, err)
+	if visible := readTestClipboardEntries(t, store); len(visible) != 1 || visible[0].Preview != "百天前记录" {
+		t.Fatal("entries older than 90 days should not expire")
+	} else if data, err := a.clipboardData(visible[0]); err != nil {
+		t.Fatalf("entries older than 90 days should remain readable: %v", err)
+	} else if text, err := data.Read(transfer.Text); err != nil || string(text) != "百天前记录" {
+		t.Fatalf("unexpected text for old entry: %q, err=%v", text, err)
 	}
 
-	tx, err = store.Begin()
+	tx, err := store.Begin()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -251,7 +236,7 @@ func TestClipboardRecordsExpireAndKeepNewestTenThousand(t *testing.T) {
 	if !a.recordClipboard(transfer.TextData("最新"), now) {
 		t.Fatal(a.clipboard.problem)
 	}
-	entries := readTestClipboardEntries(t, store, now)
+	entries := readTestClipboardEntries(t, store)
 	if len(entries) != 10_000 || entries[0].Preview != "最新" || entries[len(entries)-1].Preview != "记录 00001" {
 		t.Fatal("the history should retain exactly the newest 10,000 records in a stable order")
 	}
@@ -260,7 +245,7 @@ func TestClipboardRecordsExpireAndKeepNewestTenThousand(t *testing.T) {
 	if !slices.Equal(a.clipboard.entries, entries[:clipboardPageSize]) || !a.clipboard.hasMore || !view.HasText("最新") || len(view.Texts()) > 60 {
 		t.Fatal("the panel should read only the newest page and build only visible rows even with a full history")
 	}
-	a.loadMoreClipboardEntries(now)
+	a.loadMoreClipboardEntries()
 	if !slices.Equal(a.clipboard.entries, entries[:2*clipboardPageSize]) {
 		t.Fatal("pagination should neither skip nor repeat records with the same timestamp")
 	}
@@ -270,15 +255,25 @@ func TestClipboardRecordsExpireAndKeepNewestTenThousand(t *testing.T) {
 	}
 }
 
-func TestClipboardRecordRollsBackIfRetentionFails(t *testing.T) {
+func TestClipboardRecordRollsBackIfLimitPruneFails(t *testing.T) {
 	a := newTestClipboard(t, true)
 	store := a.clipboard.store
 	now := time.Now()
-	if _, err := store.record(clipboardRecord{text: "旧记录", copiedAt: now.Add(-clipboardRetention)}); err != nil {
+	tx, err := store.Begin()
+	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.Exec(`CREATE TRIGGER reject_expiry BEFORE DELETE ON entries
-		BEGIN SELECT RAISE(ABORT, 'test expiry failed'); END`); err != nil {
+	defer tx.Rollback()
+	for i := range clipboardHistoryLimit {
+		if _, err := storeClipboardRecord(tx, clipboardRecord{text: fmt.Sprintf("旧记录 %05d", i), copiedAt: now.Add(-time.Second)}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Exec(`CREATE TRIGGER reject_prune BEFORE DELETE ON entries
+		BEGIN SELECT RAISE(ABORT, 'test prune failed'); END`); err != nil {
 		t.Fatal(err)
 	}
 	bitmap := sampleClipboardPNG(t)
@@ -287,16 +282,16 @@ func TestClipboardRecordRollsBackIfRetentionFails(t *testing.T) {
 		t.Fatal("an image should not be saved if its transaction failed")
 	}
 	var count int
-	if err := store.QueryRow("SELECT count(*) FROM entries").Scan(&count); err != nil || count != 1 {
-		t.Fatalf("a failed write should leave the original row intact: count=%d error=%v", count, err)
+	if err := store.QueryRow("SELECT count(*) FROM entries").Scan(&count); err != nil || count != clipboardHistoryLimit {
+		t.Fatalf("a failed write should leave the original rows intact: count=%d error=%v", count, err)
 	}
-	if _, err := store.Exec("DROP TRIGGER reject_expiry"); err != nil {
+	if _, err := store.Exec("DROP TRIGGER reject_prune"); err != nil {
 		t.Fatal(err)
 	}
 	if !a.recordClipboard(data, now) {
 		t.Fatal(a.clipboard.problem)
 	}
-	entries := readTestClipboardEntries(t, store, now)
+	entries := readTestClipboardEntries(t, store)
 	offer, err := a.clipboardData(entries[0])
 	if err != nil {
 		t.Fatal(err)
@@ -364,7 +359,7 @@ func TestClipboardPanelDeletesAndClearsSavedHistory(t *testing.T) {
 	reopened := island{statePath: a.statePath}
 	reopened.loadClipboard()
 	defer reopened.clipboard.store.Close()
-	if len(readTestClipboardEntries(t, reopened.clipboard.store, time.Now())) != 0 || reopened.clipboard.loadFailed || reopened.clipboard.hotkey() != "Alt+Shift+K" {
+	if len(readTestClipboardEntries(t, reopened.clipboard.store)) != 0 || reopened.clipboard.loadFailed || reopened.clipboard.hotkey() != "Alt+Shift+K" {
 		t.Fatal("clearing should save the empty list and keep the shortcut")
 	}
 	view.Key(0, ui.KeyEscape)
@@ -640,7 +635,7 @@ func TestClipboardDistinguishesScrollFromPointerMovement(t *testing.T) {
 	}
 }
 
-func TestClipboardPinMovesToTopAndSurvivesExpiry(t *testing.T) {
+func TestClipboardPinMovesToTopAndSurvivesLimit(t *testing.T) {
 	a := newTestClipboard(t, true, "最新记录", "常用邮箱", "较早记录")
 	a.openClipboard(false)
 	view := ui.NewTester(func(c *ui.Context) { a.clipboardView(c, true, nil) }, panelWidth, clipboardPanelHeight)
@@ -656,38 +651,44 @@ func TestClipboardPinMovesToTopAndSurvivesExpiry(t *testing.T) {
 	}
 
 	// Verify pagination across pinned and unpinned entries.
-	page1, more, err := a.clipboard.store.entryPage("", time.Now(), clipboardEntry{}, 2)
+	page1, more, err := a.clipboard.store.entryPage("", clipboardEntry{}, 2)
 	if err != nil || !more || len(page1) != 2 || page1[0].Preview != "常用邮箱" || page1[1].Preview != "最新记录" {
 		t.Fatalf("first page should return pinned then newest unpinned: %+v, more=%v, err=%v", page1, more, err)
 	}
-	page2, more, err := a.clipboard.store.entryPage("", time.Now(), page1[1], 2)
+	page2, more, err := a.clipboard.store.entryPage("", page1[1], 2)
 	if err != nil || more || len(page2) != 1 || page2[0].Preview != "较早记录" {
 		t.Fatalf("second page should return remaining unpinned entry: %+v, more=%v, err=%v", page2, more, err)
 	}
 
-	// Verify pinned entry survives 90-day expiry while unpinned entries expire.
-	future := time.Now().Add(clipboardRetention + time.Hour)
-	changed, err := a.clipboard.store.expire(future)
-	if err != nil || !changed {
-		t.Fatalf("unpinned entries should expire after retention: changed=%v, err=%v", changed, err)
+	// Verify pinned entry survives 10,000 limit cleanup while oldest unpinned entries are pruned.
+	now := time.Now().Add(time.Minute)
+	tx, err := a.clipboard.store.Begin()
+	if err != nil {
+		t.Fatal(err)
 	}
-	remaining := readTestClipboardEntries(t, a.clipboard.store, future)
-	if len(remaining) != 1 || remaining[0].Preview != "常用邮箱" || !remaining[0].Pinned {
-		t.Fatalf("pinned entry should survive expiry: %+v", remaining)
+	defer tx.Rollback()
+	for i := range clipboardHistoryLimit {
+		if _, err := storeClipboardRecord(tx, clipboardRecord{text: fmt.Sprintf("批量记录 %05d", i), copiedAt: now}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	if !a.recordClipboard(transfer.TextData("触发上限"), now.Add(time.Second)) {
+		t.Fatal(a.clipboard.problem)
+	}
+	remaining := readTestClipboardEntries(t, a.clipboard.store)
+	if len(remaining) != clipboardHistoryLimit || remaining[0].Preview != "常用邮箱" || !remaining[0].Pinned {
+		t.Fatalf("pinned entry should remain at top and survive limit cleanup: len=%d, first=%+v", len(remaining), remaining[0])
 	}
 
-	// Unpinning should restore normal state and allow expiry.
+	// Unpinning should clear the pinned flag and move it out of the pinned section.
+	view.Frame()
 	if err := view.Click("取消置顶记录 常用邮箱"); err != nil {
 		t.Fatal(err)
 	}
-	if len(a.clipboard.entries) != 1 || a.clipboard.entries[0].Pinned {
-		t.Fatalf("unpinning should clear the pinned flag: %+v", a.clipboard.entries)
-	}
-	changed, err = a.clipboard.store.expire(future)
-	if err != nil || !changed {
-		t.Fatalf("unpinned entry should expire after retention: changed=%v, err=%v", changed, err)
-	}
-	if remaining := readTestClipboardEntries(t, a.clipboard.store, future); len(remaining) != 0 {
-		t.Fatalf("unpinned expired entry should be removed: %+v", remaining)
+	if len(a.clipboard.entries) == 0 || a.clipboard.entries[0].Pinned {
+		t.Fatalf("unpinning should clear the pinned flag: %+v", a.clipboard.entries[:min(3, len(a.clipboard.entries))])
 	}
 }

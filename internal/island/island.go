@@ -162,7 +162,6 @@ func (a *island) start() {
 	}
 	a.createTray()
 	a.syncClipboardRecording()
-	a.watchClipboardExpiry()
 	a.watchTodoReminders()
 	a.watchFullscreen()
 	a.refreshBattery()

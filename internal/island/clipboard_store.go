@@ -19,10 +19,7 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-const (
-	clipboardHistoryLimit = 10_000
-	clipboardRetention    = 90 * 24 * time.Hour
-)
+const clipboardHistoryLimit = 10_000
 
 type clipboardStore struct{ *sql.DB }
 
@@ -142,7 +139,7 @@ func (s *clipboardStore) record(record clipboardRecord) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	pruned, err := pruneClipboardRecords(tx, record.copiedAt)
+	pruned, err := pruneClipboardRecords(tx)
 	if err != nil {
 		return false, err
 	}
@@ -178,49 +175,36 @@ func storeClipboardRecord(tx *sql.Tx, record clipboardRecord) (sql.Result, error
 		hash.Sum(nil), searchText, record.text, record.png)
 }
 
-func pruneClipboardRecords(tx *sql.Tx, now time.Time) (bool, error) {
-	expired, err := tx.Exec("DELETE FROM entries WHERE pinned = 0 AND copied_at <= ?", now.Add(-clipboardRetention).UnixNano())
-	if err != nil {
-		return false, err
-	}
+func pruneClipboardRecords(tx *sql.Tx) (bool, error) {
 	overflow, err := tx.Exec(`DELETE FROM entries WHERE pinned = 0 AND id IN (
 		SELECT id FROM entries ORDER BY pinned DESC, copied_at DESC, id DESC LIMIT -1 OFFSET ?
 	)`, clipboardHistoryLimit)
 	if err != nil {
 		return false, err
 	}
-	n, err := expired.RowsAffected()
-	if err != nil {
-		return false, err
-	}
 	m, err := overflow.RowsAffected()
-	return n+m > 0, err
+	return m > 0, err
 }
 
-func (s *clipboardStore) expire(now time.Time) (bool, error) {
-	result, err := s.Exec("DELETE FROM entries WHERE pinned = 0 AND copied_at <= ?", now.Add(-clipboardRetention).UnixNano())
-	if err != nil {
-		return false, err
-	}
-	n, err := result.RowsAffected()
-	return n > 0, err
-}
-
-func (s *clipboardStore) entryPage(query string, now time.Time, after clipboardEntry, limit int) ([]clipboardEntry, bool, error) {
-	statement := "SELECT id, preview, copied_at, image_width, image_height, pinned FROM entries WHERE (pinned = 1 OR copied_at > ?)"
-	args := []any{now.Add(-clipboardRetention).UnixNano()}
+func (s *clipboardStore) entryPage(query string, after clipboardEntry, limit int) ([]clipboardEntry, bool, error) {
+	statement := "SELECT id, preview, copied_at, image_width, image_height, pinned FROM entries"
+	var conditions []string
+	var args []any
 	if after.ID != 0 {
 		afterPinned := 0
 		if after.Pinned {
 			afterPinned = 1
 		}
-		statement += " AND (pinned, copied_at, id) < (?, ?, ?)"
+		conditions = append(conditions, "(pinned, copied_at, id) < (?, ?, ?)")
 		args = append(args, afterPinned, after.CopiedAt.UnixNano(), after.ID)
 	}
 	if terms := strings.Fields(strings.ToLower(query)); len(terms) > 0 {
 		encoded, _ := json.Marshal(terms)
-		statement += " AND NOT EXISTS (SELECT 1 FROM json_each(?) WHERE instr(entries.search_text, value) = 0)"
+		conditions = append(conditions, "NOT EXISTS (SELECT 1 FROM json_each(?) WHERE instr(entries.search_text, value) = 0)")
 		args = append(args, string(encoded))
+	}
+	if len(conditions) > 0 {
+		statement += " WHERE " + strings.Join(conditions, " AND ")
 	}
 	rows, err := s.Query(statement+" ORDER BY pinned DESC, copied_at DESC, id DESC LIMIT ?", append(args, limit+1)...)
 	if err != nil {
@@ -264,7 +248,7 @@ func (s *clipboardStore) clear() error {
 	return err
 }
 
-func (s *clipboardStore) migrate(path, imageDir string, now time.Time) (bool, error) {
+func (s *clipboardStore) migrate(path, imageDir string) (bool, error) {
 	var legacy struct {
 		clipboardState
 		Entries []struct {
@@ -294,9 +278,6 @@ func (s *clipboardStore) migrate(path, imageDir string, now time.Time) (bool, er
 	// Legacy entries are newest first. Insert in reverse to preserve equal timestamps.
 	for i := len(legacy.Entries) - 1; i >= 0; i-- {
 		entry := legacy.Entries[i]
-		if !entry.CopiedAt.After(now.Add(-clipboardRetention)) {
-			continue
-		}
 		record := clipboardRecord{copiedAt: entry.CopiedAt}
 		if validClipboardText(entry.Text) {
 			record.text = entry.Text
@@ -329,7 +310,7 @@ func (s *clipboardStore) migrate(path, imageDir string, now time.Time) (bool, er
 			}
 		}
 	}
-	if _, err := pruneClipboardRecords(tx, now); err != nil {
+	if _, err := pruneClipboardRecords(tx); err != nil {
 		return false, err
 	}
 	if _, err := tx.Exec(clipboardSettingsSQL, legacy.Recording, legacy.Shortcut); err != nil {

@@ -36,7 +36,7 @@ func (a *island) clipboardShortcuts(c *ui.Context) {
 		selected = max(0, selected-1)
 	} else {
 		if selected+1 >= len(history.entries)-1 {
-			a.loadMoreClipboardEntries(c.Now())
+			a.loadMoreClipboardEntries()
 		}
 		selected = min(len(history.entries)-1, selected+1)
 	}

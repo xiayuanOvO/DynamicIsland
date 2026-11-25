@@ -239,7 +239,7 @@ func TestClipboardSettingTogglesHistoryEntrypoints(t *testing.T) {
 		}
 		reopened := island{statePath: a.statePath}
 		reopened.loadClipboard()
-		entries := readTestClipboardEntries(t, reopened.clipboard.store, time.Now())
+		entries := readTestClipboardEntries(t, reopened.clipboard.store)
 		reopened.clipboard.store.Close()
 		if reopened.clipboard.Recording != enabled || len(entries) != 1 || entries[0].Preview != "样本文字" {
 			t.Fatal("the setting or existing history was not persisted")

@@ -83,14 +83,13 @@ func (a *island) loadClipboard() {
 	history := &a.clipboard
 	store, err := openClipboardStore(a.clipboardPath())
 	if err == nil {
-		now := time.Now()
 		history.clipboardState, err = store.settings()
 		if errors.Is(err, sql.ErrNoRows) {
 			dir := filepath.Dir(a.statePath)
 			legacyPath := filepath.Join(dir, "clipboard.json")
 			legacyImages := filepath.Join(dir, "clipboard-images")
 			var migrated bool
-			migrated, err = store.migrate(legacyPath, legacyImages, now)
+			migrated, err = store.migrate(legacyPath, legacyImages)
 			if err == nil {
 				history.clipboardState, err = store.settings()
 				if err == nil && migrated {
@@ -102,9 +101,6 @@ func (a *island) loadClipboard() {
 					}
 				}
 			}
-		}
-		if err == nil {
-			_, err = store.expire(now)
 		}
 		if err != nil {
 			store.Close()
@@ -144,14 +140,14 @@ func (a *island) saveClipboardSettings(next clipboardState) bool {
 	return true
 }
 
-func (a *island) refreshClipboardEntries(now time.Time, reset bool) {
+func (a *island) refreshClipboardEntries(reset bool) {
 	history := &a.clipboard
 	if reset {
 		history.entries, history.hasMore = nil, false
 		history.selected, history.hoverSelection = 0, 0
 		history.list = ui.ListState{}
 	}
-	entries, more, err := history.store.entryPage(history.query, now, clipboardEntry{}, max(clipboardPageSize, len(history.entries)))
+	entries, more, err := history.store.entryPage(history.query, clipboardEntry{}, max(clipboardPageSize, len(history.entries)))
 	if err != nil {
 		log.Printf("read clipboard entries: %v", err)
 		history.problem = "剪贴板历史读取失败"
@@ -159,8 +155,7 @@ func (a *island) refreshClipboardEntries(now time.Time, reset bool) {
 	}
 	if len(entries) > 0 || strings.TrimSpace(history.query) == "" {
 		history.hasEntries = len(entries) != 0
-	} else if err := history.store.QueryRow("SELECT EXISTS(SELECT 1 FROM entries WHERE pinned = 1 OR copied_at > ?)",
-		now.Add(-clipboardRetention).UnixNano()).Scan(&history.hasEntries); err != nil {
+	} else if err := history.store.QueryRow("SELECT EXISTS(SELECT 1 FROM entries)").Scan(&history.hasEntries); err != nil {
 		log.Printf("check clipboard entries: %v", err)
 		history.problem = "剪贴板历史读取失败"
 		return
@@ -168,13 +163,13 @@ func (a *island) refreshClipboardEntries(now time.Time, reset bool) {
 	history.entries, history.hasMore, history.problem = entries, more, ""
 }
 
-func (a *island) loadMoreClipboardEntries(now time.Time) {
+func (a *island) loadMoreClipboardEntries() {
 	history := &a.clipboard
 	if !history.hasMore {
 		return
 	}
 	after := history.entries[len(history.entries)-1]
-	entries, more, err := history.store.entryPage(history.query, now, after, clipboardPageSize)
+	entries, more, err := history.store.entryPage(history.query, after, clipboardPageSize)
 	if err != nil {
 		log.Printf("read older clipboard entries: %v", err)
 		history.problem = "剪贴板历史读取失败"
@@ -182,37 +177,6 @@ func (a *island) loadMoreClipboardEntries(now time.Time) {
 	}
 	history.entries = append(history.entries, entries...)
 	history.hasMore, history.problem = more, ""
-}
-
-func (a *island) watchClipboardExpiry() {
-	done := make(chan struct{})
-	mygo.App.OnWillQuit(func(*mygo.QuitEvent) { close(done) })
-	go func() {
-		ticker := time.NewTicker(time.Hour)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-done:
-				return
-			case <-ticker.C:
-				mygo.RunOnMain(func() {
-					history := &a.clipboard
-					if history.store == nil {
-						return
-					}
-					now := time.Now()
-					changed, err := history.store.expire(now)
-					if err != nil {
-						log.Printf("expire clipboard entries: %v", err)
-					}
-					if changed && history.open {
-						a.refreshClipboardEntries(now, false)
-						a.win.Invalidate()
-					}
-				})
-			}
-		}
-	}()
 }
 
 func (a *island) syncClipboardRecording() {
@@ -310,7 +274,7 @@ func (a *island) recordClipboard(data transfer.Data, copiedAt time.Time) bool {
 	}
 	history.problem = ""
 	if changed && history.open {
-		a.refreshClipboardEntries(copiedAt, false)
+		a.refreshClipboardEntries(false)
 	}
 	return changed
 }
@@ -318,8 +282,7 @@ func (a *island) recordClipboard(data transfer.Data, copiedAt time.Time) bool {
 func (a *island) clipboardData(entry clipboardEntry) (transfer.Data, error) {
 	var text string
 	var bitmap []byte
-	if err := a.clipboard.store.QueryRow("SELECT text, image FROM entries WHERE id=? AND copied_at > ?",
-		entry.ID, time.Now().Add(-clipboardRetention).UnixNano()).Scan(&text, &bitmap); err != nil {
+	if err := a.clipboard.store.QueryRow("SELECT text, image FROM entries WHERE id=?", entry.ID).Scan(&text, &bitmap); err != nil {
 		return transfer.Data{}, err
 	}
 	if len(bitmap) == 0 {
