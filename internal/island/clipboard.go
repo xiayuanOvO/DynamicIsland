@@ -23,6 +23,7 @@ const (
 	clipboardTextLimit     = 32 * 1024
 	clipboardImageLimit    = 16 << 20
 	clipboardPageSize      = 50
+	clipboardPreviewRows   = 3
 	defaultClipboardHotkey = "Alt+Shift+V"
 	clipboardHistoryFlag   = transfer.Format("CanIncludeInClipboardHistory")
 )
@@ -51,6 +52,8 @@ type clipboardComponent struct {
 	clipboardState
 	store              *clipboardStore
 	entries            []clipboardEntry
+	preview            []clipboardEntry
+	previewLoaded      bool
 	hasEntries         bool
 	hasMore            bool
 	list               ui.ListState
@@ -73,6 +76,30 @@ type clipboardComponent struct {
 
 func (h *clipboardComponent) selectedIndex() int {
 	return max(0, slices.IndexFunc(h.entries, func(entry clipboardEntry) bool { return entry.ID == h.selected }))
+}
+
+func (h *clipboardComponent) previewHeight() int {
+	if !h.Recording {
+		return 0
+	}
+	rows := min(len(h.preview), clipboardPreviewRows)
+	return max(todoPreviewMinHeight, todoPreviewHeader+rows*todoPreviewRowHeight+2*todoPreviewPadding)
+}
+
+func (a *island) refreshClipboardPreview() {
+	history := &a.clipboard
+	if history.store == nil {
+		history.preview = nil
+		history.previewLoaded = false
+		return
+	}
+	entries, _, err := history.store.entryPage("", clipboardEntry{}, clipboardPreviewRows)
+	if err != nil {
+		log.Printf("read clipboard preview: %v", err)
+		return
+	}
+	history.preview = entries
+	history.previewLoaded = true
 }
 
 func (a *island) clipboardPath() string {
@@ -114,6 +141,7 @@ func (a *island) loadClipboard() {
 	}
 	history.store = store
 	history.loadFailed, history.problem = false, ""
+	a.refreshClipboardPreview()
 }
 
 func (a *island) resetClipboard() bool {
@@ -137,6 +165,9 @@ func (a *island) saveClipboardSettings(next clipboardState) bool {
 	}
 	a.clipboard.clipboardState = next
 	a.clipboard.problem = ""
+	if next.Recording {
+		a.refreshClipboardPreview()
+	}
 	return true
 }
 
@@ -161,6 +192,7 @@ func (a *island) refreshClipboardEntries(reset bool) {
 		return
 	}
 	history.entries, history.hasMore, history.problem = entries, more, ""
+	a.refreshClipboardPreview()
 }
 
 func (a *island) loadMoreClipboardEntries() {
@@ -273,8 +305,12 @@ func (a *island) recordClipboard(data transfer.Data, copiedAt time.Time) bool {
 		return false
 	}
 	history.problem = ""
-	if changed && history.open {
-		a.refreshClipboardEntries(false)
+	if changed {
+		if history.open {
+			a.refreshClipboardEntries(false)
+		} else {
+			a.refreshClipboardPreview()
+		}
 	}
 	return changed
 }

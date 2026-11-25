@@ -40,6 +40,7 @@ func newTestClipboard(t *testing.T, recording bool, texts ...string) *island {
 			t.Fatal(err)
 		}
 	}
+	a.refreshClipboardPreview()
 	return a
 }
 

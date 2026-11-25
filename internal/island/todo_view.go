@@ -79,13 +79,17 @@ func (t *todoComponent) previewHeight() int {
 }
 
 func (a *island) todoCard(c *ui.Context, progress, opacity float32, frame islandFrame) ui.Element {
-	previewHeight := a.todos.previewHeight()
+	previewHeight := a.toolsPreviewHeight()
 	detailHeight := float32(a.todos.detailHeight())
 	if progress == 1 && frame.open == 1 {
 		detailHeight = frame.height - panelHeaderHeight - 20
 	}
+	previewWidth := float32(panelBodyWidth)
+	if a.clipboard.Recording {
+		previewWidth = overviewToolCardWidth
+	}
 	height := float32(previewHeight) + (detailHeight-float32(previewHeight))*progress
-	surface := panelCardSurface(c.Key("todo-surface"), progress, panelBodyWidth/2, height).
+	surface := panelCardSurface(c.Key("todo-surface"), progress, previewWidth, height).
 		AlignSelf(ui.Start).Label("待办卡片").Opacity(opacity).IgnoreInput(a.clipboard.open || opacity < panelCardInputStart)
 	surface.Children(func() {
 		if progress < panelCardPreviewEnd {

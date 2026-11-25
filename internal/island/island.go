@@ -48,6 +48,7 @@ type island struct {
 	hiddenForFullscreen   bool
 	hiddenByUser          bool
 	dragging              bool
+	fileDragOver          bool
 	busy                  int
 	choosing              bool
 	leaveSince            time.Time
@@ -211,6 +212,14 @@ func (a *island) compactIdle() bool {
 	return len(a.files.Items) == 0 && !a.media.track.Playing && a.todos.next() == nil
 }
 
+func (a *island) toolsPreviewHeight() int {
+	height := a.todos.previewHeight()
+	if a.clipboard.Recording {
+		height = max(height, a.clipboard.previewHeight())
+	}
+	return height
+}
+
 func (a *island) overviewHeights() (height, gridHeight int) {
 	hasFiles := len(a.files.Items) > 0
 	height = panelHeaderHeight + 20
@@ -219,9 +228,11 @@ func (a *island) overviewHeights() (height, gridHeight int) {
 		rows := min((len(a.files.Items)+cardColumns-1)/cardColumns, maxCardRows)
 		gridHeight = rows*cardHeight + max(rows-1, 0)*cardGap + 8
 	}
-	height += a.overviewLeadHeight() + a.todos.previewHeight()
+	height += a.overviewLeadHeight() + a.toolsPreviewHeight()
 	if hasFiles {
 		height += 14
+	} else if a.fileDragOver {
+		height += dropZoneGap + dropZoneHeight
 	}
 	if a.dock.side != dockNone {
 		gridHeight = min(gridHeight, max(0, a.dock.display.WorkArea.Height-height))

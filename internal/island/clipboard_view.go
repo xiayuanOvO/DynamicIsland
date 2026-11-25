@@ -91,28 +91,13 @@ func (a *island) clipboardSettings(c *ui.Context) {
 	}
 }
 
-func (a *island) clipboardCard(c *ui.Context, progress, height, opacity float32, interactive bool) ui.Element {
-	surface := panelCardSurface(c.Key("clipboard-surface"), progress, panelBodyWidth/2-8, height).
+func (a *island) clipboardCard(c *ui.Context, progress, previewHeight, height, opacity float32, interactive bool) ui.Element {
+	surface := panelCardSurface(c.Key("clipboard-surface"), progress, overviewToolCardWidth, height).
 		Absolute().Top(0).Right(0).Label("剪贴板卡片").Opacity(opacity).
 		IgnoreInput(a.todos.open || opacity < panelCardInputStart)
 	surface.Children(func() {
 		if progress < panelCardPreviewEnd {
-			card := ui.ButtonBase(c.Key("clipboard-card")).Column().Absolute().Top(0).Left(0).Right(0).
-				Height(todoPreviewMinHeight).Padding(todoPreviewPadding, 10).AlignItems(ui.Stretch).Justify(ui.Start).
-				Radius(13).Cursor(ui.CursorPointer).Label("查看剪贴板历史").
-				Opacity(1 - animationPhase(progress, 0, panelCardPreviewEnd)).IgnoreInput(a.clipboard.open)
-			if card.Hovered() {
-				card.Background(colorsFor(c.Theme().Dark).glass.Alpha(0.2))
-			}
-			card.Children(func() {
-				ui.Row(c).Height(todoPreviewHeader).Gap(6).AlignItems(ui.Center).Children(func() {
-					ui.Icon(c, clipboardIcon).Size(14, 14).TextColor(c.Theme().Accent)
-					ui.Text(c, "剪贴板历史").SingleLine().FontSize(11).FontWeight(600).TextColor(c.Theme().TextMuted)
-				})
-			})
-			if card.Clicked() {
-				a.openClipboard(false)
-			}
+			a.clipboardPreviewCard(c, previewHeight, 1-animationPhase(progress, 0, panelCardPreviewEnd), writeClipboardEntry)
 		}
 		if progress > panelCardPreviewEnd {
 			interactive = interactive && a.clipboard.open && progress >= panelCardInputStart
@@ -122,6 +107,79 @@ func (a *island) clipboardCard(c *ui.Context, progress, height, opacity float32,
 		}
 	})
 	return surface
+}
+
+func (a *island) clipboardPreviewCard(c *ui.Context, height, opacity float32, write func(transfer.Data) error) {
+	history := &a.clipboard
+	if !history.previewLoaded && history.store != nil {
+		a.refreshClipboardPreview()
+	}
+	card := ui.Column(c.Key("clipboard-card")).Absolute().Top(0).Left(0).Right(0).
+		Height(height).Padding(todoPreviewPadding, 10).Radius(13).
+		Opacity(opacity).IgnoreInput(history.open)
+	if card.Hovered() {
+		card.Background(colorsFor(c.Theme().Dark).glass.Alpha(0.2))
+	}
+	card.Children(func() {
+		heading := ui.ButtonBase(c.Key("clipboard-preview-heading")).Row().FillWidth().Height(todoPreviewHeader).Shrink(0).
+			Gap(6).AlignItems(ui.Center).Radius(6).Cursor(ui.CursorPointer).Label("查看剪贴板历史")
+		heading.Children(func() {
+			ui.Icon(c, clipboardIcon).Size(14, 14).TextColor(c.Theme().Accent)
+			ui.Text(c, "剪贴板历史").SingleLine().FontSize(11).FontWeight(600).TextColor(c.Theme().TextMuted)
+		})
+		if heading.Clicked() {
+			a.openClipboard(false)
+		}
+		for i, entry := range history.preview {
+			if i >= clipboardPreviewRows {
+				break
+			}
+			text := entry.Preview
+			dimensions := ""
+			if entry.Width != 0 {
+				if text == "" {
+					text = "图片"
+				}
+				dimensions = fmt.Sprintf("%d × %d", entry.Width, entry.Height)
+			}
+			label := text
+			if dimensions != "" {
+				label += " " + dimensions
+			}
+			item := ui.ButtonBase(c.Key(entry.ID)).Row().FillWidth().Height(todoPreviewRowHeight).Shrink(0).
+				Padding(0, 4).Gap(6).AlignItems(ui.Center).Radius(7).Cursor(ui.CursorPointer).
+				Label("复制 " + label)
+			if item.Hovered() {
+				item.Background(colorsFor(c.Theme().Dark).glass.Alpha(0.32))
+			}
+			item.Children(func() {
+				if entry.Width != 0 {
+					thumb := ui.Box(c.Key("thumb")).Size(26, 22).Shrink(0).Radius(4).Clip().Center().
+						Background(colorsFor(c.Theme().Dark).glass.Alpha(0.45))
+					thumb.Children(func() {
+						visual := a.clipboardPreview(entry.ID)
+						if visual != nil && visual.source != nil {
+							ui.Image(c, visual.source).Fill().Fit(ui.Contain)
+							return
+						}
+						ui.Icon(c, imageIcon).Size(12, 12).TextColor(c.Theme().TextMuted)
+					})
+				}
+				ui.Column(c).Grow(1).MinWidth(0).Gap(1).Children(func() {
+					ui.Text(c, text).SingleLine().Ellipsis("…").FontSize(12).FontWeight(500).TextColor(c.Theme().Text)
+					if dimensions != "" {
+						ui.Text(c, dimensions).SingleLine().FontSize(9).TextColor(c.Theme().TextMuted)
+					}
+				})
+			})
+			if item.Clicked() {
+				a.useClipboardEntry(c, entry, false, write)
+			}
+		}
+		if spacer := ui.Box(c.Key("clipboard-preview-spacer")).FillWidth().Grow(1).MinHeight(0).Cursor(ui.CursorPointer); spacer.Clicked() {
+			a.openClipboard(false)
+		}
+	})
 }
 
 func (a *island) clipboardView(c *ui.Context, interactive bool, write func(transfer.Data) error) {

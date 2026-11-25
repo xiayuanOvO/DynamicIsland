@@ -19,11 +19,15 @@ var fileDrop = transfer.DropOptions{
 }
 
 const (
-	panelBodyPadding    = 22
-	panelBodyWidth      = panelWidth - 2 - 2*panelBodyPadding
-	panelCardPreviewEnd = 0.45
-	panelCardDetailEnd  = 0.9
-	panelCardInputStart = 0.85
+	panelBodyPadding      = 22
+	panelBodyWidth        = panelWidth - 2 - 2*panelBodyPadding
+	overviewCardGap       = 8
+	overviewToolCardWidth = (panelBodyWidth - overviewCardGap) / 2
+	dropZoneGap           = 14
+	dropZoneHeight        = 64
+	panelCardPreviewEnd   = 0.45
+	panelCardDetailEnd    = 0.9
+	panelCardInputStart   = 0.85
 )
 
 func (a *island) view(c *ui.Context) {
@@ -48,6 +52,7 @@ func (a *island) view(c *ui.Context) {
 		hovered = pointerOverWindow(a.win, root.Hovered())
 	}
 	_, over := ui.DataDragOver(root, fileDrop)
+	a.fileDragOver = over
 	glassSurface(c, root, a.hasWindowBackdrop || c.Vibrancy(), over, a.canvas.restore != nil)
 	if drop, ok := ui.DropData(root, fileDrop); ok {
 		if paths, err := drop.Data.Files(); err == nil && len(paths) > 0 {
@@ -142,6 +147,14 @@ func (a *island) header(c *ui.Context, open float32) {
 		}
 	}
 	header.Children(func() {
+		if openAlpha := animationPhase(open, 0.35, 0.9); openAlpha > 0.01 {
+			btn := iconButton(c.Key("open-settings"), settingsIcon, "设置").
+				Absolute().Right(14).Top((height - 20) / 2).Size(20, 20).Radius(6).
+				Opacity(openAlpha).IgnoreInput(!a.expanded || open < 0.8)
+			if btn.Clicked() {
+				a.openSettings()
+			}
+		}
 		if compactAlpha > 0 && alertActive {
 			if !c.Preferences().ReduceMotion {
 				c.AnimationFrame()
@@ -271,8 +284,9 @@ func (a *island) body(c *ui.Context, frame islandFrame) {
 			}
 		}
 		tools := ui.Box(c.Key("tools")).FillWidth().Shrink(0)
+		toolsPreview := float32(a.toolsPreviewHeight())
 		showClipboard := a.clipboard.Recording && (clipboard > 0 || todo < panelCardPreviewEnd)
-		clipboardHeight := todoPreviewMinHeight + (clipboardPanelHeight-todoPreviewMinHeight)*clipboard
+		clipboardHeight := toolsPreview + (clipboardPanelHeight-toolsPreview)*clipboard
 		if showClipboard {
 			tools.MinHeight(clipboardHeight)
 		}
@@ -285,10 +299,13 @@ func (a *island) body(c *ui.Context, frame islandFrame) {
 					Translate(0, float32(leadHeight)*todoFade)
 			}
 			if showClipboard {
-				a.clipboardCard(c, clipboard, clipboardHeight, 1-animationPhase(clipboardFade, 0, panelCardPreviewEnd),
+				a.clipboardCard(c, clipboard, toolsPreview, clipboardHeight, 1-animationPhase(clipboardFade, 0, panelCardPreviewEnd),
 					a.expanded && opacity >= 0.80).Translate(0, float32(leadHeight)*clipboardFade)
 			}
 		})
+		if overviewOpacity > 0 && len(a.files.Items) == 0 && frame.dropZone > 0.01 {
+			a.emptyDropZone(c, frame.dropZone, overviewOpacity*frame.dropZone)
+		}
 		if overviewOpacity > 0 && len(a.files.Items) > 0 {
 			overviewHeight, gridHeight := a.overviewHeights()
 			files := ui.Column(c.Key("overview-files")).Width(panelBodyWidth).Shrink(0).Margin(14, 0, 0).Gap(14).
@@ -297,7 +314,7 @@ func (a *island) body(c *ui.Context, frame islandFrame) {
 				// Keep the expanding card from pushing the fading files below the window.
 				// If the window is shrinking, move the group with its bottom edge.
 				files.Absolute().Left(panelBodyPadding).
-					Top(float32(leadHeight+a.todos.previewHeight()) + min(0, frame.height-float32(overviewHeight)))
+					Top(float32(leadHeight+a.toolsPreviewHeight()) + min(0, frame.height-float32(overviewHeight)))
 			}
 			files.Children(func() {
 				ui.Text(c.Key("files-heading"), fmt.Sprintf("暂存文件  /  %02d", len(a.files.Items))).
@@ -326,6 +343,33 @@ func panelCardSurface(c *ui.Context, progress, previewWidth, height float32) ui.
 			Border(0.75, tint.Alpha(0.65*(1-progress)))
 	}
 	return surface
+}
+
+func (a *island) emptyDropZone(c *ui.Context, progress, opacity float32) {
+	accentColor := c.Theme().Accent
+	zone := ui.Row(c.Key("drop-zone")).Width(panelBodyWidth).Height(dropZoneHeight * progress).Shrink(0).
+		Margin(dropZoneGap*progress, 0, 0).Gap(8).Center().Radius(13).Clip().
+		Opacity(opacity).IgnoreInput(true).Label("松开暂存文件").
+		Draw(func(p *ui.Painter, r ui.Rect) {
+			p.Fill(r, accentColor.Alpha(0.10), 13)
+			dashColor := accentColor.Alpha(0.55)
+			const dash, gap, inset, stroke = float32(6), float32(4), float32(1), float32(1.25)
+			step := dash + gap
+			for x := r.X + 10; x < r.X+r.W-10; x += step {
+				w := min(dash, r.X+r.W-10-x)
+				p.Fill(ui.Rect{X: x, Y: r.Y + inset, W: w, H: stroke}, dashColor, 1)
+				p.Fill(ui.Rect{X: x, Y: r.Y + r.H - inset - stroke, W: w, H: stroke}, dashColor, 1)
+			}
+			for y := r.Y + 10; y < r.Y+r.H-10; y += step {
+				h := min(dash, r.Y+r.H-10-y)
+				p.Fill(ui.Rect{X: r.X + inset, Y: y, W: stroke, H: h}, dashColor, 1)
+				p.Fill(ui.Rect{X: r.X + r.W - inset - stroke, Y: y, W: stroke, H: h}, dashColor, 1)
+			}
+		})
+	zone.Children(func() {
+		ui.Icon(c, folderIcon).Size(15, 15).TextColor(accentColor)
+		ui.Text(c, "松开暂存文件").FontSize(12).FontWeight(500).TextColor(accentColor)
+	})
 }
 
 func (a *island) fileCard(c *ui.Context, item shelf.Item) {

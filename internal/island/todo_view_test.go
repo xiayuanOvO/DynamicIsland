@@ -10,6 +10,7 @@ import (
 
 	"dynamicisland/internal/nowplaying"
 	"dynamicisland/internal/shelf"
+	"github.com/egoist/mygo/transfer"
 	"github.com/egoist/mygo/ui"
 )
 
@@ -17,15 +18,18 @@ func TestPanelCardsFollowWindowHeight(t *testing.T) {
 	for _, test := range []struct {
 		name, label, button string
 		right               bool
+		withClipboard       bool
 	}{
-		{"todos", "待办卡片", "查看待办事项", false},
-		{"clipboard", "剪贴板卡片", "查看剪贴板历史", true},
+		{"todos-fullwidth", "待办卡片", "查看待办事项", false, false},
+		{"todos-split", "待办卡片", "查看待办事项", false, true},
+		{"clipboard", "剪贴板卡片", "查看剪贴板历史", true, true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			a := &island{files: &shelf.Shelf{}}
-			if test.right {
+			if test.withClipboard {
 				a = newTestClipboard(t, true, "示例记录")
-			} else {
+			}
+			if !test.right {
 				a.todos.items = []todoItem{{ID: "example", Title: "示例待办"}}
 			}
 			a.expanded = true
@@ -44,6 +48,7 @@ func TestPanelCardsFollowWindowHeight(t *testing.T) {
 			if !ok {
 				t.Fatal("card is missing")
 			}
+			widthAnimates := initial.W < panelBodyWidth
 			before := initial
 			for _, button := range []string{test.button, "返回岛面板"} {
 				if err := view.Click(button); err != nil {
@@ -80,7 +85,7 @@ func TestPanelCardsFollowWindowHeight(t *testing.T) {
 					if opening && card.W < before.W || !opening && card.W > before.W {
 						t.Fatalf("%s: card width moved in the wrong direction from %.1f to %.1f", button, before.W, card.W)
 					}
-					if tick == 0 && (a.shownFrame.height == a.targetFrame().height || card.W == before.W) {
+					if tick == 0 && (a.shownFrame.height == a.targetFrame().height || (widthAnimates && card.W == before.W)) {
 						t.Fatalf("%s: the first frame did not show an in-progress transition", button)
 					}
 					before = card
@@ -234,5 +239,93 @@ func TestTodoRepeatReschedulesOnCompletionAndFormatsLabel(t *testing.T) {
 	reloaded.loadTodos()
 	if reloaded.todos.loadFailed || len(reloaded.todos.items) != 1 || reloaded.todos.items[0].Repeat != todoRepeatDaily {
 		t.Fatalf("repeat setting should survive reload: %+v", reloaded.todos.items)
+	}
+}
+
+func TestOverviewAdaptiveWidthEqualHeightAndClipboardPreviewCopy(t *testing.T) {
+	// 1. Clipboard disabled: todo card spans full panelBodyWidth.
+	a := &island{files: &shelf.Shelf{}}
+	a.todos.items = []todoItem{{ID: "1", Title: "整理文档"}}
+	a.expanded = true
+	frame := a.targetFrame()
+	view := ui.NewTester(func(c *ui.Context) {
+		ui.Column(c).Fill().Clip().Children(func() {
+			a.header(c, frame.open)
+			a.body(c, frame)
+		})
+	}, panelWidth, int(frame.height))
+	todo, ok := view.Find("待办卡片")
+	if !ok || math.Abs(float64(todo.W-panelBodyWidth)) > 0.5 {
+		t.Fatalf("todo card should span full panelBodyWidth (%d) when clipboard is disabled, got %+v", panelBodyWidth, todo)
+	}
+	if _, hasSettings := view.Find("设置"); !hasSettings {
+		t.Fatal("expanded header should show the settings icon button")
+	}
+
+	// Collapsed header should hide the settings icon button.
+	collapsed := ui.NewTester(func(c *ui.Context) {
+		a.expanded = false
+		a.header(c, 0)
+	}, compactWidth, compactHeight)
+	if _, hasSettings := collapsed.Find("设置"); hasSettings {
+		t.Fatal("collapsed header should not show the settings icon button")
+	}
+
+	// 2. Clipboard enabled with 3 items and 1 todo: both cards match height and show recent clipboard entries.
+	b := newTestClipboard(t, true, "最新一条", "第二条记录", "第三条记录", "第四条不预览")
+	b.todos.items = []todoItem{{ID: "1", Title: "唯一待办"}}
+	b.expanded = true
+	bFrame := b.targetFrame()
+	var copied string
+	bView := ui.NewTester(func(c *ui.Context) {
+		ui.Column(c).Fill().Clip().Children(func() {
+			ui.Box(c).Height(panelHeaderHeight).Shrink(0)
+			toolsPreview := float32(b.toolsPreviewHeight())
+			b.todoCard(c, 0, 1, bFrame)
+			b.clipboardPreviewCard(c, toolsPreview, 1, func(data transfer.Data) error {
+				text, err := data.Read(transfer.Text)
+				copied = string(text)
+				return err
+			})
+		})
+	}, panelWidth, int(bFrame.height))
+	if !bView.HasText("最新一条") || !bView.HasText("第二条记录") || !bView.HasText("第三条记录") || bView.HasText("第四条不预览") {
+		t.Fatalf("clipboard preview should show latest 3 entries: %v", bView.Texts())
+	}
+	if err := bView.Click("复制 第二条记录"); err != nil {
+		t.Fatal(err)
+	}
+	if copied != "第二条记录" || b.clipboard.open {
+		t.Fatalf("clicking a preview row should copy directly without opening full panel: copied=%q open=%v", copied, b.clipboard.open)
+	}
+
+	// Verify equal height in full body render.
+	fullView := ui.NewTester(func(c *ui.Context) {
+		ui.Column(c).Fill().Clip().Children(func() {
+			ui.Box(c).Height(panelHeaderHeight).Shrink(0)
+			b.body(c, bFrame)
+		})
+	}, panelWidth, int(bFrame.height))
+	todoRect, ok1 := fullView.Find("待办卡片")
+	clipRect, ok2 := fullView.Find("剪贴板卡片")
+	if !ok1 || !ok2 || math.Abs(float64(todoRect.H-clipRect.H)) > 0.5 || math.Abs(float64(todoRect.W-clipRect.W)) > 0.5 {
+		t.Fatalf("todo and clipboard cards should have equal width and height: todo=%+v clip=%+v", todoRect, clipRect)
+	}
+
+	// 3. Empty shelf file drag-over expands drop zone.
+	baseH := b.targetFrame().height
+	b.fileDragOver = true
+	dragFrame := b.targetFrame()
+	if dragFrame.dropZone != 1 || dragFrame.height != baseH+dropZoneGap+dropZoneHeight {
+		t.Fatalf("file drag-over with empty shelf should expand drop zone: base=%.1f drag=%+v", baseH, dragFrame)
+	}
+	dragView := ui.NewTester(func(c *ui.Context) {
+		ui.Column(c).Fill().Clip().Children(func() {
+			ui.Box(c).Height(panelHeaderHeight).Shrink(0)
+			b.body(c, dragFrame)
+		})
+	}, panelWidth, int(dragFrame.height))
+	if !dragView.HasText("松开暂存文件") {
+		t.Fatal("empty drop zone should be rendered during file drag-over")
 	}
 }
