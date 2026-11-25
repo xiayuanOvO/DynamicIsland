@@ -306,3 +306,129 @@ func TestOverviewAdaptiveWidthEqualHeightAndClipboardPreviewCopy(t *testing.T) {
 		t.Fatalf("todo and clipboard cards should have equal width and height: todo=%+v clip=%+v", todoRect, clipRect)
 	}
 }
+
+func TestTodoRepeatDebounceClearCompletedOverdueAndQuickAdd(t *testing.T) {
+	a := &island{statePath: filepath.Join(t.TempDir(), "settings.json"), expanded: true}
+	now := time.Now().Truncate(time.Minute)
+	due := now.Add(time.Hour)
+	overdue := now.Add(-time.Hour)
+
+	if !a.changeTodo(todoItem{ID: "rep", Title: "每日打卡", Due: due, LeadMinutes: 15, Repeat: todoRepeatDaily}, false) {
+		t.Fatal("failed to add repeating todo")
+	}
+	if !a.changeTodo(todoItem{ID: "late", Title: "提交报告", Due: overdue, LeadMinutes: noTodoReminder}, false) {
+		t.Fatal("failed to add overdue todo")
+	}
+
+	// 1. Overdue detection: only uncompleted past-due items are overdue.
+	if !a.todos.items[0].overdue(now) {
+		t.Fatalf("expected %+v to be overdue", a.todos.items[0])
+	}
+	if (todoItem{Due: overdue, Done: true}).overdue(now) || (todoItem{Due: due}).overdue(now) {
+		t.Fatal("completed or future items must not be overdue")
+	}
+
+	// 2. Quick '+' button in todo preview opens the editor directly.
+	frame := a.targetFrame()
+	preview := ui.NewTester(func(c *ui.Context) {
+		ui.Column(c).Fill().Clip().Children(func() {
+			ui.Box(c).Height(panelHeaderHeight).Shrink(0)
+			a.body(c, frame)
+		})
+	}, panelWidth, int(frame.height))
+	if err := preview.Click("新建待办"); err != nil {
+		t.Fatal(err)
+	}
+	if !a.todos.open || a.todos.draft == nil {
+		t.Fatal("clicking quick-add '+' should open the todo editor directly")
+	}
+
+	// 3. Pressing Enter in editor title input ignores empty title and saves non-empty title.
+	editorView := ui.NewTester(func(c *ui.Context) {
+		a.todoView(c, a.targetFrame())
+	}, panelWidth, todoEditorHeight+60)
+	editorView.Key(0, ui.KeyEnter)
+	if a.todos.draft == nil {
+		t.Fatal("Enter with empty title should not save or close editor")
+	}
+	editorView.Type("买牛奶")
+	editorView.Key(0, ui.KeyEnter)
+	if a.todos.draft != nil {
+		t.Fatal("Enter with non-empty title should save and close editor")
+	}
+	foundMilk := false
+	for _, item := range a.todos.items {
+		if item.Title == "买牛奶" {
+			foundMilk = true
+		}
+	}
+	if !foundMilk {
+		t.Fatalf("expected '买牛奶' to be saved via Enter, got %+v", a.todos.items)
+	}
+
+	// 4. Repeating todo checkbox shows next-due toast and debounces rapid clicks within 400ms.
+	listView := ui.NewTester(func(c *ui.Context) {
+		a.todoList(c)
+	}, panelWidth, todoListHeight)
+	if _, hasClear := listView.Find("清空已完成"); hasClear {
+		t.Fatal("clear completed button should not appear when no completed items exist")
+	}
+	if err := listView.Click("完成状态 每日打卡"); err != nil {
+		t.Fatal(err)
+	}
+	var firstNext time.Time
+	for _, item := range a.todos.items {
+		if item.ID == "rep" {
+			firstNext = item.Due
+		}
+	}
+	if !firstNext.After(due) {
+		t.Fatalf("repeating todo should have advanced past %v, got %v", due, firstNext)
+	}
+	// Rapid click within 400ms must be ignored.
+	listView.Advance(100 * time.Millisecond)
+	if err := listView.Click("完成状态 每日打卡"); err != nil {
+		t.Fatal(err)
+	}
+	for _, item := range a.todos.items {
+		if item.ID == "rep" && !item.Due.Equal(firstNext) {
+			t.Fatalf("rapid click within 400ms should not advance due again: got %v, want %v", item.Due, firstNext)
+		}
+	}
+	// After 400ms, another completion advances again.
+	listView.Advance(todoRepeatDebounce)
+	if err := listView.Click("完成状态 每日打卡"); err != nil {
+		t.Fatal(err)
+	}
+	for _, item := range a.todos.items {
+		if item.ID == "rep" && !item.Due.After(firstNext) {
+			t.Fatalf("click after debounce window should advance due: got %v, prev %v", item.Due, firstNext)
+		}
+	}
+
+	// 5. Completing a non-repeating todo shows '清空已完成' and clicking it clears completed items.
+	if err := listView.Click("完成状态 提交报告"); err != nil {
+		t.Fatal(err)
+	}
+	if _, hasClear := listView.Find("清空已完成"); !hasClear {
+		t.Fatal("clear completed button should appear once a completed item exists")
+	}
+	if err := listView.Click("清空已完成"); err != nil {
+		t.Fatal(err)
+	}
+	if _, hasClear := listView.Find("清空已完成"); hasClear {
+		t.Fatal("clear completed button should disappear after clearing")
+	}
+	for _, item := range a.todos.items {
+		if item.Done {
+			t.Fatalf("expected all completed items to be removed, found %+v", item)
+		}
+	}
+	reloaded := island{statePath: a.statePath}
+	reloaded.loadTodos()
+	for _, item := range reloaded.todos.items {
+		if item.Done {
+			t.Fatalf("cleared completed items should not return after reload: %+v", item)
+		}
+	}
+}

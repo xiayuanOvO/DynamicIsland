@@ -21,6 +21,7 @@ const (
 	todoRepeatDaily    = "daily"
 	todoRepeatWeekdays = "weekdays"
 	todoRepeatWeekly   = "weekly"
+	todoRepeatDebounce = 400 * time.Millisecond
 )
 
 var (
@@ -69,13 +70,14 @@ func (item todoItem) reminderDue(now time.Time) bool {
 }
 
 type todoComponent struct {
-	items      []todoItem
-	open       bool
-	draft      *todoDraft
-	leaving    *todoDraft
-	loadFailed bool
-	problem    string
-	delivering map[string]context.CancelFunc
+	items       []todoItem
+	open        bool
+	draft       *todoDraft
+	leaving     *todoDraft
+	loadFailed  bool
+	problem     string
+	delivering  map[string]context.CancelFunc
+	rescheduled map[string]time.Time
 }
 
 func (t *todoComponent) next() *todoItem {
@@ -142,9 +144,15 @@ func (a *island) loadTodos() {
 
 // Commit the list before updating the panel or canceling a pending reminder.
 func (a *island) changeTodo(item todoItem, remove bool) bool {
+	ok, _ := a.changeTodoAt(item, remove, time.Now())
+	return ok
+}
+
+func (a *island) changeTodoAt(item todoItem, remove bool, now time.Time) (bool, time.Time) {
 	t := &a.todos
 	index := slices.IndexFunc(t.items, func(other todoItem) bool { return other.ID == item.ID })
 	items := slices.Clone(t.items)
+	var rescheduledDue time.Time
 	switch {
 	case remove:
 		items = slices.Delete(items, index, index+1)
@@ -153,9 +161,13 @@ func (a *island) changeTodo(item todoItem, remove bool) bool {
 	default:
 		previous := items[index]
 		if item.Done && !previous.Done && item.Repeat != todoRepeatNone && !item.Due.IsZero() {
-			item.Due = nextTodoDue(item.Due, item.Repeat, time.Now())
+			if last, ok := t.rescheduled[item.ID]; ok && now.Sub(last) < todoRepeatDebounce {
+				return false, time.Time{}
+			}
+			item.Due = nextTodoDue(item.Due, item.Repeat, now)
 			item.Done = false
 			item.Notified = false
+			rescheduledDue = item.Due
 		} else {
 			item.Notified = previous.Notified && previous.Due.Equal(item.Due) && previous.LeadMinutes == item.LeadMinutes
 		}
@@ -165,13 +177,42 @@ func (a *island) changeTodo(item todoItem, remove bool) bool {
 	if err := saveJSON(a.todosPath(), items); err != nil {
 		log.Printf("save todos: %v", err)
 		t.problem = "待办保存失败"
-		return false
+		return false, time.Time{}
 	}
 	t.items, t.problem = items, ""
+	if !rescheduledDue.IsZero() {
+		if t.rescheduled == nil {
+			t.rescheduled = make(map[string]time.Time)
+		}
+		t.rescheduled[item.ID] = now
+	}
 	if cancel := t.delivering[item.ID]; cancel != nil {
 		cancel()
 		delete(t.delivering, item.ID)
 	}
+	if a.win != nil {
+		a.win.Invalidate()
+	}
+	return true, rescheduledDue
+}
+
+func (a *island) clearCompletedTodos() bool {
+	t := &a.todos
+	remaining := make([]todoItem, 0, len(t.items))
+	for _, item := range t.items {
+		if !item.Done {
+			remaining = append(remaining, item)
+		}
+	}
+	if len(remaining) == len(t.items) {
+		return true
+	}
+	if err := saveJSON(a.todosPath(), remaining); err != nil {
+		log.Printf("clear completed todos: %v", err)
+		t.problem = "待办保存失败"
+		return false
+	}
+	t.items, t.problem = remaining, ""
 	if a.win != nil {
 		a.win.Invalidate()
 	}

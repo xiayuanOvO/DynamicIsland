@@ -329,6 +329,7 @@ func TestClipboardPanelDeletesAndClearsSavedHistory(t *testing.T) {
 	}
 	view.Key(0, ui.KeyTab)
 	view.Key(0, ui.KeyTab)
+	view.Key(0, ui.KeyTab)
 	if !view.Focused("查看剪贴板历史") {
 		t.Fatal("Tab did not reach the clipboard card")
 	}

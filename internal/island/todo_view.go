@@ -35,6 +35,26 @@ type todoDraft struct {
 	scheduled bool
 }
 
+func (item todoItem) overdue(now time.Time) bool {
+	return !item.Done && !item.Due.IsZero() && item.Due.Before(now)
+}
+
+func formatTodoNextDue(due, now time.Time) string {
+	d := due.Local()
+	n := now.Local()
+	tomorrow := n.AddDate(0, 0, 1)
+	switch {
+	case d.Year() == n.Year() && d.YearDay() == n.YearDay():
+		return "今天 " + d.Format("15:04")
+	case d.Year() == tomorrow.Year() && d.YearDay() == tomorrow.YearDay():
+		return "明天 " + d.Format("15:04")
+	case d.Year() == n.Year():
+		return d.Format("01-02 15:04")
+	default:
+		return d.Format("2006-01-02 15:04")
+	}
+}
+
 func (item todoItem) deadlineLabel(now time.Time) string {
 	due := item.Due.Local()
 	format := "01-02 15:04"
@@ -111,13 +131,19 @@ func (a *island) todoPreview(c *ui.Context, height, opacity float32) {
 	if card.Hovered() {
 		card.Background(colorsFor(c.Theme().Dark).glass.Alpha(0.2))
 	}
+	quickAdded := false
 	card.Children(func() {
 		ui.Scroll(c.Key("todo-preview-list")).Fill().Padding(todoPreviewPadding, 10).
 			Children(func() {
 				ui.Row(c.Key("todo-preview-heading")).FillWidth().Height(todoPreviewHeader).Shrink(0).
 					Gap(6).AlignItems(ui.Center).Children(func() {
 					ui.Icon(c, todoIcon).Size(14, 14).TextColor(c.Theme().Accent)
-					ui.Text(c, "待办事项").SingleLine().FontSize(11).FontWeight(600).TextColor(c.Theme().TextMuted)
+					ui.Text(c, "待办事项").Grow(1).SingleLine().FontSize(11).FontWeight(600).TextColor(c.Theme().TextMuted)
+					if iconButton(c.Key("quick-add-todo"), plusIcon, "新建待办").Size(20, 20).Radius(6).
+						Disabled(a.todos.loadFailed).Clicked() {
+						quickAdded = true
+						a.openNewTodo(c.Now())
+					}
 				})
 				for _, item := range a.todos.items {
 					if item.Done {
@@ -128,19 +154,25 @@ func (a *island) todoPreview(c *ui.Context, height, opacity float32) {
 						done := item.Done
 						if ui.Checkbox(c.Key("done"), &done, "").Label("完成状态 " + item.Title).Changed() {
 							item.Done = done
-							a.changeTodo(item, false)
+							if ok, nextDue := a.changeTodoAt(item, false, c.Now()); ok && !nextDue.IsZero() {
+								c.Toast("已完成，下次：" + formatTodoNextDue(nextDue, c.Now()))
+							}
 						}
 						ui.Column(c).Grow(1).MinWidth(0).Gap(1).Children(func() {
 							ui.Text(c, item.Title).SingleLine().Ellipsis("…").FontSize(12).FontWeight(600).TextColor(c.Theme().Text)
 							if !item.Due.IsZero() {
-								ui.Text(c, item.deadlineLabel(c.Now())).SingleLine().Ellipsis("…").FontSize(9).TextColor(c.Theme().TextMuted)
+								dueColor := c.Theme().TextMuted
+								if item.overdue(c.Now()) {
+									dueColor = colorsFor(c.Theme().Dark).problem
+								}
+								ui.Text(c, item.deadlineLabel(c.Now())).SingleLine().Ellipsis("…").FontSize(9).TextColor(dueColor)
 							}
 						})
 					})
 				}
 			})
 	})
-	if card.Clicked() {
+	if card.Clicked() && !quickAdded {
 		a.openTodos()
 	}
 }
@@ -153,6 +185,13 @@ func (a *island) openTodos() {
 	}
 	t.open = true
 	a.showPanel()
+}
+
+func (a *island) openNewTodo(now time.Time) {
+	a.openTodos()
+	if !a.todos.loadFailed {
+		a.todos.draft = &todoDraft{item: todoItem{Due: now.Add(time.Hour).Truncate(time.Minute), LeadMinutes: 15}}
+	}
 }
 
 func (t *todoComponent) closeEditor() {
@@ -213,7 +252,20 @@ func (a *island) todoList(c *ui.Context) {
 		ui.Scroll(c.Key("todo-list")).FillWidth().Grow(1).MinHeight(0).Children(func() {
 			for i, item := range t.items {
 				if item.Done && (i == 0 || !t.items[i-1].Done) {
-					ui.Text(c, "已完成").Padding(4, 2).FontSize(11).TextColor(c.Theme().TextMuted)
+					ui.Row(c.Key("completed-header")).FillWidth().Padding(4, 2).AlignItems(ui.Center).Children(func() {
+						ui.Text(c, "已完成").Grow(1).FontSize(11).TextColor(c.Theme().TextMuted)
+						clearBtn := ui.ButtonBase(c.Key("clear-completed")).Padding(2, 6).Radius(5).
+							Cursor(ui.CursorPointer).Label("清空已完成")
+						if clearBtn.Hovered() {
+							clearBtn.Background(c.Theme().SurfaceHover)
+						}
+						clearBtn.Children(func() {
+							ui.Text(c, "清空已完成").FontSize(11).TextColor(c.Theme().TextMuted)
+						})
+						if clearBtn.Clicked() {
+							a.clearCompletedTodos()
+						}
+					})
 				}
 				row := ui.Row(c.Key(item.ID)).FillWidth().Height(50).Shrink(0).Padding(0, 6).
 					Gap(8).AlignItems(ui.Center).Radius(7)
@@ -230,7 +282,9 @@ func (a *island) todoList(c *ui.Context) {
 					if ui.Checkbox(c.Key("done"), &done, "").Label("完成状态 " + item.Title).Changed() {
 						updated := item
 						updated.Done = done
-						a.changeTodo(updated, false)
+						if ok, nextDue := a.changeTodoAt(updated, false, c.Now()); ok && !nextDue.IsZero() {
+							c.Toast("已完成，下次：" + formatTodoNextDue(nextDue, c.Now()))
+						}
 					}
 					edit := ui.ButtonBase(c.Key("edit")).Column().Grow(1).MinWidth(0).Height(46).Justify(ui.Center).AlignItems(ui.Stretch).TextAlign(ui.Start).
 						Gap(2).Radius(6).Cursor(ui.CursorPointer).Label("编辑 " + item.Title)
@@ -241,7 +295,11 @@ func (a *island) todoList(c *ui.Context) {
 						}
 						ui.Text(c, item.Title).FontSize(13).FontWeight(550).TextColor(color).SingleLine().Ellipsis("…")
 						if !item.Due.IsZero() {
-							ui.Text(c, item.deadlineLabel(c.Now())).SingleLine().FontSize(11).TextColor(c.Theme().TextMuted)
+							dueColor := c.Theme().TextMuted
+							if item.overdue(c.Now()) {
+								dueColor = colorsFor(c.Theme().Dark).problem
+							}
+							ui.Text(c, item.deadlineLabel(c.Now())).SingleLine().FontSize(11).TextColor(dueColor)
 						}
 					})
 					if edit.Clicked() {
@@ -264,10 +322,30 @@ func (a *island) todoEditor(c *ui.Context, d *todoDraft, schedule float32) {
 	if existing {
 		title = "编辑待办"
 	}
+	save := func() {
+		name := strings.TrimSpace(d.item.Title)
+		if name == "" {
+			return
+		}
+		item := d.item
+		item.Title = name
+		if !existing {
+			item.ID = rand.Text()
+		}
+		if !d.scheduled {
+			item.Due, item.LeadMinutes, item.Repeat = time.Time{}, noTodoReminder, todoRepeatNone
+		}
+		if a.changeTodo(item, false) {
+			a.todos.closeEditor()
+		}
+	}
 	ui.Text(c, title).Height(todoEditorTitle).Shrink(0).FontSize(18).FontWeight(650).TextColor(c.Theme().Text)
 	ui.Column(c.Key("todo-form")).FillWidth().Shrink(0).Children(func() {
 		ui.Column(c.Key("todo-fields")).FillWidth().Shrink(0).Gap(todoEditorGap).Children(func() {
-			ui.TextInput(c.Key("title"), &d.item.Title).FillWidth().Height(todoEditorName).Shrink(0).Label("待办名称").Placeholder("待办名称").AutoFocus()
+			titleInput := ui.TextInput(c.Key("title"), &d.item.Title).FillWidth().Height(todoEditorName).Shrink(0).Label("待办名称").Placeholder("待办名称").AutoFocus()
+			if titleInput.Submitted() {
+				save()
+			}
 			ui.Row(c).FillWidth().Height(todoEditorRow).Shrink(0).AlignItems(ui.Center).Children(func() {
 				ui.Text(c, "截止时间").Grow(1).FontSize(13).TextColor(c.Theme().Text)
 				ui.Switch(c.Key("scheduled"), &d.scheduled).Label("设置截止时间")
@@ -314,17 +392,7 @@ func (a *island) todoEditor(c *ui.Context, d *todoDraft, schedule float32) {
 		}
 		name := strings.TrimSpace(d.item.Title)
 		if ui.PrimaryButton(c.Key("save"), "保存").Height(todoEditorRow).Disabled(name == "").Clicked() {
-			item := d.item
-			item.Title = name
-			if !existing {
-				item.ID = rand.Text()
-			}
-			if !d.scheduled {
-				item.Due, item.LeadMinutes, item.Repeat = time.Time{}, noTodoReminder, todoRepeatNone
-			}
-			if a.changeTodo(item, false) {
-				a.todos.closeEditor()
-			}
+			save()
 		}
 	})
 }
