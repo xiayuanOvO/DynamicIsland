@@ -286,7 +286,7 @@ func (a *island) body(c *ui.Context, frame islandFrame) {
 				dy := a.widgetDrag.pointerY - a.widgetDrag.startY
 
 				switch slot.id {
-				case widgetBattery, widgetMedia:
+				case widgetBattery, widgetWeather, widgetMedia:
 					if progress >= panelCardPreviewEnd {
 						continue
 					}
@@ -310,9 +310,12 @@ func (a *island) body(c *ui.Context, frame islandFrame) {
 							IgnoreInput(progress > 0 || a.todos.open || a.clipboard.open || dragging)
 					}
 					wrapper.Children(func() {
-						if slot.id == widgetBattery {
+						switch slot.id {
+						case widgetBattery:
 							a.batteryWidget(c, slot.size, rect.W, rect.H)
-						} else {
+						case widgetWeather:
+							a.weatherWidget(c, slot.size, rect.W, rect.H)
+						default:
 							a.mediaWidget(c, slot.size, rect.W, rect.H)
 						}
 					})
