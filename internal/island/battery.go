@@ -161,12 +161,244 @@ func (a *island) overviewLeadHeight() int {
 }
 
 func (a *island) batteryRow(c *ui.Context) {
-	ui.ScrollHorizontal(c.Key("battery-row")).FillWidth().Height(batteryRowHeight).Shrink(0).
-		Margin(0, 0, batteryRowGap).AlignItems(ui.Start).Gap(4).Label("设备电量").Children(func() {
-		for _, reading := range a.battery.readings {
-			batteryIndicator(c, reading, false)
+	a.batteryWidget(c, widgetSizeMedium, panelBodyWidth, widgetRowSpanPx(2))
+}
+
+func (a *island) batteryWidget(c *ui.Context, size widgetSize, width, height float32) {
+	switch size {
+	case widgetSizeSmall:
+		a.batterySmallCard(c, width, height)
+	case widgetSizeLarge:
+		a.batteryLargeCard(c, width, height)
+	default:
+		a.batteryMediumCard(c, width, height)
+	}
+}
+
+func (a *island) batteryMediumCard(c *ui.Context, width, height float32) {
+	tint := colorsFor(c.Theme().Dark).glass
+	card := ui.Column(c.Key("battery-medium")).Size(width, height).Shrink(0).Radius(13).Clip().
+		Padding(10, 14).Justify(ui.Center).
+		Background(tint.Alpha(0.4)).Border(0.75, tint.Alpha(0.65)).Label("设备电量")
+	card.Children(func() {
+		if len(a.battery.readings) > 4 {
+			ui.ScrollHorizontal(c.Key("battery-medium-scroll")).FillWidth().Height(96).Shrink(0).
+				AlignItems(ui.Center).Gap(10).Children(func() {
+				for _, reading := range a.battery.readings {
+					batteryMediumCell(c, reading)
+				}
+			})
+			return
+		}
+		ui.Row(c.Key("battery-medium-row")).FillWidth().Justify(ui.SpaceAround).AlignItems(ui.Center).Children(func() {
+			for _, reading := range a.battery.readings {
+				batteryMediumCell(c, reading)
+			}
+		})
+	})
+}
+
+func batteryMediumCell(c *ui.Context, reading battery.Reading) {
+	const ringSize, iconSize, stroke float32 = 44, 18, 3.6
+	radius := ringSize/2 - 3
+	name := batteryDeviceName(reading)
+	display, value := "—", "电量未知"
+	known := reading.Percent != battery.UnknownPercent
+	if known {
+		display = fmt.Sprintf("%d%%", reading.Percent)
+		value = display
+	}
+	text := c.Theme().Text
+	colors := colorsFor(c.Theme().Dark)
+	color := colors.charging
+	if reading.Charging {
+		value += " · 充电中"
+	} else if known && reading.Percent <= 20 {
+		color = colors.lowBattery
+	} else if !known {
+		color = text.Alpha(0.45)
+	}
+	cell := ui.Column(c.Key(reading.ID)).Size(80, 92).Shrink(0).Gap(4).AlignItems(ui.Center).Justify(ui.Center).
+		Label(name).Value(value)
+	if known {
+		cell.Role(ui.RoleMeter).Range(0, 100, float64(reading.Percent))
+	} else {
+		cell.Role(ui.RoleText).Label(name + " · " + value)
+	}
+	cell.Children(func() {
+		ui.Box(c).Size(ringSize, ringSize).Shrink(0).Center().AccessHidden(true).
+			Draw(func(p *ui.Painter, r ui.Rect) {
+				drawBatteryRing(p, r, radius, stroke, reading.Percent, known, color, text, false)
+			}).Children(func() {
+			ui.Icon(c, batteryDeviceIcon(reading)).Size(iconSize, iconSize).TextColor(text).IgnoreInput(true)
+			if reading.Charging {
+				ui.Box(c).Absolute().Right(0).Bottom(0).Size(14, 14).Radius(7).
+					Background(lightColors.charging).Border(1.25, white).Center().IgnoreInput(true).Children(func() {
+					ui.Icon(c, chargingIcon).Size(8, 8).TextColor(white)
+				})
+			}
+		})
+		ui.Column(c).FillWidth().Gap(1).AlignItems(ui.Center).AccessHidden(true).IgnoreInput(true).Children(func() {
+			ui.Text(c, name).FillWidth().SingleLine().Ellipsis("…").TextAlign(ui.Center).
+				FontSize(10.5).FontWeight(500).TextColor(c.Theme().TextMuted)
+			ui.Text(c, display).FontSize(12).FontWeight(650).FontFeatures("tnum").SingleLine().
+				TextColor(text)
+		})
+	})
+}
+
+func (a *island) batterySmallCard(c *ui.Context, width, height float32) {
+	tint := colorsFor(c.Theme().Dark).glass
+	card := ui.Column(c.Key("battery-small")).Size(width, height).Shrink(0).Radius(13).Clip().
+		Padding(10, 18).Justify(ui.SpaceAround).Gap(6).
+		Background(tint.Alpha(0.4)).Border(0.75, tint.Alpha(0.65)).Label("设备电量")
+	card.Children(func() {
+		count := min(len(a.battery.readings), 4)
+		rows := (count + 1) / 2
+		for row := range rows {
+			ui.Row(c.Key(row)).FillWidth().Justify(ui.SpaceAround).AlignItems(ui.Center).Children(func() {
+				for col := range 2 {
+					idx := row*2 + col
+					if idx < count {
+						batterySmallCell(c, a.battery.readings[idx])
+					} else if rows > 1 {
+						ui.Box(c).Size(44, 44).Shrink(0).AccessHidden(true)
+					}
+				}
+			})
 		}
 	})
+}
+
+func batterySmallCell(c *ui.Context, reading battery.Reading) {
+	const ringSize, iconSize, stroke float32 = 44, 19, 4.2
+	radius := ringSize/2 - 3.5
+	name := batteryDeviceName(reading)
+	value := "电量未知"
+	known := reading.Percent != battery.UnknownPercent
+	if known {
+		value = fmt.Sprintf("%d%%", reading.Percent)
+	}
+	text := c.Theme().Text
+	colors := colorsFor(c.Theme().Dark)
+	color := colors.charging
+	if reading.Charging {
+		value += " · 充电中"
+	} else if known && reading.Percent <= 20 {
+		color = colors.lowBattery
+	} else if !known {
+		color = text.Alpha(0.45)
+	}
+	cell := ui.Box(c.Key(reading.ID)).Size(ringSize, ringSize).Shrink(0).Center().
+		Label(name).Value(value).Tooltip(name + " · " + value)
+	if known {
+		cell.Role(ui.RoleMeter).Range(0, 100, float64(reading.Percent))
+	} else {
+		cell.Role(ui.RoleText).Label(name + " · " + value)
+	}
+	cell.Draw(func(p *ui.Painter, r ui.Rect) {
+		drawBatteryRing(p, r, radius, stroke, reading.Percent, known, color, text, false)
+	}).Children(func() {
+		ui.Icon(c, batteryDeviceIcon(reading)).Size(iconSize, iconSize).TextColor(text).IgnoreInput(true)
+		if reading.Charging {
+			ui.Box(c).Absolute().Right(-1).Bottom(-1).Size(15, 15).Radius(7.5).
+				Background(lightColors.charging).Border(1.5, white).Center().IgnoreInput(true).Children(func() {
+				ui.Icon(c, chargingIcon).Size(9, 9).TextColor(white)
+			})
+		}
+	})
+}
+
+func (a *island) batteryLargeCard(c *ui.Context, width, height float32) {
+	tint := colorsFor(c.Theme().Dark).glass
+	text := c.Theme().Text
+	colors := colorsFor(c.Theme().Dark)
+	card := ui.Column(c.Key("battery-large")).Size(width, height).Shrink(0).Radius(13).Clip().
+		Padding(9, 12).Gap(6).
+		Background(tint.Alpha(0.4)).Border(0.75, tint.Alpha(0.65)).Label("设备电量")
+	card.Children(func() {
+		ui.Row(c.Key("battery-large-heading")).FillWidth().Height(todoPreviewHeader).Shrink(0).
+			Gap(6).AlignItems(ui.Center).Children(func() {
+			ui.Icon(c, batteryIcon).Size(14, 14).TextColor(c.Theme().Accent)
+			ui.Text(c, "设备电量").Grow(1).SingleLine().FontSize(11).FontWeight(600).TextColor(c.Theme().TextMuted)
+		})
+		ui.Scroll(c.Key("battery-large-list")).FillWidth().Grow(1).MinHeight(0).Gap(6).Children(func() {
+			for _, reading := range a.battery.readings {
+				known := reading.Percent != battery.UnknownPercent
+				display, value := "—", "电量未知"
+				if known {
+					display = fmt.Sprintf("%d%%", reading.Percent)
+					value = display
+				}
+				barColor := colors.charging
+				if reading.Charging {
+					value += " · 充电中"
+				} else if known && reading.Percent <= 20 {
+					barColor = colors.lowBattery
+				} else if !known {
+					barColor = text.Alpha(0.25)
+				}
+				name := batteryDeviceName(reading)
+				row := ui.Row(c.Key(reading.ID)).FillWidth().Height(32).Shrink(0).Gap(10).AlignItems(ui.Center).
+					Label(name).Value(value)
+				if known {
+					row.Role(ui.RoleMeter).Range(0, 100, float64(reading.Percent))
+				} else {
+					row.Role(ui.RoleText).Label(name + " · " + value)
+				}
+				row.Children(func() {
+					ui.Box(c).Size(24, 24).Shrink(0).Center().AccessHidden(true).
+						Draw(func(p *ui.Painter, r ui.Rect) {
+							drawBatteryRing(p, r, 9.5, 2.0, reading.Percent, known, barColor, text, false)
+						}).Children(func() {
+						ui.Icon(c, batteryDeviceIcon(reading)).Size(12, 12).TextColor(text).IgnoreInput(true)
+					})
+					ui.Column(c).Grow(1).MinWidth(0).Gap(4).AccessHidden(true).Children(func() {
+						ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(6).Children(func() {
+							ui.Text(c, name).Grow(1).MinWidth(0).SingleLine().Ellipsis("…").FontSize(12).FontWeight(550).TextColor(text)
+							if reading.Charging {
+								ui.Icon(c, chargingIcon).Size(11, 11).TextColor(colors.charging)
+							}
+							ui.Text(c, display).Shrink(0).FontSize(11.5).FontWeight(600).FontFeatures("tnum").TextColor(barColor)
+						})
+						pct := float32(0)
+						if known {
+							pct = float32(reading.Percent) / 100
+						}
+						ui.Box(c).FillWidth().Height(4).Shrink(0).Draw(func(p *ui.Painter, r ui.Rect) {
+							p.Fill(r, text.Alpha(0.14), 2)
+							if pct > 0 {
+								fill := ui.Rect{X: r.X, Y: r.Y, W: r.W * min(1, max(0, pct)), H: r.H}
+								p.Fill(fill, barColor, min(2, fill.W/2))
+							}
+						})
+					})
+				})
+			}
+		})
+	})
+}
+
+func drawBatteryRing(p *ui.Painter, r ui.Rect, radius, stroke float32, percent int, known bool, color, text ui.Color, dashUnknown bool) {
+	cx, cy := r.X+r.W/2, r.Y+r.H/2
+	var ring ui.Path
+	ring.Circle(cx, cy, radius)
+	if dashUnknown && !known {
+		ring.Dash(0, 2, 2)
+	}
+	p.StrokePath(&ring, stroke, text.Alpha(0.19))
+	if percent == 100 {
+		p.StrokePath(&ring, stroke, color)
+	} else if percent > 0 {
+		var arc ui.Path
+		arc.MoveTo(cx, cy-radius)
+		steps := int(math.Ceil(float64(percent) * 0.48))
+		for i := 1; i <= steps; i++ {
+			angle := 2 * math.Pi * float64(percent*i) / float64(100*steps)
+			arc.LineTo(cx+radius*float32(math.Sin(angle)), cy-radius*float32(math.Cos(angle)))
+		}
+		p.StrokePath(&arc, stroke, color)
+	}
 }
 
 func batteryIndicator(c *ui.Context, reading battery.Reading, compact bool) {

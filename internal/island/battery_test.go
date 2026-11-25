@@ -20,8 +20,8 @@ func TestBatteryRowInOverview(t *testing.T) {
 		{ID: "earbuds-left", Name: "测试耳机", Kind: battery.Headphones, Part: battery.Left, Percent: 0},
 	}
 	a.shownFrame = a.targetFrame()
-	if got := a.shownFrame.height - withoutBattery.height; got != batteryRowHeight+batteryRowGap {
-		t.Fatalf("battery row added %.1f points to the overview", got)
+	if got, want := a.shownFrame.height-withoutBattery.height, widgetRowSpanPx(2)+widgetGridGap; got != want {
+		t.Fatalf("battery card added %.1f points to the overview, want %.1f", got, want)
 	}
 	view := ui.NewTester(func(c *ui.Context) {
 		ui.Column(c).Fill().Clip().Children(func() {
@@ -29,7 +29,7 @@ func TestBatteryRowInOverview(t *testing.T) {
 			a.body(c, a.shownFrame)
 		})
 	}, panelWidth, int(a.shownFrame.height))
-	for _, label := range []string{"100%", "—", "左 0%"} {
+	for _, label := range []string{"100%", "—", "0%", "本机", "测试鼠标", "测试耳机 左耳"} {
 		if !view.HasText(label) {
 			t.Errorf("missing battery text %q", label)
 		}

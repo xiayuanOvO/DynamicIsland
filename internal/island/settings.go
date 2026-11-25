@@ -37,8 +37,9 @@ type appSettings struct {
 	LyricStyle       lyricStyle       `json:"lyricStyle,omitzero"`
 	WeatherCity      weatherCity      `json:"weatherCity,omitzero"`
 	WeatherSource    int              `json:"weatherSource,omitempty"`
-	IdleItems        idleItemSettings `json:"idleItems,omitzero"`
-	MediaCardStyle   int              `json:"mediaCardStyle,omitempty"`
+	IdleItems        idleItemSettings    `json:"idleItems,omitzero"`
+	PanelWidgets     panelWidgetSettings `json:"panelWidgets,omitzero"`
+	MediaCardStyle   int                 `json:"mediaCardStyle,omitempty"`
 	HideInFullscreen bool             `json:"hideInFullscreen"`
 	LowBatteryAlert  bool             `json:"lowBatteryAlert"`
 	ToggleShortcut   string           `json:"toggleShortcut,omitempty"`
@@ -102,6 +103,7 @@ func loadSettings(path string) (appSettings, error) {
 		settings.WeatherSource = weatherSourceOpenMeteo
 	}
 	settings.IdleItems = settings.IdleItems.normalized()
+	settings.PanelWidgets = settings.PanelWidgets.normalized()
 	if settings.MediaCardStyle != mediaCardLargeCover {
 		settings.MediaCardStyle = mediaCardDefault
 	}

@@ -70,7 +70,9 @@ func TestPanelCardsFollowWindowHeight(t *testing.T) {
 					if !ok {
 						t.Fatal("card disappeared during the transition")
 					}
-					if delta := card.Y + card.H + 20 - a.shownFrame.height; math.Abs(float64(delta)) > 1 {
+					progress := max(a.shownFrame.todo, a.shownFrame.clipboard)
+					footerH := float32(a.overviewFooterHeight()) * (1 - progress)
+					if delta := card.Y + card.H + footerH + 20 - a.shownFrame.height; math.Abs(float64(delta)) > 1 {
 						t.Fatalf("%s: card and window heights differ by %.1f points", button, delta)
 					}
 					edge := card.X - initial.X
@@ -133,8 +135,9 @@ func TestClipboardOpeningFadesOverviewBeforeRemovingIt(t *testing.T) {
 		fading := frame.clipboard < panelCardPreviewEnd
 		for i, label := range overviewLabels {
 			box, ok := view.Find(label)
-			if fading && (!ok || math.Abs(float64(box.W-initial[i].W)) > 0.5 || math.Abs(float64(box.H-initial[i].H)) > 0.5) {
-				t.Fatalf("%v: %q should stay whole while fading; changed from %+v to %+v", elapsed, label, initial[i], box)
+			wantH := min(initial[i].H, max(0, a.shownFrame.height-initial[i].Y))
+			if fading && (!ok || math.Abs(float64(box.W-initial[i].W)) > 0.5 || math.Abs(float64(box.H-wantH)) > 0.5) {
+				t.Fatalf("%v: %q should stay whole while fading; changed from %+v to %+v (want h=%.1f)", elapsed, label, initial[i], box, wantH)
 			}
 			if fading && label == "待办卡片" && math.Abs(float64(box.Y-initial[i].Y)) > 0.5 {
 				t.Fatalf("%v: the fading todo card moved from y=%.1f to y=%.1f", elapsed, initial[i].Y, box.Y)
