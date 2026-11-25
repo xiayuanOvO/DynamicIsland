@@ -69,7 +69,7 @@ func (a *island) hover(c *ui.Context, hovered bool) {
 		a.leaveSince = time.Time{}
 		return
 	}
-	if !a.expanded || a.media.scrubbing || a.todos.draft != nil || a.widgetDrag.active() {
+	if !a.expanded || a.media.scrubbing || a.todos.draft != nil || a.widgetDrag.active() || a.editingWidgets {
 		return
 	}
 	now := c.Now()
@@ -124,14 +124,6 @@ func (a *island) header(c *ui.Context, open float32) {
 		}
 	}
 	header.Children(func() {
-		if openAlpha := animationPhase(open, 0.35, 0.9); openAlpha > 0.01 {
-			btn := iconButton(c.Key("open-settings"), settingsIcon, "设置").
-				Absolute().Right(14).Top((height - 20) / 2).Size(20, 20).Radius(6).
-				Opacity(openAlpha).IgnoreInput(!a.expanded || open < 0.8)
-			if btn.Clicked() {
-				a.openSettings()
-			}
-		}
 		if compactAlpha > 0 && alertActive {
 			if !c.Preferences().ReduceMotion {
 				c.AnimationFrame()
@@ -373,10 +365,114 @@ func (a *island) body(c *ui.Context, frame islandFrame) {
 						card.ZIndex(5)
 					}
 				}
+
+				if a.editingWidgets && canConfigure && !isDragged {
+					id := slot.id
+					name := widgetDisplayName(id)
+					tint := colorsFor(c.Theme().Dark).glass
+					closeBtn := ui.ButtonBase(c.Key("close-widget-"+string(id))).
+						Absolute().Left(slot.rect.X+slot.rect.W-14).Top(slot.rect.Y-6).
+						Size(20, 20).Radius(10).ZIndex(15).Center().
+						Background(tint.Alpha(0.92)).Border(0.75, c.Theme().Text.Alpha(0.22)).
+						TextColor(c.Theme().Text).Cursor(ui.CursorPointer).
+						Label("关闭" + name).Tooltip("关闭" + name)
+					if closeBtn.Hovered() {
+						closeBtn.Background(colorsFor(c.Theme().Dark).problem).Border(0.75, colorsFor(c.Theme().Dark).problem).TextColor(white)
+					}
+					closeBtn.Children(func() {
+						ui.Icon(c, minusIcon).Size(11, 11)
+					})
+					if closeBtn.Clicked() {
+						a.setWidgetHidden(id, true)
+					}
+				}
 			}
 		})
+
+		if progress < panelCardPreviewEnd {
+			footerH := float32(a.overviewFooterHeight())
+			footerWrap := ui.Column(c.Key("overview-footer-wrap")).FillWidth().
+				Height(footerH * (1 - progress)).Shrink(0).Justify(ui.End).
+				Opacity(overviewOpacity).IgnoreInput(progress > 0 || a.todos.open || a.clipboard.open || dragging)
+			footerWrap.Children(func() {
+				a.overviewFooter(c)
+			})
+		}
 	})
 	a.widgetDrag.suppressClick = false
+}
+
+func (a *island) overviewFooter(c *ui.Context) {
+	tint := colorsFor(c.Theme().Dark).glass
+	if a.editingWidgets {
+		if hidden := a.hiddenWidgets(); len(hidden) > 0 {
+			ui.Row(c.Key("hidden-widgets-bar")).FillWidth().Height(widgetAddBarHeight).Shrink(0).
+				Margin(0, 0, panelFooterGap).Justify(ui.Center).AlignItems(ui.Center).Gap(6).Children(func() {
+				for _, id := range hidden {
+					name := widgetDisplayName(id)
+					addBtn := ui.ButtonBase(c.Key("add-widget-"+string(id))).Row().Height(24).Shrink(0).
+						Padding(0, 10).Gap(4).Radius(12).AlignItems(ui.Center).
+						Background(tint.Alpha(0.45)).Border(0.75, tint.Alpha(0.65)).
+						TextColor(c.Theme().Text).Cursor(ui.CursorPointer).Label("添加" + name)
+					if addBtn.Hovered() {
+						addBtn.Background(tint.Alpha(0.68))
+					}
+					addBtn.Children(func() {
+						ui.Icon(c, plusIcon).Size(11, 11).TextColor(c.Theme().Accent)
+						ui.Text(c, name).FontSize(11).FontWeight(550).SingleLine()
+					})
+					if addBtn.Clicked() {
+						a.setWidgetHidden(id, false)
+					}
+				}
+			})
+		}
+	}
+
+	ui.Row(c.Key("overview-footer")).FillWidth().Height(panelFooterHeight).Shrink(0).
+		Justify(ui.Center).AlignItems(ui.Center).Gap(8).Children(func() {
+		editLabel := "编辑组件"
+		if a.editingWidgets {
+			editLabel = "完成"
+		}
+		editBtn := ui.ButtonBase(c.Key("edit-widgets")).Height(26).Shrink(0).
+			Padding(0, 14).Radius(13).Center().
+			Background(tint.Alpha(0.45)).Border(0.75, tint.Alpha(0.65)).
+			TextColor(c.Theme().Text).Cursor(ui.CursorPointer).Label(editLabel)
+		if a.editingWidgets {
+			editBtn.Background(c.Theme().Accent.Alpha(0.18)).Border(0.75, c.Theme().Accent.Alpha(0.45)).TextColor(c.Theme().Accent)
+		}
+		if editBtn.Hovered() {
+			if a.editingWidgets {
+				editBtn.Background(c.Theme().Accent.Alpha(0.26))
+			} else {
+				editBtn.Background(tint.Alpha(0.68))
+			}
+		}
+		editBtn.Children(func() {
+			ui.Text(c, editLabel).FontSize(11.5).FontWeight(550).SingleLine()
+		})
+		if editBtn.Clicked() {
+			a.editingWidgets = !a.editingWidgets
+			now := time.Now()
+			a.leaveSince = now.Add(800 * time.Millisecond)
+			a.animation.retarget(a.targetFrame(), now)
+		}
+
+		settingsBtn := ui.ButtonBase(c.Key("open-settings")).Size(26, 26).Shrink(0).
+			Radius(13).Center().
+			Background(tint.Alpha(0.45)).Border(0.75, tint.Alpha(0.65)).
+			TextColor(c.Theme().TextMuted).Cursor(ui.CursorPointer).Label("设置").Tooltip("设置")
+		if settingsBtn.Hovered() {
+			settingsBtn.Background(tint.Alpha(0.68)).TextColor(c.Theme().Text)
+		}
+		settingsBtn.Children(func() {
+			ui.Icon(c, settingsIcon).Size(14, 14)
+		})
+		if settingsBtn.Clicked() {
+			a.openSettings()
+		}
+	})
 }
 
 func panelCardSurface(c *ui.Context, progress, previewWidth, height float32) ui.Element {
@@ -423,6 +519,12 @@ func (a *island) shortcuts(c *ui.Context) {
 	if a.expanded && a.widgetDrag.active() {
 		if c.Shortcut(0, ui.KeyEscape) {
 			a.widgetDrag.cancel(a)
+		}
+		return
+	}
+	if a.expanded && a.editingWidgets {
+		if c.Shortcut(0, ui.KeyEscape) {
+			a.editingWidgets = false
 		}
 		return
 	}

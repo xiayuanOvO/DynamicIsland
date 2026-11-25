@@ -24,6 +24,7 @@ func (a *island) openClipboard(fromShortcut bool) {
 	if !a.clipboard.Recording {
 		return
 	}
+	a.editingWidgets = false
 	a.todos.open = false
 	a.todos.draft, a.todos.leaving = nil, nil
 	history := &a.clipboard
@@ -120,7 +121,7 @@ func (a *island) clipboardPreviewCardWithSize(c *ui.Context, height, opacity flo
 	if !history.previewLoaded && history.store != nil {
 		a.refreshClipboardPreview()
 	}
-	dragging := a.widgetDrag.active()
+	dragging := a.widgetDrag.active() || a.editingWidgets
 	small := size == widgetSizeSmall
 	maxRows := clipboardPreviewRows
 	showTime := false

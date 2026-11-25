@@ -358,7 +358,7 @@ func (a *island) mediaCard(c *ui.Context) {
 func (a *island) mediaWidget(c *ui.Context, size widgetSize, width, height float32) {
 	source := a.media.track.Source
 	var control func(nowplaying.Action, float64)
-	if !a.widgetDrag.active() && !a.widgetDrag.suppressClick {
+	if !a.widgetDrag.active() && !a.widgetDrag.suppressClick && !a.editingWidgets {
 		control = func(action nowplaying.Action, position float64) {
 			a.requestMedia(nowplaying.Command{Action: action, Source: source, Position: position})
 		}

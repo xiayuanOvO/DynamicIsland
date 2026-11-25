@@ -29,6 +29,9 @@ const (
 	widgetGridGap             = overviewCardGap
 	widgetGridColWidth        = float32(panelBodyWidth-(widgetGridCols-1)*widgetGridGap) / widgetGridCols
 	widgetGridRowHeight       = float32(56)
+	panelFooterHeight         = 28
+	panelFooterGap            = 10
+	widgetAddBarHeight        = 28
 	widgetLongPressDelay      = 350 * time.Millisecond
 	widgetLongPressMoveLimit  = 6
 	clipboardLargePreviewRows = 8
@@ -68,8 +71,24 @@ func widgetRowOffsetPx(row int) float32 {
 }
 
 type panelWidgetSetting struct {
-	ID   panelWidgetID `json:"id"`
-	Size widgetSize    `json:"size,omitempty"`
+	ID     panelWidgetID `json:"id"`
+	Size   widgetSize    `json:"size,omitempty"`
+	Hidden bool          `json:"hidden,omitempty"`
+}
+
+func widgetDisplayName(id panelWidgetID) string {
+	switch id {
+	case widgetBattery:
+		return "设备电量"
+	case widgetMedia:
+		return "媒体播放"
+	case widgetTodo:
+		return "待办事项"
+	case widgetClipboard:
+		return "剪贴板历史"
+	default:
+		return ""
+	}
 }
 
 type panelWidgetSettings [4]panelWidgetSetting
@@ -154,7 +173,62 @@ func (g panelWidgetGrid) slot(id panelWidgetID) (panelWidgetSlot, bool) {
 	return panelWidgetSlot{}, false
 }
 
+func (a *island) widgetHidden(id panelWidgetID) bool {
+	for _, item := range a.settings.panelWidgets() {
+		if item.ID == id {
+			return item.Hidden
+		}
+	}
+	return false
+}
+
+func (a *island) hiddenWidgets() []panelWidgetID {
+	widgets := a.settings.panelWidgets()
+	var hidden []panelWidgetID
+	for _, item := range widgets {
+		if !item.Hidden {
+			continue
+		}
+		if item.ID == widgetClipboard && !a.clipboard.Recording {
+			continue
+		}
+		hidden = append(hidden, item.ID)
+	}
+	return hidden
+}
+
+func (a *island) setWidgetHidden(id panelWidgetID, hidden bool) {
+	if !validPanelWidgetID(id) {
+		return
+	}
+	widgets := a.settings.panelWidgets()
+	changed := false
+	for i := range widgets {
+		if widgets[i].ID == id {
+			if widgets[i].Hidden != hidden {
+				widgets[i].Hidden = hidden
+				changed = true
+			}
+			break
+		}
+	}
+	if !changed {
+		return
+	}
+	a.settings.PanelWidgets = widgets
+	a.persistWidgetSettings()
+	now := time.Now()
+	a.leaveSince = now.Add(800 * time.Millisecond)
+	a.animation.retarget(a.targetFrame(), now)
+	if a.win != nil {
+		a.win.Invalidate()
+	}
+}
+
 func (a *island) widgetVisible(id panelWidgetID) bool {
+	if a.widgetHidden(id) {
+		return false
+	}
 	switch id {
 	case widgetBattery:
 		return len(a.battery.readings) > 0

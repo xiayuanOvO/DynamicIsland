@@ -293,3 +293,112 @@ func TestLongPressDragCancelWithEscapeAndShortClickStillOpens(t *testing.T) {
 		t.Fatal("normal short click should still open todo panel")
 	}
 }
+
+func TestEditWidgetsModeHideAddBackAndBottomFooter(t *testing.T) {
+	a := newTestClipboard(t, true, "剪贴板条目")
+	a.statePath = filepath.Join(t.TempDir(), "state.json")
+	a.battery.readings = []battery.Reading{{ID: "mac", Name: "本机", Kind: battery.Computer, Percent: 88}}
+	a.todos.items = []todoItem{{ID: "t1", Title: "待办条目"}}
+	a.expanded = true
+	a.shownFrame = a.targetFrame()
+
+	view := ui.NewTester(func(c *ui.Context) {
+		a.shownFrame = a.targetFrame()
+		ui.Column(c).Fill().Clip().Children(func() {
+			a.header(c, a.shownFrame.open)
+			a.body(c, a.shownFrame)
+		})
+		a.shortcuts(c)
+	}, panelWidth, 560)
+
+	// Footer shows "编辑组件" and "设置" horizontally centered below the widgets.
+	editBtn, ok1 := view.Find("编辑组件")
+	settingsBtn, ok2 := view.Find("设置")
+	todoRect, ok3 := view.Find("待办卡片")
+	if !ok1 || !ok2 || !ok3 {
+		t.Fatalf("missing footer controls or todo card: edit=%v settings=%v todo=%v", ok1, ok2, ok3)
+	}
+	if settingsBtn.Y <= todoRect.Y+todoRect.H {
+		t.Fatalf("settings button should be below the widget grid: settings=%+v todo=%+v", settingsBtn, todoRect)
+	}
+	groupCenter := (editBtn.X + settingsBtn.X + settingsBtn.W) / 2
+	if math.Abs(float64(groupCenter-panelWidth/2)) > 4 {
+		t.Fatalf("footer controls should be horizontally centered: center=%.1f panelMid=%d", groupCenter, panelWidth/2)
+	}
+
+	// Not in edit mode: close badges are not shown.
+	if _, ok := view.Find("关闭设备电量"); ok {
+		t.Fatal("close widget badge should not be visible outside edit mode")
+	}
+
+	// Click "编辑组件" -> enters edit mode and shows top-right close badge on widgets.
+	if err := view.Click("编辑组件"); err != nil {
+		t.Fatal(err)
+	}
+	if !a.editingWidgets {
+		t.Fatal("clicking 编辑组件 should enter edit mode")
+	}
+	batRect, _ := view.Find("设备电量")
+	closeBat, ok := view.Find("关闭设备电量")
+	if !ok {
+		t.Fatal("close badge for battery should appear in edit mode")
+	}
+	if closeBat.X < batRect.X+batRect.W/2 || closeBat.Y > batRect.Y+batRect.H/2 {
+		t.Fatalf("close badge should be at top-right of battery card: badge=%+v card=%+v", closeBat, batRect)
+	}
+
+	// Click close badge -> hides battery widget, shows "+ 设备电量" add-back button, and persists.
+	if err := view.Click("关闭设备电量"); err != nil {
+		t.Fatal(err)
+	}
+	if !a.widgetHidden(widgetBattery) {
+		t.Fatal("battery widget should be marked hidden after clicking close")
+	}
+	if _, ok := view.Find("本机"); ok {
+		t.Fatal("battery widget content should be hidden after clicking close")
+	}
+	if _, ok := view.Find("添加设备电量"); !ok {
+		t.Fatal("hidden battery widget should appear in the add-back bar")
+	}
+	saved, err := loadSettings(a.settingsPath())
+	if err != nil {
+		t.Fatalf("loadSettings: %v", err)
+	}
+	if !(&island{settings: saved}).widgetHidden(widgetBattery) {
+		t.Fatalf("hidden state should persist to settings.json: %+v", saved.PanelWidgets)
+	}
+
+	// Click "+ 设备电量" -> restores battery widget.
+	if err := view.Click("添加设备电量"); err != nil {
+		t.Fatal(err)
+	}
+	if a.widgetHidden(widgetBattery) {
+		t.Fatal("battery widget should no longer be hidden after clicking add-back button")
+	}
+	if _, ok := view.Find("本机"); !ok {
+		t.Fatal("battery widget should be restored after clicking add-back button")
+	}
+	if _, ok := view.Find("添加设备电量"); ok {
+		t.Fatal("add-back button should disappear once battery is restored")
+	}
+
+	// Click "完成" -> exits edit mode.
+	if err := view.Click("完成"); err != nil {
+		t.Fatal(err)
+	}
+	if a.editingWidgets {
+		t.Fatal("clicking 完成 should exit edit mode")
+	}
+	if _, ok := view.Find("关闭设备电量"); ok {
+		t.Fatal("close badges should disappear after exiting edit mode")
+	}
+
+	// Escape also exits edit mode without collapsing the island.
+	if err := view.Click("编辑组件"); err != nil {
+		t.Fatal(err)
+	}
+	view.Key(0, ui.KeyEscape)
+	if a.editingWidgets || !a.expanded {
+		t.Fatalf("Escape should exit edit mode while keeping island expanded: editing=%v expanded=%v", a.editingWidgets, a.expanded)
+	}
+}

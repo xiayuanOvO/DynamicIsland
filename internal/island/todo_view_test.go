@@ -70,7 +70,9 @@ func TestPanelCardsFollowWindowHeight(t *testing.T) {
 					if !ok {
 						t.Fatal("card disappeared during the transition")
 					}
-					if delta := card.Y + card.H + 20 - a.shownFrame.height; math.Abs(float64(delta)) > 1 {
+					progress := max(a.shownFrame.todo, a.shownFrame.clipboard)
+					footerH := float32(a.overviewFooterHeight()) * (1 - progress)
+					if delta := card.Y + card.H + footerH + 20 - a.shownFrame.height; math.Abs(float64(delta)) > 1 {
 						t.Fatalf("%s: card and window heights differ by %.1f points", button, delta)
 					}
 					edge := card.X - initial.X

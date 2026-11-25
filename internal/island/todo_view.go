@@ -142,7 +142,7 @@ func (a *island) todoPreview(c *ui.Context, height, opacity float32) {
 }
 
 func (a *island) todoPreviewWithSize(c *ui.Context, height, opacity float32, size widgetSize) {
-	dragging := a.widgetDrag.active()
+	dragging := a.widgetDrag.active() || a.editingWidgets
 	card := ui.ButtonBase(c.Key("todo-card")).Column().Absolute().Top(0).Left(0).Right(0).
 		Height(height).Radius(13).Cursor(ui.CursorPointer).Label("查看待办事项").
 		Opacity(opacity).IgnoreInput(a.todos.open || dragging)
@@ -260,6 +260,7 @@ func (a *island) todoPreviewWithSize(c *ui.Context, height, opacity float32, siz
 
 func (a *island) openTodos() {
 	t := &a.todos
+	a.editingWidgets = false
 	a.clipboard.open, a.clipboard.confirmClear = false, false
 	if t.loadFailed {
 		a.loadTodos()
