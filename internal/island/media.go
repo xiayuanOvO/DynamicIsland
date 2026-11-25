@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"image"
 	"log"
+	"strings"
 	"time"
 
 	"dynamicisland/internal/audiolevel"
@@ -29,24 +30,22 @@ func (s appSettings) cardHeight() int {
 }
 
 type islandMedia struct {
-	adapter          string
-	track            nowplaying.Track
-	catalogDuration  float64
-	artwork          ui.ImageSource
-	artworkColor     ui.Color
-	artworkHash      [32]byte
-	artworkCacheDir  string
-	artworkLoading   bool
-	refreshAt        time.Time
-	fastRefreshUntil time.Time
-	reading          bool
-	action           nowplaying.Action
-	pending          nowplaying.Command
-	scrubbing        bool
-	scrub            float64
-	capture          *audiolevel.Capture
-	wave             audiolevel.Bars
-	waveFrameAt      time.Time
+	adapter         string
+	stopWatch       func()
+	track           nowplaying.Track
+	catalogDuration float64
+	artwork         ui.ImageSource
+	artworkColor    ui.Color
+	artworkHash     [32]byte
+	artworkCacheDir string
+	artworkLoading  bool
+	action          nowplaying.Action
+	pending         nowplaying.Command
+	scrubbing       bool
+	scrub           float64
+	capture         *audiolevel.Capture
+	wave            audiolevel.Bars
+	waveFrameAt     time.Time
 }
 
 var (
@@ -56,112 +55,158 @@ var (
 	nextIcon     = svg(`<path d="M19 6v12M6 6l10 6-10 6V6Z"/>`)
 )
 
-func (a *island) updateMedia(c *ui.Context) {
+func (a *island) watchMedia() {
 	m := &a.media
-	if m.adapter == "" || !a.win.IsVisible() || m.reading || m.action != "" {
+	if m.adapter == "" || m.stopWatch != nil {
 		return
 	}
-	if delay := m.refreshAt.Sub(c.Now()); delay > 0 {
-		c.After(delay)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	m.stopWatch = func() {
+		cancel()
+		nowplaying.Close()
+		select {
+		case <-done:
+		case <-time.After(time.Second):
+		}
+	}
+	adapter, cacheDir := m.adapter, m.artworkCacheDir
+	go func() {
+		defer close(done)
+		var lastSong nowplaying.Track
+		var lastHash [32]byte
+		nowplaying.Watch(ctx, adapter, func(track nowplaying.Track) {
+			cover, coverColor, hash, keepCover := resolveArtwork(track, lastSong, lastHash, cacheDir)
+			lastSong = track
+			lastSong.Artwork = nil
+			if cover != nil {
+				lastHash = hash
+			} else if !keepCover {
+				lastHash = [32]byte{}
+			}
+			track.Artwork = nil
+			if a.win == nil {
+				return
+			}
+			a.win.Update(func() {
+				a.applyMediaTrack(track, cover, coverColor, hash, keepCover)
+			})
+		})
+	}()
+}
+
+func (a *island) updateMedia(c *ui.Context) {
+	a.maybeLoadArtwork()
+}
+
+func (a *island) maybeLoadArtwork() {
+	m := &a.media
+	track := m.track
+	load := track.ArtworkLoader
+	if load == nil || !(a.expanded || track.Playing) || m.artwork != nil || m.artworkLoading {
 		return
 	}
-	a.requestMedia(nowplaying.Command{})
+	m.artworkLoading = true
+	cacheDir := m.artworkCacheDir
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		data := load(ctx)
+		cover, color := decodeArtwork(data)
+		if cover != nil {
+			saveArtwork(cacheDir, track.ArtworkKey(), data)
+		}
+		hash := sha256.Sum256(data)
+		a.win.Update(func() {
+			m.artworkLoading = false
+			if cover != nil && m.artwork == nil && m.track.ArtworkKey() == track.ArtworkKey() {
+				a.setArtwork(cover, color, hash)
+			}
+		})
+	}()
+}
+
+func (a *island) applyMediaTrack(track nowplaying.Track, cover ui.ImageSource, coverColor ui.Color, hash [32]byte, keepCover bool) bool {
+	m := &a.media
+	oldSong := m.track
+	track.EstimateNetEasePosition(m.track)
+	trackChanged := !m.track.SameSong(track)
+	if trackChanged {
+		m.scrubbing = false
+		m.catalogDuration = 0
+		if track.Duration <= 0 && track.IsNetEase() && track.Artist != "" {
+			go func() {
+				ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+				defer cancel()
+				duration := lyrics.NetEaseDuration(ctx, lyrics.Song{Title: track.Title, Artist: track.Artist, Album: track.Album})
+				if duration > 0 {
+					a.win.Update(func() {
+						if m.track.SameSong(track) {
+							m.catalogDuration = duration
+							if a.settingsWindow != nil {
+								a.settingsWindow.Invalidate()
+							}
+						}
+					})
+				}
+			}()
+		}
+	}
+	m.track = track
+	if a.settingsWindow != nil && oldSong.Playing != track.Playing {
+		a.settingsWindow.Invalidate()
+	}
+	if cover != nil {
+		a.setArtwork(cover, coverColor, hash)
+	} else if !keepCover && m.artwork != nil {
+		a.setArtwork(nil, ui.Transparent, [32]byte{})
+	}
+	a.maybeLoadArtwork()
+	return trackChanged
 }
 
 func (a *island) requestMedia(command nowplaying.Command) {
+	if command.Action == "" {
+		return
+	}
 	m := &a.media
-	if m.reading {
+	if m.action != "" {
 		m.pending = command
 		return
 	}
-	if m.action != "" {
-		return
-	}
-	m.reading = command.Action == ""
 	m.action = command.Action
 	adapter, oldHash, oldSong, cacheDir := m.adapter, m.artworkHash, m.track, m.artworkCacheDir
-	withArtwork := m.artwork == nil || oldSong.Title == "" || command.Action != ""
+	withArtwork := m.artwork == nil || oldSong.Title == ""
+	readAfter := strings.HasPrefix(command.Source, "applescript:")
 	go func() {
-		var controlErr error
-		if command.Action != "" {
-			ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
-			controlErr = nowplaying.Control(ctx, adapter, command)
-			cancel()
-		}
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		track, readErr := nowplaying.Read(ctx, adapter, withArtwork)
+		ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
+		controlErr := nowplaying.Control(ctx, adapter, command)
 		cancel()
-		cover, coverColor, hash, keepCover := resolveArtwork(track, oldSong, oldHash, cacheDir)
-		track.Artwork = nil
+
+		var (
+			track      nowplaying.Track
+			readErr    error
+			hasRead    bool
+			cover      ui.ImageSource
+			coverColor ui.Color
+			hash       [32]byte
+			keepCover  bool
+		)
+		if controlErr == nil && readAfter {
+			readCtx, readCancel := context.WithTimeout(context.Background(), 5*time.Second)
+			track, readErr = nowplaying.Read(readCtx, adapter, withArtwork)
+			readCancel()
+			if readErr == nil {
+				hasRead = true
+				cover, coverColor, hash, keepCover = resolveArtwork(track, oldSong, oldHash, cacheDir)
+				track.Artwork = nil
+			}
+		}
 		a.win.Update(func() {
-			m.reading, m.action = false, ""
-			now := time.Now()
-			skipping := command.Action == nowplaying.Next || command.Action == nowplaying.Previous
-			startingWithoutMetadata := command.Action == nowplaying.Toggle && oldSong.Title != "" && !oldSong.Playing && readErr == nil && track.Title == ""
-			if controlErr == nil && (skipping || startingWithoutMetadata) {
-				m.fastRefreshUntil = now.Add(1500 * time.Millisecond)
-			}
-			m.refreshAt = now.Add(2 * time.Second)
-			fastRefresh := now.Before(m.fastRefreshUntil)
-			if fastRefresh {
-				m.refreshAt = now.Add(150 * time.Millisecond)
-			}
+			m.action = ""
 			trackChanged := false
-			if readErr == nil && (!fastRefresh || (track.Title != "" && (track.Playing || track.Source == m.track.Source))) {
-				track.EstimateNetEasePosition(m.track)
-				trackChanged = !m.track.SameSong(track)
-				if trackChanged {
-					m.scrubbing = false
-					m.catalogDuration = 0
-					if track.Duration <= 0 && track.IsNetEase() && track.Artist != "" {
-						go func() {
-							ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-							defer cancel()
-							duration := lyrics.NetEaseDuration(ctx, lyrics.Song{Title: track.Title, Artist: track.Artist, Album: track.Album})
-							if duration > 0 {
-								a.win.Update(func() {
-									if m.track.SameSong(track) {
-										m.catalogDuration = duration
-										if a.settingsWindow != nil {
-											a.settingsWindow.Invalidate()
-										}
-									}
-								})
-							}
-						}()
-					}
-				}
-				m.track = track
-				if a.settingsWindow != nil && oldSong.Playing != track.Playing {
-					a.settingsWindow.Invalidate()
-				}
-				if cover != nil {
-					a.setArtwork(cover, coverColor, hash)
-				} else if !keepCover && m.artwork != nil {
-					a.setArtwork(nil, ui.Transparent, [32]byte{})
-				}
-				if (track.Playing || a.expanded) && !withArtwork && m.artwork == nil {
-					m.refreshAt = now
-				}
-				if load := track.ArtworkLoader; load != nil && (a.expanded || track.Playing) && m.artwork == nil && !m.artworkLoading {
-					m.artworkLoading = true
-					go func() {
-						ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-						defer cancel()
-						data := load(ctx)
-						cover, color := decodeArtwork(data)
-						if cover != nil {
-							saveArtwork(cacheDir, track.ArtworkKey(), data)
-						}
-						hash := sha256.Sum256(data)
-						a.win.Update(func() {
-							m.artworkLoading = false
-							if cover != nil && m.artwork == nil && m.track.ArtworkKey() == track.ArtworkKey() {
-								a.setArtwork(cover, color, hash)
-							}
-						})
-					}()
-				}
+			if hasRead {
+				trackChanged = a.applyMediaTrack(track, cover, coverColor, hash, keepCover)
 			}
 			if controlErr != nil {
 				log.Printf("media control: %v", controlErr)

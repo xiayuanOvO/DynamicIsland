@@ -16,3 +16,7 @@ func Read(context.Context, string, bool) (Track, error) {
 func Control(context.Context, string, Command) error {
 	return errors.ErrUnsupported
 }
+
+func Watch(context.Context, string, func(Track)) {}
+
+func Close() {}

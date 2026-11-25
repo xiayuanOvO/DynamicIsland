@@ -1,10 +1,13 @@
 package nowplaying
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 )
 
 func TestReadKeepsSystemTimelineWithArtworkFallback(t *testing.T) {
@@ -41,5 +44,129 @@ func TestReadKeepsSystemTimelineWithArtworkFallback(t *testing.T) {
 				t.Errorf("artwork bytes = %d, fallback available = %v", len(track.Artwork), track.ArtworkLoader != nil)
 			}
 		})
+	}
+}
+
+func TestIsAppleMusicRunningDoesNotPanic(t *testing.T) {
+	// Smoke test that NSWorkspace.runningApplications via purego/objc succeeds.
+	_ = isAppleMusicRunning()
+}
+
+func TestWatchStreamsUpdatesAndCleansUpProcess(t *testing.T) {
+	origCheck := isMusicRunning
+	isMusicRunning = func() bool { return false }
+	t.Cleanup(func() { isMusicRunning = origCheck })
+
+	dir := t.TempDir()
+	countFile := filepath.Join(dir, "invocations")
+	adapter := filepath.Join(dir, "media-control")
+	script := `#!/bin/sh
+echo 1 >> "` + countFile + `"
+printf '%s\n' '{"type":"data","diff":false,"payload":{}}'
+printf '%s\n' '{"type":"data","diff":false,"payload":{"bundleIdentifier":"com.spotify.client","contentItemIdentifier":"sp-1","title":"灯塔","artist":"林海风","album":"远方","playing":true,"duration":240,"elapsedTime":12.5,"playbackRate":1,"timestamp":"2026-11-25T02:50:01Z"}}'
+sleep 30
+`
+	if err := os.WriteFile(adapter, []byte(script), 0700); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+
+	tracks := make(chan Track, 4)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		Watch(ctx, adapter, func(track Track) {
+			tracks <- track
+		})
+	}()
+
+	select {
+	case first := <-tracks:
+		if first.Title != "" || first.Playing {
+			t.Fatalf("expected initial idle track, got %+v", first)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for initial idle stream event")
+	}
+
+	select {
+	case second := <-tracks:
+		wantSampled, _ := time.Parse(time.RFC3339, "2026-11-25T02:50:01Z")
+		if second.Source != "com.spotify.client" || second.Title != "灯塔" || !second.Playing ||
+			second.Position != 12.5 || second.Duration != 240 || !second.Sampled.Equal(wantSampled) {
+			t.Fatalf("unexpected streamed track: %+v", second)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for playing stream event")
+	}
+
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Watch did not terminate promptly after context cancellation")
+	}
+
+	raw, err := os.ReadFile(countFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if lines := strings.Fields(string(raw)); len(lines) != 1 {
+		t.Fatalf("expected exactly 1 media-control process invocation, got %d", len(lines))
+	}
+}
+
+func TestWatchRestartsOnUnexpectedExit(t *testing.T) {
+	origCheck := isMusicRunning
+	isMusicRunning = func() bool { return false }
+	t.Cleanup(func() { isMusicRunning = origCheck })
+
+	dir := t.TempDir()
+	countFile := filepath.Join(dir, "invocations")
+	adapter := filepath.Join(dir, "media-control")
+	script := `#!/bin/sh
+echo 1 >> "` + countFile + `"
+n=$(wc -l < "` + countFile + `" | tr -d ' ')
+if [ "$n" = "1" ]; then
+  printf '%s\n' '{"type":"data","diff":false,"payload":{"bundleIdentifier":"com.spotify.client","title":"第一首","playing":true,"duration":180,"elapsedTime":1}}'
+  exit 1
+fi
+printf '%s\n' '{"type":"data","diff":false,"payload":{"bundleIdentifier":"com.spotify.client","title":"第二首","playing":true,"duration":200,"elapsedTime":5}}'
+sleep 30
+`
+	if err := os.WriteFile(adapter, []byte(script), 0700); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+
+	tracks := make(chan Track, 4)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		Watch(ctx, adapter, func(track Track) {
+			tracks <- track
+		})
+	}()
+
+	for _, want := range []string{"第一首", "第二首"} {
+		select {
+		case got := <-tracks:
+			if got.Title != want {
+				t.Fatalf("got title %q, want %q", got.Title, want)
+			}
+		case <-time.After(3 * time.Second):
+			t.Fatalf("timed out waiting for %q", want)
+		}
+	}
+
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Watch did not exit after cancel")
 	}
 }

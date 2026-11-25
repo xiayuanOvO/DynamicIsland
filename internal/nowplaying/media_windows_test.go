@@ -142,3 +142,30 @@ func TestEstimateNetEasePosition(t *testing.T) {
 		}
 	}
 }
+
+func TestWindowsTrackEquivalent(t *testing.T) {
+	t0 := time.Unix(1000, 0)
+	base := Track{
+		Source: "Spotify.exe", Title: "灯塔", Artist: "林海风",
+		Playing: true, Position: 10, Duration: 200, Rate: 1, Sampled: t0,
+	}
+	next := base
+	next.Sampled = t0.Add(250 * time.Millisecond)
+	next.Position = 10.25
+	if !windowsTrackEquivalent(base, next) {
+		t.Fatal("normal playback progression should be treated as equivalent")
+	}
+	seeked := next
+	seeked.Position = 30
+	if windowsTrackEquivalent(base, seeked) {
+		t.Fatal("a seek jump should not be treated as equivalent")
+	}
+	paused := next
+	paused.Playing = false
+	if windowsTrackEquivalent(base, paused) {
+		t.Fatal("play/pause change should not be treated as equivalent")
+	}
+	if !windowsTrackEquivalent(Track{}, Track{}) {
+		t.Fatal("two empty idle tracks should be equivalent")
+	}
+}
