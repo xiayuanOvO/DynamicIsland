@@ -34,6 +34,7 @@ const (
 	widgetAddBarHeight        = 28
 	widgetLongPressDelay      = 350 * time.Millisecond
 	widgetLongPressMoveLimit  = 6
+	widgetEditDragThreshold   = 4
 	clipboardLargePreviewRows = 8
 )
 
@@ -427,6 +428,14 @@ func (d *widgetDragState) beginPress(a *island, grid panelWidgetGrid, x, y float
 	if a.todos.open || a.clipboard.open || a.media.scrubbing {
 		return
 	}
+	if a.editingWidgets {
+		for _, slot := range grid.slots {
+			if x >= slot.rect.X+slot.rect.W-14 && x <= slot.rect.X+slot.rect.W+6 &&
+				y >= slot.rect.Y-6 && y <= slot.rect.Y+14 {
+				return
+			}
+		}
+	}
 	for _, slot := range grid.slots {
 		if x >= slot.rect.X && x <= slot.rect.X+slot.rect.W && y >= slot.rect.Y && y <= slot.rect.Y+slot.rect.H {
 			*d = widgetDragState{
@@ -456,15 +465,23 @@ func (d *widgetDragState) updatePointer(a *island, x, y float32, now time.Time) 
 	}
 	if !d.dragging {
 		dx, dy := x-d.startX, y-d.startY
-		if dx*dx+dy*dy > widgetLongPressMoveLimit*widgetLongPressMoveLimit {
-			*d = widgetDragState{}
-			return 0
+		distSq := dx*dx + dy*dy
+		if a.editingWidgets {
+			if distSq < widgetEditDragThreshold*widgetEditDragThreshold {
+				return 0
+			}
+			d.dragging = true
+		} else {
+			if distSq > widgetLongPressMoveLimit*widgetLongPressMoveLimit {
+				*d = widgetDragState{}
+				return 0
+			}
+			elapsed := now.Sub(d.pressAt)
+			if elapsed < widgetLongPressDelay {
+				return widgetLongPressDelay - elapsed
+			}
+			d.dragging = true
 		}
-		elapsed := now.Sub(d.pressAt)
-		if elapsed < widgetLongPressDelay {
-			return widgetLongPressDelay - elapsed
-		}
-		d.dragging = true
 	}
 	d.updateDropOrder(a)
 	return 0

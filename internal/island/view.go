@@ -266,6 +266,10 @@ func (a *island) body(c *ui.Context, frame islandFrame) {
 		dragging := a.widgetDrag.active()
 		canConfigure := progress == 0 && !a.todos.open && !a.clipboard.open && !dragging
 
+		if a.editingWidgets && !dragging && progress == 0 && !a.todos.open && !a.clipboard.open {
+			gridBox.Cursor(ui.CursorGrab)
+		}
+
 		gridBox.Children(func() {
 			if dragging {
 				if target, ok := grid.slot(a.widgetDrag.id); ok {
@@ -439,15 +443,8 @@ func (a *island) overviewFooter(c *ui.Context) {
 			Padding(0, 14).Radius(13).Center().
 			Background(tint.Alpha(0.45)).Border(0.75, tint.Alpha(0.65)).
 			TextColor(c.Theme().Text).Cursor(ui.CursorPointer).Label(editLabel)
-		if a.editingWidgets {
-			editBtn.Background(c.Theme().Accent.Alpha(0.18)).Border(0.75, c.Theme().Accent.Alpha(0.45)).TextColor(c.Theme().Accent)
-		}
 		if editBtn.Hovered() {
-			if a.editingWidgets {
-				editBtn.Background(c.Theme().Accent.Alpha(0.26))
-			} else {
-				editBtn.Background(tint.Alpha(0.68))
-			}
+			editBtn.Background(tint.Alpha(0.68))
 		}
 		editBtn.Children(func() {
 			ui.Text(c, editLabel).FontSize(11.5).FontWeight(550).SingleLine()

@@ -382,6 +382,21 @@ func TestEditWidgetsModeHideAddBackAndBottomFooter(t *testing.T) {
 		t.Fatal("add-back button should disappear once battery is restored")
 	}
 
+	// In edit mode, dragging a widget reorders immediately without waiting for long-press.
+	todoEditBefore, _ := view.Find("待办卡片")
+	clipEditBefore, _ := view.Find("剪贴板卡片")
+	view.Press(clipEditBefore.X+clipEditBefore.W/2, clipEditBefore.Y+clipEditBefore.H/2)
+	view.Move(todoEditBefore.X+todoEditBefore.W/2, todoEditBefore.Y+todoEditBefore.H/2)
+	if !a.widgetDrag.active() {
+		t.Fatal("dragging in edit mode should start immediately without long-press delay")
+	}
+	view.Release(todoEditBefore.X+todoEditBefore.W/2, todoEditBefore.Y+todoEditBefore.H/2)
+	todoEditAfter, _ := view.Find("待办卡片")
+	clipEditAfter, _ := view.Find("剪贴板卡片")
+	if clipEditAfter.X >= todoEditAfter.X {
+		t.Fatalf("immediate drag in edit mode should swap clipboard and todo: clip=%+v todo=%+v", clipEditAfter, todoEditAfter)
+	}
+
 	// Click "完成" -> exits edit mode.
 	if err := view.Click("完成"); err != nil {
 		t.Fatal(err)
