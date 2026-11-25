@@ -1,7 +1,6 @@
 package island
 
 import (
-	"fmt"
 	"math"
 	"path/filepath"
 	"strings"
@@ -9,7 +8,6 @@ import (
 	"time"
 
 	"dynamicisland/internal/nowplaying"
-	"dynamicisland/internal/shelf"
 	"github.com/egoist/mygo/transfer"
 	"github.com/egoist/mygo/ui"
 )
@@ -25,7 +23,7 @@ func TestPanelCardsFollowWindowHeight(t *testing.T) {
 		{"clipboard", "剪贴板卡片", "查看剪贴板历史", true, true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			a := &island{files: &shelf.Shelf{}}
+			a := &island{}
 			if test.withClipboard {
 				a = newTestClipboard(t, true, "示例记录")
 			}
@@ -103,10 +101,6 @@ func TestPanelCardsFollowWindowHeight(t *testing.T) {
 
 func TestClipboardOpeningFadesOverviewBeforeRemovingIt(t *testing.T) {
 	a := newTestClipboard(t, true, "示例记录")
-	for i := range cardColumns * maxCardRows {
-		name := fmt.Sprintf("示例文件 %d.txt", i+1)
-		a.files.Items = append(a.files.Items, shelf.Item{Path: name, Name: name})
-	}
 	a.media.track = nowplaying.Track{Title: "示例曲目"}
 	a.todos.items = []todoItem{{ID: "example", Title: "示例待办"}}
 	a.expanded = true
@@ -120,7 +114,7 @@ func TestClipboardOpeningFadesOverviewBeforeRemovingIt(t *testing.T) {
 			a.body(c, a.shownFrame)
 		})
 	}, panelWidth, int(overview.height))
-	overviewLabels := []string{"示例曲目", "待办卡片", "示例待办", "示例文件 6.txt", "拖出全部"}
+	overviewLabels := []string{"示例曲目", "待办卡片", "示例待办"}
 	initial := make([]ui.Rect, len(overviewLabels))
 	for i, label := range overviewLabels {
 		var ok bool
@@ -214,7 +208,7 @@ func TestTodoRepeatReschedulesOnCompletionAndFormatsLabel(t *testing.T) {
 		t.Fatalf("weekly repeat should add 7 days, got %v", nextWeek)
 	}
 
-	a := island{statePath: filepath.Join(t.TempDir(), "shelf.json")}
+	a := island{statePath: filepath.Join(t.TempDir(), "settings.json")}
 	due := time.Now().Add(time.Hour).Truncate(time.Minute)
 	item := todoItem{ID: "drink", Title: "喝水", Due: due, LeadMinutes: 15, Repeat: todoRepeatDaily, Notified: true}
 	if !a.changeTodo(item, false) {
@@ -244,7 +238,7 @@ func TestTodoRepeatReschedulesOnCompletionAndFormatsLabel(t *testing.T) {
 
 func TestOverviewAdaptiveWidthEqualHeightAndClipboardPreviewCopy(t *testing.T) {
 	// 1. Clipboard disabled: todo card spans full panelBodyWidth.
-	a := &island{files: &shelf.Shelf{}}
+	a := &island{}
 	a.todos.items = []todoItem{{ID: "1", Title: "整理文档"}}
 	a.expanded = true
 	frame := a.targetFrame()
@@ -310,22 +304,5 @@ func TestOverviewAdaptiveWidthEqualHeightAndClipboardPreviewCopy(t *testing.T) {
 	clipRect, ok2 := fullView.Find("剪贴板卡片")
 	if !ok1 || !ok2 || math.Abs(float64(todoRect.H-clipRect.H)) > 0.5 || math.Abs(float64(todoRect.W-clipRect.W)) > 0.5 {
 		t.Fatalf("todo and clipboard cards should have equal width and height: todo=%+v clip=%+v", todoRect, clipRect)
-	}
-
-	// 3. Empty shelf file drag-over expands drop zone.
-	baseH := b.targetFrame().height
-	b.fileDragOver = true
-	dragFrame := b.targetFrame()
-	if dragFrame.dropZone != 1 || dragFrame.height != baseH+dropZoneGap+dropZoneHeight {
-		t.Fatalf("file drag-over with empty shelf should expand drop zone: base=%.1f drag=%+v", baseH, dragFrame)
-	}
-	dragView := ui.NewTester(func(c *ui.Context) {
-		ui.Column(c).Fill().Clip().Children(func() {
-			ui.Box(c).Height(panelHeaderHeight).Shrink(0)
-			b.body(c, dragFrame)
-		})
-	}, panelWidth, int(dragFrame.height))
-	if !dragView.HasText("松开暂存文件") {
-		t.Fatal("empty drop zone should be rendered during file drag-over")
 	}
 }

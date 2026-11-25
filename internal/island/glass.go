@@ -14,7 +14,7 @@ func islandCornerRadius(height float32) float32 {
 	return min(windowRadius, height/2)
 }
 
-func glassSurface(c *ui.Context, element ui.Element, vibrant, over, movingGlass bool) {
+func glassSurface(c *ui.Context, element ui.Element, vibrant, movingGlass bool) {
 	backdrop := element
 	if movingGlass {
 		// The native mask can move before the next Metal frame arrives.
@@ -43,7 +43,7 @@ func glassSurface(c *ui.Context, element ui.Element, vibrant, over, movingGlass 
 	if runtime.GOOS != "windows" || !vibrant {
 		backdrop.Draw(paintFrost)
 	}
-	if movingGlass && !over {
+	if movingGlass {
 		// The native glass rim follows the mask. A rim in the last Metal
 		// frame can sit a refresh behind it and look like a second outline.
 		return
@@ -52,12 +52,6 @@ func glassSurface(c *ui.Context, element ui.Element, vibrant, over, movingGlass 
 	if c.Theme().Dark {
 		rim := ui.Hex("#55585f")
 		edge, middle, bottom, shine = rim, rim.Alpha(0.4), rim.Alpha(0.7), rim.Alpha(0.18)
-	}
-	if over {
-		edge = ui.RGB(207, 222, 242)
-		if c.Theme().Dark {
-			edge = c.Theme().Accent
-		}
 	}
 	element.BorderColor(edge).BorderLinearGradient(ui.LinearGradient{
 		Angle: 155, Stops: []ui.GradientStop{

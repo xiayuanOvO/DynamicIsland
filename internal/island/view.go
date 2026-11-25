@@ -1,30 +1,17 @@
 package island
 
 import (
-	"fmt"
-	"path/filepath"
-	"slices"
-	"strings"
 	"time"
 
-	"dynamicisland/internal/preview"
-	"dynamicisland/internal/shelf"
 	"github.com/egoist/mygo"
-	"github.com/egoist/mygo/transfer"
 	"github.com/egoist/mygo/ui"
 )
-
-var fileDrop = transfer.DropOptions{
-	Formats: []transfer.Format{transfer.FileList, transfer.URIList}, Operations: transfer.Copy,
-}
 
 const (
 	panelBodyPadding      = 22
 	panelBodyWidth        = panelWidth - 2 - 2*panelBodyPadding
 	overviewCardGap       = 8
 	overviewToolCardWidth = (panelBodyWidth - overviewCardGap) / 2
-	dropZoneGap           = 14
-	dropZoneHeight        = 64
 	panelCardPreviewEnd   = 0.45
 	panelCardDetailEnd    = 0.9
 	panelCardInputStart   = 0.85
@@ -51,28 +38,18 @@ func (a *island) view(c *ui.Context) {
 		root.Fill()
 		hovered = pointerOverWindow(a.win, root.Hovered())
 	}
-	_, over := ui.DataDragOver(root, fileDrop)
-	a.fileDragOver = over
-	glassSurface(c, root, a.hasWindowBackdrop || c.Vibrancy(), over, a.canvas.restore != nil)
-	if drop, ok := ui.DropData(root, fileDrop); ok {
-		if paths, err := drop.Data.Files(); err == nil && len(paths) > 0 {
-			a.addFiles(paths)
-		}
-	}
-	if over && !a.expanded && !a.dragging {
-		a.setExpanded(true)
-	}
+	glassSurface(c, root, a.hasWindowBackdrop || c.Vibrancy(), a.canvas.restore != nil)
 	a.finishMove(c)
 	if !a.moving {
 		clipboardFocused := a.clipboard.open && c.WindowActive() && (a.clipboard.openedByShortcut || root.FocusWithin())
-		a.hover(c, hovered || over || clipboardFocused)
+		a.hover(c, hovered || clipboardFocused)
 	}
 
 	a.updateMedia(c)
 	a.updateWave(c)
 	a.updateBattery(c)
 	a.updateIdleWeather(c)
-	if !a.dragging && !a.moving {
+	if !a.moving {
 		a.animation.retarget(a.targetFrame(), c.Now())
 		a.scheduleWindowFrame(time.Now().Add(windowFrameInterval))
 	}
@@ -92,7 +69,7 @@ func (a *island) hover(c *ui.Context, hovered bool) {
 		a.leaveSince = time.Time{}
 		return
 	}
-	if !a.expanded || a.dragging || a.media.scrubbing || a.busy > 0 || a.choosing || a.todos.draft != nil {
+	if !a.expanded || a.media.scrubbing || a.todos.draft != nil {
 		return
 	}
 	now := c.Now()
@@ -207,8 +184,7 @@ func (a *island) header(c *ui.Context, open float32) {
 		}
 		if baseAlpha > 0.01 && !playing {
 			item := a.todos.next()
-			fileCount := len(a.files.Items)
-			if fileCount == 0 && item == nil {
+			if item == nil {
 				return
 			}
 			width := float32(compactWidth)
@@ -224,21 +200,9 @@ func (a *island) header(c *ui.Context, open float32) {
 					row.Padding(0, 22)
 				}
 				row.Children(func() {
-					if item != nil && (!docked || fileCount == 0) {
-						ui.Icon(c, todoIcon).Size(16, 16).Shrink(0).TextColor(c.Theme().Accent)
-					}
+					ui.Icon(c, todoIcon).Size(16, 16).Shrink(0).TextColor(c.Theme().Accent)
 					if !docked {
-						if item != nil {
-							ui.Text(c, item.Title).Grow(1).MinWidth(0).SingleLine().Ellipsis("…").FontSize(12).TextColor(c.Theme().Text)
-						} else {
-							ui.Box(c).Grow(1)
-						}
-					}
-					if fileCount > 0 {
-						summary := ui.Text(c.Key("summary"), fmt.Sprintf("%02d", fileCount)).FontSize(10.5).SingleLine().TextColor(c.Theme().TextMuted)
-						if !docked {
-							summary.Width(24).Shrink(0)
-						}
+						ui.Text(c, item.Title).Grow(1).MinWidth(0).SingleLine().Ellipsis("…").FontSize(12).TextColor(c.Theme().Text)
 					}
 				})
 			})
@@ -303,35 +267,6 @@ func (a *island) body(c *ui.Context, frame islandFrame) {
 					a.expanded && opacity >= 0.80).Translate(0, float32(leadHeight)*clipboardFade)
 			}
 		})
-		if overviewOpacity > 0 && len(a.files.Items) == 0 && frame.dropZone > 0.01 {
-			a.emptyDropZone(c, frame.dropZone, overviewOpacity*frame.dropZone)
-		}
-		if overviewOpacity > 0 && len(a.files.Items) > 0 {
-			overviewHeight, gridHeight := a.overviewHeights()
-			files := ui.Column(c.Key("overview-files")).Width(panelBodyWidth).Shrink(0).Margin(14, 0, 0).Gap(14).
-				Opacity(overviewOpacity).IgnoreInput(progress > 0 || a.todos.open || a.clipboard.open)
-			if progress > 0 && frame.open == 1 {
-				// Keep the expanding card from pushing the fading files below the window.
-				// If the window is shrinking, move the group with its bottom edge.
-				files.Absolute().Left(panelBodyPadding).
-					Top(float32(leadHeight+a.toolsPreviewHeight()) + min(0, frame.height-float32(overviewHeight)))
-			}
-			files.Children(func() {
-				ui.Text(c.Key("files-heading"), fmt.Sprintf("暂存文件  /  %02d", len(a.files.Items))).
-					Height(24).Shrink(0).FontSize(10.5).TextColor(c.Theme().TextMuted)
-				ui.Scroll(c.Key("files")).Height(float32(gridHeight)).Shrink(0).
-					Children(func() {
-						ui.Grid(c.Key("file-cards")).FillWidth().Columns(cardColumns).Gap(cardGap).Padding(4).Children(func() {
-							for _, item := range slices.Clone(a.files.Items) {
-								a.fileCard(c, item)
-							}
-						})
-					})
-				ui.Box(c.Key("divider")).FillWidth().Height(1).Shrink(0).
-					Gradient(c.Theme().Text.Alpha(0.055), colorsFor(c.Theme().Dark).glass.Alpha(0.5), 90)
-				a.actions(c)
-			})
-		}
 	})
 }
 
@@ -343,158 +278,6 @@ func panelCardSurface(c *ui.Context, progress, previewWidth, height float32) ui.
 			Border(0.75, tint.Alpha(0.65*(1-progress)))
 	}
 	return surface
-}
-
-func (a *island) emptyDropZone(c *ui.Context, progress, opacity float32) {
-	accentColor := c.Theme().Accent
-	zone := ui.Row(c.Key("drop-zone")).Width(panelBodyWidth).Height(dropZoneHeight * progress).Shrink(0).
-		Margin(dropZoneGap*progress, 0, 0).Gap(8).Center().Radius(13).Clip().
-		Opacity(opacity).IgnoreInput(true).Label("松开暂存文件").
-		Draw(func(p *ui.Painter, r ui.Rect) {
-			p.Fill(r, accentColor.Alpha(0.10), 13)
-			dashColor := accentColor.Alpha(0.55)
-			const dash, gap, inset, stroke = float32(6), float32(4), float32(1), float32(1.25)
-			step := dash + gap
-			for x := r.X + 10; x < r.X+r.W-10; x += step {
-				w := min(dash, r.X+r.W-10-x)
-				p.Fill(ui.Rect{X: x, Y: r.Y + inset, W: w, H: stroke}, dashColor, 1)
-				p.Fill(ui.Rect{X: x, Y: r.Y + r.H - inset - stroke, W: w, H: stroke}, dashColor, 1)
-			}
-			for y := r.Y + 10; y < r.Y+r.H-10; y += step {
-				h := min(dash, r.Y+r.H-10-y)
-				p.Fill(ui.Rect{X: r.X + inset, Y: y, W: stroke, H: h}, dashColor, 1)
-				p.Fill(ui.Rect{X: r.X + r.W - inset - stroke, Y: y, W: stroke, H: h}, dashColor, 1)
-			}
-		})
-	zone.Children(func() {
-		ui.Icon(c, folderIcon).Size(15, 15).TextColor(accentColor)
-		ui.Text(c, "松开暂存文件").FontSize(12).FontWeight(500).TextColor(accentColor)
-	})
-}
-
-func (a *island) fileCard(c *ui.Context, item shelf.Item) {
-	key := shelf.Key(item.Path)
-	selected := a.selected[key]
-	tint := colorsFor(c.Theme().Dark).glass
-	card := ui.ButtonBase(c.Key(key)).Column().FillWidth().MinWidth(0).Height(cardHeight).Shrink(0).
-		Padding(8).Gap(4).AlignItems(ui.Center).Radius(13).
-		Gradient(tint.Alpha(0.43), tint.Alpha(0.17), 155).Border(0.75, tint.Alpha(0.65)).
-		InsetShadow(0, 1, 0, 0, tint.Alpha(0.46)).Shadow(0, 3, 10, -5, ink.Alpha(0.10)).
-		Cursor(ui.CursorGrab).Label(item.Name).Tooltip(item.Path)
-	hovered := card.Hovered()
-	if selected {
-		card.Gradient(tint.Alpha(0.76), tint.Alpha(0.40), 155).Border(1, c.Theme().Accent.Alpha(0.42))
-	} else if hovered {
-		card.Gradient(tint.Alpha(0.66), tint.Alpha(0.30), 155)
-	}
-	controlTarget := float32(0)
-	if selected || hovered || len(a.selected) > 0 || card.FocusWithin() {
-		controlTarget = 1
-	}
-	controls := card.Animate("controls", controlTarget, 120*time.Millisecond)
-	visual := a.previews[key]
-	if card.InViewMargin(cardHeight) {
-		visual = a.filePreview(item)
-	}
-	card.DragDataFrom(func() transfer.Data { return a.dragData(item.Path) }, transfer.DragOptions{
-		Operations: transfer.Copy, Done: a.dragDone,
-	})
-	card.ContextMenu(func(m *ui.Menu) {
-		if m.Item("复制文件").Chosen() {
-			a.copyFiles(a.outgoingPaths(item.Path))
-		}
-		if m.Item("在文件夹中显示").Chosen() {
-			mygo.Shell.ShowItemInFolder(item.Path)
-		}
-		m.Separator()
-		if m.Item("从暂存区移除").Chosen() {
-			a.removeFiles([]string{item.Path})
-		}
-	})
-	card.Children(func() {
-		icon, color, kind := fileStyle(item)
-		ui.Box(c.Key("visual")).FillWidth().Height(48).Shrink(0).Radius(8).Clip().
-			Background(tint.Alpha(0.16)).Center().Children(func() {
-			if visual != nil && visual.source != nil {
-				if visual.thumbnail {
-					ui.Image(c, visual.source).Fill().Fit(ui.Cover)
-				} else {
-					ui.Image(c, visual.source).Size(32, 32).Fit(ui.Contain)
-				}
-			} else {
-				ui.Icon(c, icon).Size(28, 28).TextColor(color)
-			}
-		})
-		ui.Text(c, item.Name).FillWidth().MinWidth(0).Height(30).Shrink(0).
-			FontSize(11).FontWeight(500).Wrap().MaxLines(2).TextAlign(ui.Center).TextColor(c.Theme().Text)
-		info := kind
-		if !item.Directory {
-			info += " · " + formatSize(item.Size)
-		}
-		ui.Text(c, info).FillWidth().Height(12).Shrink(0).FontSize(9.5).
-			SingleLine().TextAlign(ui.Center).TextColor(c.Theme().TextMuted)
-		check := ui.Checkbox(c.Key("select"), &selected, "").Absolute().Left(6).Top(6).
-			Padding(1).Radius(5).Background(tint.Alpha(0.86)).Opacity(controls).Label("选择 " + item.Name)
-		if check.Changed() {
-			if selected {
-				a.selected[key] = true
-			} else {
-				delete(a.selected, key)
-			}
-		}
-		if iconButton(c.Key("remove"), closeIcon, "移除").
-			Absolute().Right(5).Top(5).Size(20, 20).Background(tint.Alpha(0.86)).Opacity(controls).Clicked() {
-			a.removeFiles([]string{item.Path})
-		}
-	})
-	if card.Clicked() {
-		if card.ClickModifiers()&ui.Cmd == 0 {
-			clear(a.selected)
-			a.selected[key] = true
-		} else if a.selected[key] {
-			delete(a.selected, key)
-		} else {
-			a.selected[key] = true
-		}
-	}
-	if card.DoubleClicked() {
-		mygo.Shell.ShowItemInFolder(item.Path)
-	}
-}
-
-func (a *island) actions(c *ui.Context) {
-	paths := a.outgoingPaths("")
-	label := "拖出全部"
-	if len(a.selected) > 0 {
-		label = "拖出所选"
-	}
-	ui.Row(c.Key("actions")).Height(40).Shrink(0).Gap(8).Children(func() {
-		tint := colorsFor(c.Theme().Dark).glass
-		drag := ui.ButtonBase(c.Key("drag-all")).Row().Grow(1).MinWidth(0).Height(40).Gap(8).Center().Radius(13).
-			Gradient(tint.Alpha(0.7), tint.Alpha(0.36), 165).Border(0.75, tint.Alpha(0.75)).
-			InsetShadow(0, 1, 0, 0, tint.Alpha(0.55)).TextColor(c.Theme().Text).
-			Cursor(ui.CursorGrab).Label(label).Tooltip(label).
-			Disabled(len(paths) == 0)
-		if drag.Hovered() {
-			drag.Gradient(tint.Alpha(0.88), tint.Alpha(0.50), 165)
-		}
-		drag.DragDataFrom(func() transfer.Data { return a.dragData("") }, transfer.DragOptions{
-			Operations: transfer.Copy, Done: a.dragDone,
-		})
-		drag.Children(func() {
-			ui.Icon(c, sendIcon).Size(14, 14).TextColor(c.Theme().Text.Alpha(0.72))
-			ui.Text(c, label).FontSize(12).SingleLine()
-			ui.Text(c, fmt.Sprintf("%02d", len(paths))).FontSize(10).TextColor(c.Theme().TextMuted)
-		})
-		if iconButton(c.Key("copy"), copyIcon, "复制文件").
-			Size(36, 40).Disabled(len(paths) == 0).Clicked() {
-			a.copyFiles(paths)
-		}
-		if iconButton(c.Key("remove-selected"), trashIcon, "移除选中条目").
-			Size(36, 40).Disabled(len(a.selected) == 0).Clicked() {
-			a.removeFiles(a.selection())
-		}
-	})
 }
 
 func (a *island) menu(m *ui.Menu) {
@@ -545,25 +328,6 @@ func (a *island) shortcuts(c *ui.Context) {
 	if c.Shortcut(0, ui.KeyEscape) {
 		a.setExpanded(false)
 	}
-	if c.Shortcut(ui.Cmd, ui.KeyA) {
-		for _, item := range a.files.Items {
-			a.selected[shelf.Key(item.Path)] = true
-		}
-	}
-	if c.Shortcut(ui.Cmd, ui.KeyC) && len(a.files.Items) > 0 {
-		a.copyFiles(a.outgoingPaths(""))
-	}
-	if c.Shortcut(ui.Cmd, ui.KeyV) {
-		if paths, err := mygo.Clipboard.ReadFiles(); err == nil && len(paths) > 0 {
-			a.addFiles(paths)
-		}
-	}
-	if c.Shortcut(0, ui.KeyDelete) {
-		a.removeFiles(a.selection())
-	}
-	if c.Shortcut(ui.Cmd, ui.KeyO) {
-		a.choose(false)
-	}
 }
 
 func iconButton(c *ui.Context, icon *ui.SVG, label string) ui.Element {
@@ -576,38 +340,4 @@ func iconButton(c *ui.Context, icon *ui.SVG, label string) ui.Element {
 		ui.Icon(c, icon).Size(15, 15)
 	})
 	return button
-}
-
-func fileStyle(item shelf.Item) (*ui.SVG, ui.Color, string) {
-	if item.Directory {
-		return folderIcon, ui.Hex("#ac9270"), "文件夹"
-	}
-	if preview.IsImage(item.Name) {
-		return imageIcon, ui.Hex("#9483a6"), "图片"
-	}
-	ext := strings.ToLower(filepath.Ext(item.Name))
-	switch ext {
-	case ".zip", ".rar", ".7z", ".tar", ".gz":
-		return archiveIcon, ui.Hex("#a18b72"), "压缩文件"
-	case ".mp4", ".mov", ".mkv", ".avi", ".mp3", ".flac", ".wav":
-		return mediaIcon, ui.Hex("#a88494"), "影音文件"
-	case ".pdf", ".doc", ".docx", ".ppt", ".pptx", ".xls", ".xlsx":
-		return fileIcon, ui.Hex("#7c8ea7"), strings.ToUpper(strings.TrimPrefix(ext, "."))
-	default:
-		return fileIcon, accent, "文件"
-	}
-}
-
-func formatSize(size int64) string {
-	if size < 1024 {
-		return fmt.Sprintf("%d B", size)
-	}
-	value := float64(size)
-	for _, unit := range []string{"KB", "MB", "GB", "TB"} {
-		value /= 1024
-		if value < 1024 || unit == "TB" {
-			return fmt.Sprintf("%.1f %s", value, unit)
-		}
-	}
-	return ""
 }

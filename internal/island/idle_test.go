@@ -12,12 +12,11 @@ import (
 	"time"
 
 	"dynamicisland/internal/battery"
-	"dynamicisland/internal/shelf"
 	"github.com/egoist/mygo/ui"
 )
 
 func TestIdleCapsuleStatus(t *testing.T) {
-	a := island{files: &shelf.Shelf{}}
+	a := island{}
 	a.idle.weather = idleWeather{condition: "局部多云伴有阵雨", temperature: -100, icon: weatherRainIcon}
 	a.idle.forecastUntil = time.Now().Add(time.Minute)
 	a.battery.readings = []battery.Reading{
@@ -107,7 +106,7 @@ func TestIdleCapsuleDragDoesNotOpen(t *testing.T) {
 		{"return to the starting point", 20},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			a := island{files: &shelf.Shelf{}}
+			a := island{}
 			a.shownFrame = a.targetFrame()
 			view := ui.NewTester(func(c *ui.Context) { a.header(c, 0) }, int(a.shownFrame.width), idleCapsuleHeight)
 			view.Press(20, 20)
@@ -189,7 +188,7 @@ func TestFetchIdleWeatherTomorrowRain(t *testing.T) {
 }
 
 func TestIdleCapsuleRainReminder(t *testing.T) {
-	a := island{files: &shelf.Shelf{}}
+	a := island{}
 	noWeatherWidth := a.targetFrame().width
 	a.idle.weather = idleWeather{condition: "晴", temperature: -100, icon: weatherSunIcon}
 	baseWidth := a.targetFrame().width
@@ -218,7 +217,7 @@ func TestIdleCapsuleRainReminder(t *testing.T) {
 }
 
 func TestIdleAlertExitDoesNotShrinkOrPopBatteries(t *testing.T) {
-	a := island{files: &shelf.Shelf{}}
+	a := island{}
 	a.idle.weather = idleWeather{condition: "晴", temperature: 22, icon: weatherSunIcon}
 	a.battery.readings = []battery.Reading{
 		{ID: "computer", Name: "本机", Kind: battery.Computer, Percent: 90},
@@ -250,7 +249,7 @@ func TestIdleAlertExitDoesNotShrinkOrPopBatteries(t *testing.T) {
 }
 
 func TestIdleCapsuleLimitsBatteryCountAndTucksOnDock(t *testing.T) {
-	a := island{files: &shelf.Shelf{}}
+	a := island{}
 	base, _ := a.idleCapsuleMetrics(a.settings.idleItems())
 	maxBatteries := (panelWidth - base) / idleBatteryStep
 	for i := 0; i <= maxBatteries; i++ {

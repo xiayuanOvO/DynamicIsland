@@ -6,6 +6,8 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"image"
+	_ "image/gif"
+	_ "image/jpeg"
 	"log"
 	"strings"
 	"time"
@@ -14,6 +16,7 @@ import (
 	"dynamicisland/internal/lyrics"
 	"dynamicisland/internal/nowplaying"
 	"github.com/egoist/mygo/ui"
+	_ "golang.org/x/image/webp"
 )
 
 const (

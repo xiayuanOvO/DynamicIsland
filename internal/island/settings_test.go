@@ -17,13 +17,12 @@ import (
 	"dynamicisland/internal/battery"
 	"dynamicisland/internal/lyrics"
 	"dynamicisland/internal/nowplaying"
-	"dynamicisland/internal/shelf"
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
 )
 
 func TestSettingsSidebarNavigationAndSave(t *testing.T) {
-	a := island{statePath: filepath.Join(t.TempDir(), "shelf.json")}
+	a := island{statePath: filepath.Join(t.TempDir(), "settings.json")}
 	const height = 360
 	view := ui.NewTester(a.settingsView, settingsWidth, height)
 	if a.settingsPage != settingsPageIdle || !view.HasText("显示表情") || view.HasText("音乐卡片预览") {
@@ -69,7 +68,7 @@ func TestSettingsSidebarNavigationAndSave(t *testing.T) {
 }
 
 func TestThemeSettingCanBeChangedAndSaved(t *testing.T) {
-	a := island{statePath: filepath.Join(t.TempDir(), "shelf.json")}
+	a := island{statePath: filepath.Join(t.TempDir(), "settings.json")}
 	for _, data := range []string{`{"hideLyrics":true}`, `{"hideLyrics":true,"theme":99}`} {
 		if err := os.WriteFile(a.settingsPath(), []byte(data), 0600); err != nil {
 			t.Fatal(err)
@@ -136,7 +135,7 @@ func TestThemeSettingCanBeChangedAndSaved(t *testing.T) {
 
 func TestDarkSettingsSelectedSegmentStandsOut(t *testing.T) {
 	a := island{
-		statePath:    filepath.Join(t.TempDir(), "shelf.json"),
+		statePath:    filepath.Join(t.TempDir(), "settings.json"),
 		settingsPage: settingsPageMedia,
 		settings:     appSettings{Theme: themeDark},
 	}
@@ -164,7 +163,7 @@ func TestDarkSettingsSelectedSegmentStandsOut(t *testing.T) {
 }
 
 func TestFullscreenHidingSettingCanBeChangedAndSaved(t *testing.T) {
-	a := island{statePath: filepath.Join(t.TempDir(), "shelf.json")}
+	a := island{statePath: filepath.Join(t.TempDir(), "settings.json")}
 	for _, existing := range []bool{false, true} {
 		if existing {
 			if err := os.WriteFile(a.settingsPath(), []byte(`{"hideLyrics":true}`), 0600); err != nil {
@@ -260,7 +259,7 @@ func TestClipboardSettingTogglesHistoryEntrypoints(t *testing.T) {
 }
 
 func TestClipboardSettingsRecoversUnreadableHistory(t *testing.T) {
-	a := island{statePath: filepath.Join(t.TempDir(), "shelf.json")}
+	a := island{statePath: filepath.Join(t.TempDir(), "settings.json")}
 	if err := os.WriteFile(a.clipboardPath(), bytes.Repeat([]byte("{"), 4096), 0600); err != nil {
 		t.Fatal(err)
 	}
@@ -365,7 +364,7 @@ func TestUpdateActivityUsesOneRingWithoutText(t *testing.T) {
 }
 
 func TestLyricTransitionSettingCanBeChangedAndSaved(t *testing.T) {
-	a := island{statePath: filepath.Join(t.TempDir(), "shelf.json")}
+	a := island{statePath: filepath.Join(t.TempDir(), "settings.json")}
 	if err := os.WriteFile(a.settingsPath(), []byte(`{"lyricTransition":99}`), 0600); err != nil {
 		t.Fatal(err)
 	}
@@ -412,7 +411,7 @@ func TestLyricTransitionSettingCanBeChangedAndSaved(t *testing.T) {
 }
 
 func TestLyricStyleSettingsCanBeChangedAndSaved(t *testing.T) {
-	a := island{statePath: filepath.Join(t.TempDir(), "shelf.json")}
+	a := island{statePath: filepath.Join(t.TempDir(), "settings.json")}
 	a.settingsPage = settingsPageMedia
 	view := ui.NewTester(a.settingsView, settingsWidth, settingsHeight)
 	view.SetLocale("en-US")
@@ -498,8 +497,6 @@ func TestClearLyricCacheFromSettings(t *testing.T) {
 
 func TestGlobalHotkeyConflictShowsInAppSettingsNotPanel(t *testing.T) {
 	a := island{
-		files:        &shelf.Shelf{},
-		selected:     make(map[string]bool),
 		expanded:     true,
 		hotkeyFailed: true,
 		settingsPage: settingsPageApp,
@@ -529,7 +526,7 @@ func TestGlobalHotkeyConflictShowsInAppSettingsNotPanel(t *testing.T) {
 
 func TestToggleShortcutCanBeRecordedAndSavedFromSettings(t *testing.T) {
 	a := island{
-		statePath:    filepath.Join(t.TempDir(), "shelf.json"),
+		statePath:    filepath.Join(t.TempDir(), "settings.json"),
 		hotkeyFailed: true,
 		settingsPage: settingsPageApp,
 	}
@@ -564,7 +561,7 @@ func TestOpenAtLoginSwitchUpdatesStateAndReportsFailure(t *testing.T) {
 	systemEnabled := false
 	failNext := false
 	a := island{
-		statePath:    filepath.Join(t.TempDir(), "shelf.json"),
+		statePath:    filepath.Join(t.TempDir(), "settings.json"),
 		settingsPage: settingsPageApp,
 		getOpenAtLogin: func() bool {
 			return systemEnabled
@@ -650,7 +647,7 @@ func TestAppLogViewerAndClearInSettings(t *testing.T) {
 	_, _ = appLogs.Write([]byte("2026/11/24 weather wttr.in failed: timeout\n"))
 
 	a := island{
-		statePath:    filepath.Join(t.TempDir(), "shelf.json"),
+		statePath:    filepath.Join(t.TempDir(), "settings.json"),
 		settingsPage: settingsPageApp,
 	}
 	view := ui.NewTester(a.settingsView, settingsWidth, settingsHeight)
@@ -689,7 +686,7 @@ func TestVersionFiveClicksUnlocksDebugPanel(t *testing.T) {
 
 	notified := 0
 	a := island{
-		statePath:    filepath.Join(t.TempDir(), "shelf.json"),
+		statePath:    filepath.Join(t.TempDir(), "settings.json"),
 		settingsPage: settingsPageApp,
 		battery: islandBattery{
 			notifyLow: func(battery.Reading) { notified++ },
@@ -741,7 +738,7 @@ func TestDisplaySelectionAndPositionPersistence(t *testing.T) {
 	displays := []mygo.Display{primary, external}
 
 	a := island{
-		statePath:    filepath.Join(t.TempDir(), "shelf.json"),
+		statePath:    filepath.Join(t.TempDir(), "settings.json"),
 		settingsPage: settingsPageApp,
 		listDisplays: func() ([]mygo.Display, mygo.Display) { return displays, primary },
 	}
@@ -786,7 +783,7 @@ func TestLyricOffsetAdjustsPersistsAndResets(t *testing.T) {
 	track := nowplaying.Track{Title: "夜行列车", Artist: "林海风", Album: "现场版", Duration: 226, Playing: true}
 	song := songForTrack(track)
 	a := island{
-		statePath:    filepath.Join(t.TempDir(), "shelf.json"),
+		statePath:    filepath.Join(t.TempDir(), "settings.json"),
 		settingsPage: settingsPageMedia,
 		media:        islandMedia{track: track},
 	}

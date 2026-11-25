@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"dynamicisland/internal/lyrics"
-	"dynamicisland/internal/shelf"
 	"github.com/egoist/mygo"
 )
 
@@ -27,12 +26,9 @@ func Run(appIcon []byte) {
 	if err != nil {
 		log.Fatal(err)
 	}
-	statePath := filepath.Join(config, "DynamicIsland", "shelf.json")
+	statePath := filepath.Join(config, "DynamicIsland", "settings.json")
 	initAppLogging(statePath)
-	files, _, loadErr := shelf.Load(statePath)
-	a := &island{
-		files: files, statePath: statePath, selected: make(map[string]bool),
-	}
+	a := &island{statePath: statePath}
 	if cache, err := os.UserCacheDir(); err == nil {
 		a.media.artworkCacheDir = filepath.Join(cache, "DynamicIsland", "artwork")
 	}
@@ -44,22 +40,14 @@ func Run(appIcon []byte) {
 	if err != nil {
 		log.Printf("load settings: %v", err)
 	}
-	if loadErr != nil {
-		log.Printf("load shelf: %v", loadErr)
-	}
 
 	mygo.App.OnNotificationClick(func(id string) {
 		if strings.HasPrefix(id, "todo-") {
 			mygo.App.WhenReady(a.openTodos)
 		}
 	})
-	mygo.App.OnSecondInstance(func(args []string, workingDir string) {
-		mygo.App.WhenReady(func() {
-			a.show()
-			if len(args) > 0 {
-				a.addFiles(commandPaths(args, workingDir))
-			}
-		})
+	mygo.App.OnSecondInstance(func([]string, string) {
+		mygo.App.WhenReady(a.show)
 	})
 	mygo.App.WhenReady(func() {
 		if runtime.GOOS != "darwin" && !mygo.App.IsPackaged() {
@@ -69,20 +57,8 @@ func Run(appIcon []byte) {
 		}
 		a.start()
 		a.startUpdates()
-		a.addFiles(commandPaths(os.Args[1:], ""))
 	})
 	if err := mygo.App.Run(); err != nil {
 		log.Fatal(err)
 	}
-}
-
-func commandPaths(args []string, dir string) []string {
-	paths := make([]string, 0, len(args))
-	for _, arg := range args {
-		if dir != "" && !filepath.IsAbs(arg) {
-			arg = filepath.Join(dir, arg)
-		}
-		paths = append(paths, arg)
-	}
-	return paths
 }

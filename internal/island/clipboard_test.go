@@ -18,14 +18,13 @@ import (
 	"testing"
 	"time"
 
-	"dynamicisland/internal/shelf"
 	"github.com/egoist/mygo/transfer"
 	"github.com/egoist/mygo/ui"
 )
 
 func newTestClipboard(t *testing.T, recording bool, texts ...string) *island {
 	t.Helper()
-	a := &island{files: &shelf.Shelf{}, statePath: filepath.Join(t.TempDir(), "shelf.json")}
+	a := &island{statePath: filepath.Join(t.TempDir(), "settings.json")}
 	a.loadClipboard()
 	if a.clipboard.loadFailed {
 		t.Fatal(a.clipboard.problem)
@@ -128,7 +127,7 @@ func TestClipboardHonorsClipboardHistoryMarkers(t *testing.T) {
 }
 
 func TestClipboardMigratesTextAndImagesFromJSON(t *testing.T) {
-	a := island{statePath: filepath.Join(t.TempDir(), "shelf.json"), files: &shelf.Shelf{}}
+	a := island{statePath: filepath.Join(t.TempDir(), "settings.json")}
 	dir := filepath.Dir(a.statePath)
 	legacyPath, legacyImages := filepath.Join(dir, "clipboard.json"), filepath.Join(dir, "clipboard-images")
 	bitmap := sampleClipboardPNG(t)

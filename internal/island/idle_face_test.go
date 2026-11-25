@@ -6,7 +6,6 @@ import (
 	"testing"
 	"time"
 
-	"dynamicisland/internal/shelf"
 	"github.com/egoist/mygo/ui"
 )
 
@@ -30,7 +29,7 @@ func TestIdleFaceEyes(t *testing.T) {
 		{"blink", moodNeutral, true, []image.Point{{19, 20}, {31, 20}}, []image.Point{{19, 18}, {31, 22}}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			a := island{files: &shelf.Shelf{}}
+			a := island{}
 			a.shownFrame = a.targetFrame()
 			img := ui.Render(func(c *ui.Context) {
 				c.Root().Background(ui.RGB(240, 240, 240))
@@ -67,13 +66,13 @@ func TestIdleFaceEyes(t *testing.T) {
 }
 
 func TestDarkIdleCapsuleHasLightEyes(t *testing.T) {
-	a := island{files: &shelf.Shelf{}, settings: appSettings{Theme: themeDark}}
+	a := island{settings: appSettings{Theme: themeDark}}
 	a.shownFrame = a.targetFrame()
 	const scale = 4
 	img := ui.Render(func(c *ui.Context) {
 		c.SetTheme(islandThemes[a.settings.Theme])
 		capsule := ui.Column(c).Fill().Radius(idleCapsuleHeight / 2).Clip()
-		glassSurface(c, capsule, false, false, false)
+		glassSurface(c, capsule, false, false)
 		capsule.Children(func() { a.header(c, 0) })
 	}, int(a.shownFrame.width), idleCapsuleHeight, scale)
 	background := img.RGBAAt(25*scale, 20*scale)

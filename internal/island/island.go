@@ -1,15 +1,11 @@
 package island
 
 import (
-	"log"
-	"os"
 	"runtime"
 	"time"
 
 	"dynamicisland/internal/nowplaying"
-	"dynamicisland/internal/shelf"
 	"github.com/egoist/mygo"
-	"github.com/egoist/mygo/transfer"
 	"github.com/egoist/mygo/ui"
 )
 
@@ -21,20 +17,14 @@ const (
 	panelWidth        = 428
 	windowRadius      = 26
 	hotkey            = "CmdOrCtrl+Alt+Space"
-	cardColumns       = 3
-	cardHeight        = 116
-	cardGap           = 8
-	maxCardRows       = 2
 )
 
 type island struct {
 	win                   *mygo.Window
 	hasWindowBackdrop     bool
 	tray                  *mygo.Tray
-	files                 *shelf.Shelf
 	statePath             string
-	selected              map[string]bool
-	previews              map[string]*filePreview
+	previews              map[string]*cachedPreview
 	previewJobs           chan previewJob
 	previewClock          uint64
 	animation             islandAnimation
@@ -47,10 +37,6 @@ type island struct {
 	expanded              bool
 	hiddenForFullscreen   bool
 	hiddenByUser          bool
-	dragging              bool
-	fileDragOver          bool
-	busy                  int
-	choosing              bool
 	leaveSince            time.Time
 	hotkeyFailed          bool
 	registeredHotkey      string
@@ -185,8 +171,6 @@ func (a *island) trayMenu() *mygo.Menu {
 		items = append(items, &mygo.MenuItem{ID: "clipboard-history", Label: "剪贴板历史…", Click: func(*mygo.MenuItem, *mygo.Window) { a.openClipboard(false) }})
 	}
 	return mygo.NewMenu(append(items, []*mygo.MenuItem{
-		{Label: "添加文件…", Click: func(*mygo.MenuItem, *mygo.Window) { a.show(); a.choose(false) }},
-		{Label: "添加文件夹…", Click: func(*mygo.MenuItem, *mygo.Window) { a.show(); a.choose(true) }},
 		mygo.Separator(),
 		{Label: "回到屏幕顶部", Click: func(*mygo.MenuItem, *mygo.Window) { a.recenter() }},
 		{Label: "隐藏灵动岛", Click: func(*mygo.MenuItem, *mygo.Window) { a.hide() }},
@@ -201,7 +185,6 @@ func (a *island) createTray() {
 		ID: "dynamic-island", Icon: trayIcon(), IconIsTemplate: true, ToolTip: "灵动岛", Menu: a.trayMenu(),
 	})
 	if err != nil {
-		log.Printf("tray: %v", err)
 		return
 	}
 	a.tray = tray
@@ -209,7 +192,7 @@ func (a *island) createTray() {
 }
 
 func (a *island) compactIdle() bool {
-	return len(a.files.Items) == 0 && !a.media.track.Playing && a.todos.next() == nil
+	return !a.media.track.Playing && a.todos.next() == nil
 }
 
 func (a *island) toolsPreviewHeight() int {
@@ -220,24 +203,8 @@ func (a *island) toolsPreviewHeight() int {
 	return height
 }
 
-func (a *island) overviewHeights() (height, gridHeight int) {
-	hasFiles := len(a.files.Items) > 0
-	height = panelHeaderHeight + 20
-	if hasFiles {
-		height += 109
-		rows := min((len(a.files.Items)+cardColumns-1)/cardColumns, maxCardRows)
-		gridHeight = rows*cardHeight + max(rows-1, 0)*cardGap + 8
-	}
-	height += a.overviewLeadHeight() + a.toolsPreviewHeight()
-	if hasFiles {
-		height += 14
-	} else if a.fileDragOver {
-		height += dropZoneGap + dropZoneHeight
-	}
-	if a.dock.side != dockNone {
-		gridHeight = min(gridHeight, max(0, a.dock.display.WorkArea.Height-height))
-	}
-	return height + gridHeight, gridHeight
+func (a *island) overviewHeight() int {
+	return panelHeaderHeight + 20 + a.overviewLeadHeight() + a.toolsPreviewHeight()
 }
 
 func (a *island) panelHeight() int {
@@ -247,12 +214,11 @@ func (a *island) panelHeight() int {
 	if a.clipboard.open {
 		return panelHeaderHeight + 20 + clipboardPanelHeight
 	}
-	height, _ := a.overviewHeights()
-	return height
+	return a.overviewHeight()
 }
 
 func (a *island) setExpanded(expanded bool) {
-	if a.dragging || a.moving {
+	if a.moving {
 		return
 	}
 	a.expanded = expanded
@@ -394,137 +360,5 @@ func (a *island) applyWindowFrame(frame islandFrame, animated bool) {
 	}
 	if radius := islandCornerRadius(frame.height); !usingCanvas && (restore != nil || radius != islandCornerRadius(previous.height)) {
 		setIslandWindowCornerRadius(a.win, radius)
-	}
-}
-
-func (a *island) save() {
-	if err := a.files.Save(a.statePath); err != nil {
-		log.Printf("save shelf: %v", err)
-	}
-}
-
-func (a *island) addFiles(paths []string) {
-	if len(paths) == 0 {
-		return
-	}
-	a.busy++
-	go func() {
-		items, _ := shelf.Inspect(paths)
-		a.win.Update(func() {
-			a.busy--
-			report := a.files.Add(items)
-			for _, item := range items {
-				delete(a.previews, shelf.Key(item.Path))
-			}
-			if report.Added > 0 {
-				a.save()
-			}
-			a.setExpanded(true)
-		})
-	}()
-}
-
-func (a *island) choose(directory bool) {
-	if a.choosing {
-		return
-	}
-	a.choosing = true
-	go func() {
-		paths, err := mygo.Dialog.Open(mygo.OpenDialogOptions{
-			Parent: a.win, Title: "添加文件", Multiple: true, Directory: directory,
-		})
-		a.win.Update(func() {
-			a.choosing = false
-			a.leaveSince = time.Now()
-			if err != nil {
-				log.Printf("file dialog: %v", err)
-				return
-			}
-			a.addFiles(paths)
-		})
-	}()
-}
-
-func (a *island) selection() []string {
-	paths := make([]string, 0, len(a.selected))
-	for _, item := range a.files.Items {
-		if a.selected[shelf.Key(item.Path)] {
-			paths = append(paths, item.Path)
-		}
-	}
-	return paths
-}
-
-func (a *island) outgoingPaths(path string) []string {
-	paths := a.selection()
-	if path != "" && !a.selected[shelf.Key(path)] {
-		return []string{path}
-	}
-	if len(paths) == 0 {
-		return a.files.Paths()
-	}
-	return paths
-}
-
-func (a *island) dragData(path string) transfer.Data {
-	paths, _ := available(a.outgoingPaths(path))
-	data, err := transfer.FileData(paths...)
-	if err != nil {
-		log.Printf("file drag data: %v", err)
-		return transfer.Data{}
-	}
-	a.dragging = len(paths) > 0
-	if a.dragging {
-		a.animation.pause(time.Now())
-	}
-	return data
-}
-
-func (a *island) dragDone(result transfer.Result) {
-	a.dragging = false
-	a.leaveSince = time.Now()
-	a.animation.resume(a.leaveSince)
-	if result.Err != nil {
-		log.Printf("file drag: %v", result.Err)
-	}
-	a.win.Invalidate()
-}
-
-func available(paths []string) ([]string, int) {
-	valid := make([]string, 0, len(paths))
-	for _, path := range paths {
-		if _, err := os.Stat(path); err == nil {
-			valid = append(valid, path)
-		}
-	}
-	return valid, len(paths) - len(valid)
-}
-
-func (a *island) copyFiles(paths []string) {
-	paths, _ = available(paths)
-	if len(paths) == 0 {
-		return
-	}
-	if err := mygo.Clipboard.WriteFiles(paths...); err != nil {
-		log.Printf("copy files: %v", err)
-		return
-	}
-	if err := mygo.Clipboard.Flush(); err != nil {
-		log.Printf("flush clipboard: %v", err)
-	}
-}
-
-func (a *island) removeFiles(paths []string) {
-	if len(paths) == 0 {
-		return
-	}
-	a.files.Remove(paths)
-	for _, path := range paths {
-		delete(a.selected, shelf.Key(path))
-		delete(a.previews, shelf.Key(path))
-	}
-	a.save()
-	if a.win != nil {
-		a.win.Invalidate()
 	}
 }

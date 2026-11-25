@@ -6,12 +6,11 @@ import (
 
 	"dynamicisland/internal/battery"
 	"dynamicisland/internal/nowplaying"
-	"dynamicisland/internal/shelf"
 	"github.com/egoist/mygo/ui"
 )
 
 func TestBatteryRowInOverview(t *testing.T) {
-	a := &island{expanded: true, files: &shelf.Shelf{}}
+	a := &island{expanded: true}
 	a.settings.IdleItems = defaultIdleItems
 	a.settings.IdleItems[2].Hidden = true
 	withoutBattery := a.targetFrame()
@@ -51,7 +50,6 @@ func TestBatteryRowInOverview(t *testing.T) {
 func TestLowBatteryAlertNotifiesOnceAndShowsPlaybackBanner(t *testing.T) {
 	var notified []battery.Reading
 	a := &island{
-		files:    &shelf.Shelf{},
 		settings: appSettings{LowBatteryAlert: true},
 		media: islandMedia{
 			track: nowplaying.Track{Title: "夜行列车", Playing: true, Position: 12, Duration: 200, Rate: 1, Sampled: time.Now()},

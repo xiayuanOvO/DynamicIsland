@@ -14,15 +14,10 @@ func svg(paths string) *ui.SVG {
 }
 
 var (
-	backIcon    = svg(`<path d="m11 6-6 6 6 6m-6-6h14"/>`)
-	todoIcon    = svg(`<rect x="3" y="3" width="18" height="18" rx="5"/><path d="m7 12 3 3 7-7"/>`)
-	fileIcon    = svg(`<path d="M14 2H5v20h14V7l-5-5Z"/><path d="M14 2v6h5M8 13h8m-8 4h5"/>`)
-	folderIcon  = svg(`<path d="M3 6V4h7l2 3h9v13H3V6Z"/><path d="M3 8h18"/>`)
-	imageIcon   = svg(`<rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8" cy="8" r="1.5"/><path d="m3 17 5-5 4 4 4-6 5 7"/>`)
-	archiveIcon = svg(`<rect x="4" y="3" width="16" height="18" rx="2"/><path d="M10 3v3h4v3h-4v3h4v3h-4v3h4"/>`)
-	mediaIcon   = svg(`<rect x="3" y="3" width="18" height="18" rx="4"/><path d="m10 8 6 4-6 4V8Z"/>`)
-	closeIcon   = svg(`<path d="m7 7 10 10M7 17 17 7"/>`)
-	sendIcon    = svg(`<path d="M13 4h7v7m0-7L10 14M8 5H4v15h15v-5"/>`)
+	backIcon     = svg(`<path d="m11 6-6 6 6 6m-6-6h14"/>`)
+	todoIcon     = svg(`<rect x="3" y="3" width="18" height="18" rx="5"/><path d="m7 12 3 3 7-7"/>`)
+	imageIcon    = svg(`<rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8" cy="8" r="1.5"/><path d="m3 17 5-5 4 4 4-6 5 7"/>`)
+	mediaIcon    = svg(`<rect x="3" y="3" width="18" height="18" rx="4"/><path d="m10 8 6 4-6 4V8Z"/>`)
 	copyIcon     = svg(`<rect x="8" y="8" width="12" height="13" rx="2"/><path d="M16 8V3H3v13h5"/>`)
 	trashIcon    = svg(`<path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7m4-7v7"/>`)
 	settingsIcon = svg(`<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h.01a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h.01a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v.01a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>`)

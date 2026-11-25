@@ -52,7 +52,7 @@ func checkDesktopBackdrop() error {
 						c.Root().Background(ui.Transparent)
 						_, height := c.Size()
 						surface := ui.Box(c).Fill().Radius(islandCornerRadius(height)).Clip()
-						glassSurface(c, surface, backdrop, false, false)
+						glassSurface(c, surface, backdrop, false)
 					}),
 				})
 				configureFloatingWindow(win)

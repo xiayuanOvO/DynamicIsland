@@ -13,7 +13,7 @@ const (
 )
 
 type islandFrame struct {
-	width, height, open, content, todo, editor, schedule, clipboard, dropZone float32
+	width, height, open, content, todo, editor, schedule, clipboard float32
 }
 
 func (f islandFrame) aligned() islandFrame {
@@ -50,13 +50,12 @@ func (a *island) transitionCanvasBounds(current mygo.Rectangle, keepExpanded boo
 	if keepExpanded {
 		// Resizing the backing surface can stretch the previous Metal frame.
 		// Reserve room for both pages while the island is expanded.
-		overviewHeight, _ := a.overviewHeights()
-		height = max(height, overviewHeight, panelHeaderHeight+20+clipboardPanelHeight)
+		height = max(height, a.overviewHeight(), panelHeaderHeight+20+clipboardPanelHeight)
 	}
 	return a.windowBounds(width, height)
 }
 
-type islandVelocity struct{ width, height, open, todo, editor, schedule, clipboard, dropZone float32 }
+type islandVelocity struct{ width, height, open, todo, editor, schedule, clipboard float32 }
 
 type islandAnimation struct {
 	from, to          islandFrame
@@ -67,7 +66,7 @@ type islandAnimation struct {
 }
 
 func (a *island) scheduleWindowFrame(deadline time.Time) {
-	if a.windowFramePending || a.dragging || a.moving || a.animation.to == a.shownFrame {
+	if a.windowFramePending || a.moving || a.animation.to == a.shownFrame {
 		return
 	}
 	a.windowFramePending = true
@@ -91,7 +90,7 @@ func (a *island) scheduleWindowFrame(deadline time.Time) {
 }
 
 func (a *island) advanceWindowFrame(now time.Time) bool {
-	if a.dragging || a.moving || !a.win.IsVisible() {
+	if a.moving || !a.win.IsVisible() {
 		return false
 	}
 	if a.canvas.warming {
@@ -125,9 +124,6 @@ func (a *island) targetFrame() islandFrame {
 		}
 		if draft != nil && draft.scheduled {
 			frame.schedule = 1
-		}
-		if a.fileDragOver && len(a.files.Items) == 0 && !a.todos.open && !a.clipboard.open {
-			frame.dropZone = 1
 		}
 		return frame
 	}
@@ -194,7 +190,6 @@ func (m *islandAnimation) sample(now time.Time) (islandFrame, islandVelocity) {
 	editor, ve := springSample(m.from.editor, m.velocity.editor, m.to.editor, seconds, frequency)
 	schedule, vs := springSample(m.from.schedule, m.velocity.schedule, m.to.schedule, seconds, frequency)
 	clipboard, vc := springSample(m.from.clipboard, m.velocity.clipboard, m.to.clipboard, seconds, frequency)
-	dropZone, vd := springSample(m.from.dropZone, m.velocity.dropZone, m.to.dropZone, seconds, frequency)
 	open, vo := springSample(m.from.open, m.velocity.open, m.to.open, seconds, frequency)
 	content := animationPhase(open, 0.20, 0.85)
 	return islandFrame{
@@ -206,8 +201,7 @@ func (m *islandAnimation) sample(now time.Time) (islandFrame, islandVelocity) {
 		editor:    editor,
 		schedule:  schedule,
 		clipboard: min(1, max(0, clipboard)),
-		dropZone:  min(1, max(0, dropZone)),
-	}, islandVelocity{width: vx, height: vy, open: vo, todo: vt, editor: ve, schedule: vs, clipboard: vc, dropZone: vd}
+	}, islandVelocity{width: vx, height: vy, open: vo, todo: vt, editor: ve, schedule: vs, clipboard: vc}
 }
 
 // A critically damped spring eases into the target and preserves velocity
