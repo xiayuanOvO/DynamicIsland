@@ -28,7 +28,7 @@ const (
 	widgetGridCols            = 4
 	widgetGridGap             = overviewCardGap
 	widgetGridColWidth        = float32(panelBodyWidth-(widgetGridCols-1)*widgetGridGap) / widgetGridCols
-	widgetGridRowHeight       = float32(66)
+	widgetGridRowHeight       = float32(56)
 	widgetLongPressDelay      = 350 * time.Millisecond
 	widgetLongPressMoveLimit  = 6
 	clipboardLargePreviewRows = 8

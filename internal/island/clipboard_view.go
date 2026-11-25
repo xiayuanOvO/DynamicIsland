@@ -196,14 +196,14 @@ func (a *island) clipboardPreviewCardWithSize(c *ui.Context, height, opacity flo
 				}
 			}
 		}
-		if size == widgetSizeLarge {
-			ui.Scroll(c.Key("clipboard-preview-list")).FillWidth().Grow(1).MinHeight(0).Children(renderRows)
-		} else {
+		ui.Scroll(c.Key("clipboard-preview-list")).FillWidth().Grow(1).MinHeight(0).Children(func() {
 			renderRows()
-			if spacer := ui.Box(c.Key("clipboard-preview-spacer")).FillWidth().Grow(1).MinHeight(0).Cursor(ui.CursorPointer); spacer.Clicked() && !a.widgetDrag.suppressClick && !dragging {
-				a.openClipboard(false)
+			if size != widgetSizeLarge {
+				if spacer := ui.Box(c.Key("clipboard-preview-spacer")).FillWidth().Grow(1).MinHeight(0).Cursor(ui.CursorPointer); spacer.Clicked() && !a.widgetDrag.suppressClick && !dragging {
+					a.openClipboard(false)
+				}
 			}
-		}
+		})
 	})
 }
 
