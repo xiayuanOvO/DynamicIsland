@@ -34,15 +34,27 @@ type weatherCacheDay struct {
 	Code        int    `json:"code"`
 	Condition   string `json:"condition"`
 	Temperature int    `json:"temperature"`
+	MinTemp     int    `json:"minTemp,omitempty"`
+	HasMin      bool   `json:"hasMin,omitempty"`
+	Sunrise     string `json:"sunrise,omitempty"`
+	Sunset      string `json:"sunset,omitempty"`
 	Rain        bool   `json:"rain"`
 }
 
+type weatherCacheHour struct {
+	Time        string `json:"time"`
+	Code        int    `json:"code"`
+	Temperature int    `json:"temperature"`
+}
+
 type weatherCache struct {
-	CityKey   string            `json:"cityKey"`
-	Source    string            `json:"source"`
-	UpdatedAt time.Time         `json:"updatedAt"`
-	Current   weatherCacheDay   `json:"current"`
-	Days      []weatherCacheDay `json:"days,omitempty"`
+	CityKey   string             `json:"cityKey"`
+	CityName  string             `json:"cityName,omitempty"`
+	Source    string             `json:"source"`
+	UpdatedAt time.Time          `json:"updatedAt"`
+	Current   weatherCacheDay    `json:"current"`
+	Days      []weatherCacheDay  `json:"days,omitempty"`
+	Hourly    []weatherCacheHour `json:"hourly,omitempty"`
 }
 
 func (c weatherCity) cacheKey() string {
@@ -73,7 +85,8 @@ func saveWeatherCache(path string, cache weatherCache) error {
 }
 
 func weatherDataEqual(a, b weatherCache) bool {
-	return a.CityKey == b.CityKey && a.Current == b.Current && slices.Equal(a.Days, b.Days)
+	return a.CityKey == b.CityKey && a.CityName == b.CityName && a.Current == b.Current &&
+		slices.Equal(a.Days, b.Days) && slices.Equal(a.Hourly, b.Hourly)
 }
 
 func weatherFromCache(cache weatherCache, now time.Time) (idleWeather, time.Time, bool) {
@@ -147,41 +160,47 @@ func wmoWeatherIcon(code int) *ui.SVG {
 }
 
 func fetchIPCoordinates(ctx context.Context, endpoint string) (float64, float64, error) {
+	lat, lon, _, err := fetchIPLocation(ctx, endpoint)
+	return lat, lon, err
+}
+
+func fetchIPLocation(ctx context.Context, endpoint string) (float64, float64, string, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
-		return 0, 0, err
+		return 0, 0, "", err
 	}
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return 0, 0, err
+		return 0, 0, "", err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return 0, 0, fmt.Errorf("ip geo HTTP %d", resp.StatusCode)
+		return 0, 0, "", fmt.Errorf("ip geo HTTP %d", resp.StatusCode)
 	}
 	var payload struct {
 		Latitude  json.Number `json:"latitude"`
 		Longitude json.Number `json:"longitude"`
+		City      string      `json:"city"`
 	}
 	if err := json.NewDecoder(io.LimitReader(resp.Body, 16<<10)).Decode(&payload); err != nil {
-		return 0, 0, err
+		return 0, 0, "", err
 	}
 	lat, err := payload.Latitude.Float64()
 	if err != nil {
-		return 0, 0, err
+		return 0, 0, "", err
 	}
 	lon, err := payload.Longitude.Float64()
 	if err != nil {
-		return 0, 0, err
+		return 0, 0, "", err
 	}
 	if lat < -90 || lat > 90 || lon < -180 || lon > 180 {
-		return 0, 0, errors.New("invalid ip coordinates")
+		return 0, 0, "", errors.New("invalid ip coordinates")
 	}
-	return lat, lon, nil
+	return lat, lon, payload.City, nil
 }
 
 func fetchOpenMeteoWeather(ctx context.Context, endpoint string, lat, lon float64, cityKey string) (weatherCache, error) {
-	url := fmt.Sprintf("%s?latitude=%.5f&longitude=%.5f&current=temperature_2m,weather_code&daily=weather_code,temperature_2m_max&timezone=auto&forecast_days=14",
+	url := fmt.Sprintf("%s?latitude=%.5f&longitude=%.5f&current=temperature_2m,weather_code&hourly=temperature_2m,weather_code&daily=weather_code,temperature_2m_max,temperature_2m_min,sunrise,sunset&timezone=auto&forecast_days=14&forecast_hours=24",
 		endpoint, lat, lon)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
@@ -200,13 +219,21 @@ func fetchOpenMeteoWeather(ctx context.Context, endpoint string, lat, lon float6
 			Temperature *float64 `json:"temperature_2m"`
 			Code        *int     `json:"weather_code"`
 		} `json:"current"`
-		Daily struct {
+		Hourly struct {
 			Time        []string  `json:"time"`
 			Code        []int     `json:"weather_code"`
-			Temperature []float64 `json:"temperature_2m_max"`
+			Temperature []float64 `json:"temperature_2m"`
+		} `json:"hourly"`
+		Daily struct {
+			Time           []string  `json:"time"`
+			Code           []int     `json:"weather_code"`
+			Temperature    []float64 `json:"temperature_2m_max"`
+			TemperatureMin []float64 `json:"temperature_2m_min"`
+			Sunrise        []string  `json:"sunrise"`
+			Sunset         []string  `json:"sunset"`
 		} `json:"daily"`
 	}
-	if err := json.NewDecoder(io.LimitReader(resp.Body, 64<<10)).Decode(&payload); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 128<<10)).Decode(&payload); err != nil {
 		return weatherCache{}, err
 	}
 	if payload.Current.Temperature == nil || payload.Current.Code == nil {
@@ -235,12 +262,30 @@ func fetchOpenMeteoWeather(ctx context.Context, endpoint string, lat, lon float6
 		if i < len(payload.Daily.Temperature) {
 			dTemp = int(math.Round(payload.Daily.Temperature[i]))
 		}
-		cache.Days = append(cache.Days, weatherCacheDay{
+		day := weatherCacheDay{
 			Date:        payload.Daily.Time[i],
 			Code:        payload.Daily.Code[i],
 			Condition:   dCond,
 			Temperature: dTemp,
 			Rain:        dRain,
+		}
+		if i < len(payload.Daily.TemperatureMin) {
+			day.MinTemp = int(math.Round(payload.Daily.TemperatureMin[i]))
+			day.HasMin = true
+		}
+		if i < len(payload.Daily.Sunrise) {
+			day.Sunrise = payload.Daily.Sunrise[i]
+		}
+		if i < len(payload.Daily.Sunset) {
+			day.Sunset = payload.Daily.Sunset[i]
+		}
+		cache.Days = append(cache.Days, day)
+	}
+	for i := 0; i < len(payload.Hourly.Time) && i < len(payload.Hourly.Code) && i < len(payload.Hourly.Temperature); i++ {
+		cache.Hourly = append(cache.Hourly, weatherCacheHour{
+			Time:        payload.Hourly.Time[i],
+			Code:        payload.Hourly.Code[i],
+			Temperature: int(math.Round(payload.Hourly.Temperature[i])),
 		})
 	}
 	return cache, nil
@@ -256,9 +301,10 @@ func fetchWeatherWithFallback(ctx context.Context, primary int, city weatherCity
 		switch src {
 		case weatherSourceOpenMeteo:
 			lat, lon := city.Latitude, city.Longitude
+			cityName := city.Name
 			if city.ID == 0 {
 				var err error
-				lat, lon, err = fetchIPCoordinates(ctx, ipGeoEndpoint)
+				lat, lon, cityName, err = fetchIPLocation(ctx, ipGeoEndpoint)
 				if err != nil {
 					log.Printf("weather open-meteo ip geo failed: %v", err)
 					lastErr = err
@@ -267,6 +313,9 @@ func fetchWeatherWithFallback(ctx context.Context, primary int, city weatherCity
 			}
 			cache, err := fetchOpenMeteoWeather(ctx, openMeteoForecastEndpoint, lat, lon, city.cacheKey())
 			if err == nil {
+				if cache.CityName == "" {
+					cache.CityName = cityName
+				}
 				return cache, nil
 			}
 			log.Printf("weather open-meteo failed: %v", err)
@@ -274,6 +323,9 @@ func fetchWeatherWithFallback(ctx context.Context, primary int, city weatherCity
 		case weatherSourceWttr:
 			cache, err := fetchWttrWeatherCache(ctx, city.weatherEndpoint(), city.cacheKey())
 			if err == nil {
+				if city.Name != "" {
+					cache.CityName = city.Name
+				}
 				return cache, nil
 			}
 			log.Printf("weather wttr.in failed: %v", err)

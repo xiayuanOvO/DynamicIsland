@@ -31,8 +31,9 @@ func TestWidgetLayoutPackingAndSettingsPersistence(t *testing.T) {
 		loaded.PanelWidgets[1].ID,
 		loaded.PanelWidgets[2].ID,
 		loaded.PanelWidgets[3].ID,
+		loaded.PanelWidgets[4].ID,
 	}
-	wantOrder := []panelWidgetID{widgetMedia, widgetBattery, widgetTodo, widgetClipboard}
+	wantOrder := []panelWidgetID{widgetMedia, widgetBattery, widgetWeather, widgetTodo, widgetClipboard}
 	if !slices.Equal(gotOrder, wantOrder) {
 		t.Fatalf("normalized order = %v, want %v", gotOrder, wantOrder)
 	}
@@ -415,5 +416,114 @@ func TestEditWidgetsModeHideAddBackAndBottomFooter(t *testing.T) {
 	view.Key(0, ui.KeyEscape)
 	if a.editingWidgets || !a.expanded {
 		t.Fatalf("Escape should exit edit mode while keeping island expanded: editing=%v expanded=%v", a.editingWidgets, a.expanded)
+	}
+}
+
+func TestWeatherWidgetSizesHourlySunsetAndEditMode(t *testing.T) {
+	a := &island{
+		statePath: filepath.Join(t.TempDir(), "state.json"),
+		expanded:  true,
+	}
+	now := time.Now()
+	today := now.Format(time.DateOnly)
+	baseHour := time.Date(now.Year(), now.Month(), now.Day(), 14, 0, 0, 0, now.Location())
+	a.idle.weather = idleWeather{
+		condition:   "多云",
+		temperature: 14,
+		icon:        weatherPartlyCloudyIcon,
+	}
+	a.idle.cache = weatherCache{
+		CityKey:   "auto",
+		CityName:  "新建区",
+		Source:    "open-meteo",
+		UpdatedAt: baseHour,
+		Current: weatherCacheDay{
+			Date:        today,
+			Code:        2,
+			Condition:   "多云",
+			Temperature: 14,
+		},
+		Days: []weatherCacheDay{
+			{Date: today, Code: 2, Condition: "多云", Temperature: 15, MinTemp: 8, HasMin: true, Sunset: today + "T17:20"},
+			{Date: now.AddDate(0, 0, 1).Format(time.DateOnly), Code: 0, Condition: "晴", Temperature: 18, MinTemp: 9, HasMin: true},
+			{Date: now.AddDate(0, 0, 2).Format(time.DateOnly), Code: 61, Condition: "雨", Temperature: 13, MinTemp: 7, HasMin: true, Rain: true},
+		},
+		Hourly: []weatherCacheHour{
+			{Time: baseHour.Format("2006-01-02T15:04"), Code: 2, Temperature: 15},
+			{Time: baseHour.Add(1 * time.Hour).Format("2006-01-02T15:04"), Code: 2, Temperature: 14},
+			{Time: baseHour.Add(2 * time.Hour).Format("2006-01-02T15:04"), Code: 2, Temperature: 14},
+			{Time: baseHour.Add(3 * time.Hour).Format("2006-01-02T15:04"), Code: 2, Temperature: 13},
+			{Time: baseHour.Add(4 * time.Hour).Format("2006-01-02T15:04"), Code: 2, Temperature: 13},
+			{Time: baseHour.Add(5 * time.Hour).Format("2006-01-02T15:04"), Code: 3, Temperature: 12},
+		},
+	}
+
+	// Verify hourly slot weaving inserts sunset at 17:20 chronologically.
+	slots := a.weatherHourlySlots(baseHour, 6)
+	if len(slots) != 6 || slots[0].label != "14时" || slots[4].label != "17:20" || !slots[4].sunEvent || slots[5].label != "18时" {
+		t.Fatalf("unexpected hourly slots with sunset: %+v", slots)
+	}
+
+	a.shownFrame = a.targetFrame()
+	view := ui.NewTester(func(c *ui.Context) {
+		a.shownFrame = a.targetFrame()
+		ui.Column(c).Fill().Clip().Children(func() {
+			ui.Box(c).Height(panelHeaderHeight).Shrink(0)
+			a.body(c, a.shownFrame)
+		})
+	}, panelWidth, 640)
+
+	// Default medium weather widget: 4x2, shows city, temp, condition, high/low.
+	medRect, ok := view.Find("天气卡片")
+	if !ok || math.Abs(float64(medRect.W-widgetColSpanPx(4))) > 0.5 || math.Abs(float64(medRect.H-widgetRowSpanPx(2))) > 0.5 {
+		t.Fatalf("medium weather rect = %+v, want %.1fx%.1f", medRect, widgetColSpanPx(4), widgetRowSpanPx(2))
+	}
+	for _, want := range []string{"新建区", "14°", "多云", "最高15° 最低8°"} {
+		if !view.HasText(want) {
+			t.Fatalf("medium weather card missing %q: %v", want, view.Texts())
+		}
+	}
+
+	// Right-click weather -> switch to Small (2x2) and Large (4x4).
+	if err := view.RightClick("新建区"); err != nil {
+		t.Fatal(err)
+	}
+	if err := view.ChooseMenuItem("小"); err != nil {
+		t.Fatal(err)
+	}
+	smallRect, _ := view.Find("天气卡片")
+	if math.Abs(float64(smallRect.W-widgetColSpanPx(2))) > 0.5 || math.Abs(float64(smallRect.H-widgetRowSpanPx(2))) > 0.5 {
+		t.Fatalf("small weather rect = %+v, want %.1fx%.1f", smallRect, widgetColSpanPx(2), widgetRowSpanPx(2))
+	}
+
+	if err := view.RightClick("新建区"); err != nil {
+		t.Fatal(err)
+	}
+	if err := view.ChooseMenuItem("大"); err != nil {
+		t.Fatal(err)
+	}
+	largeRect, _ := view.Find("天气卡片")
+	if math.Abs(float64(largeRect.W-widgetColSpanPx(4))) > 0.5 || math.Abs(float64(largeRect.H-widgetRowSpanPx(4))) > 0.5 {
+		t.Fatalf("large weather rect = %+v, want %.1fx%.1f", largeRect, widgetColSpanPx(4), widgetRowSpanPx(4))
+	}
+	if !view.HasText("今天") {
+		t.Fatalf("large weather card should show multi-day forecast: %v", view.Texts())
+	}
+
+	// Edit mode can hide and restore the weather widget.
+	if err := view.Click("编辑组件"); err != nil {
+		t.Fatal(err)
+	}
+	if err := view.Click("关闭天气"); err != nil {
+		t.Fatal(err)
+	}
+	if !a.widgetHidden(widgetWeather) {
+		t.Fatal("weather widget should be hidden")
+	}
+	if err := view.Click("添加天气"); err != nil {
+		t.Fatal(err)
+	}
+	if a.widgetHidden(widgetWeather) {
+		t.Fatal("weather widget should be restored")
 	}
 }

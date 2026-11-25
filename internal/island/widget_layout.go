@@ -11,6 +11,7 @@ type panelWidgetID string
 
 const (
 	widgetBattery   panelWidgetID = "battery"
+	widgetWeather   panelWidgetID = "weather"
 	widgetMedia     panelWidgetID = "media"
 	widgetTodo      panelWidgetID = "todo"
 	widgetClipboard panelWidgetID = "clipboard"
@@ -81,6 +82,8 @@ func widgetDisplayName(id panelWidgetID) string {
 	switch id {
 	case widgetBattery:
 		return "设备电量"
+	case widgetWeather:
+		return "天气"
 	case widgetMedia:
 		return "媒体播放"
 	case widgetTodo:
@@ -92,10 +95,11 @@ func widgetDisplayName(id panelWidgetID) string {
 	}
 }
 
-type panelWidgetSettings [4]panelWidgetSetting
+type panelWidgetSettings [5]panelWidgetSetting
 
 var defaultPanelWidgets = panelWidgetSettings{
 	{ID: widgetBattery},
+	{ID: widgetWeather},
 	{ID: widgetMedia},
 	{ID: widgetTodo},
 	{ID: widgetClipboard},
@@ -103,7 +107,7 @@ var defaultPanelWidgets = panelWidgetSettings{
 
 func validPanelWidgetID(id panelWidgetID) bool {
 	switch id {
-	case widgetBattery, widgetMedia, widgetTodo, widgetClipboard:
+	case widgetBattery, widgetWeather, widgetMedia, widgetTodo, widgetClipboard:
 		return true
 	default:
 		return false
@@ -233,6 +237,8 @@ func (a *island) widgetVisible(id panelWidgetID) bool {
 	switch id {
 	case widgetBattery:
 		return len(a.battery.readings) > 0
+	case widgetWeather:
+		return a.idle.weather.condition != ""
 	case widgetMedia:
 		return a.media.track.Title != ""
 	case widgetTodo:
@@ -251,7 +257,7 @@ func (a *island) effectiveWidgetSize(id panelWidgetID) widgetSize {
 		}
 	}
 	switch id {
-	case widgetBattery, widgetMedia:
+	case widgetBattery, widgetWeather, widgetMedia:
 		return widgetSizeMedium
 	case widgetTodo:
 		if a.clipboard.Recording {

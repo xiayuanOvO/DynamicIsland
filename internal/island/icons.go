@@ -39,6 +39,9 @@ var (
 	weatherThunderIcon = svg(weatherCloudShape + `<path d="m13 15-4 4h4l-2 3"/>`)
 	weatherFogIcon     = svg(weatherCloudShape + `<path d="M4 18h16M6 21h12"/>`)
 	weatherUnknownIcon = svg(`<path d="M10 14V5a2 2 0 0 1 4 0v9a4 4 0 1 1-4 0Zm2-3v6"/><circle cx="12" cy="17.5" r="1"/>`)
+	locationArrowIcon  = svg(`<path d="m3 11 18-8-8 18-2-8-8-2Z" fill="currentColor" stroke-width="1.2"/>`)
+	sunriseIcon        = svg(`<path d="M12 3v6m-3-3 3-3 3 3M5 17h14M7 17a5 5 0 0 1 10 0M3 20h18"/>`)
+	sunsetIcon         = svg(`<path d="M12 9V3m-3 3 3 3 3-3M5 17h14M7 17a5 5 0 0 1 10 0M3 20h18"/>`)
 )
 
 func trayIcon() []byte {

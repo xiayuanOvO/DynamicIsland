@@ -99,7 +99,9 @@ func (a *island) maybeTriggerRainAlert(now time.Time) {
 
 func (a *island) updateIdleWeather(c *ui.Context) {
 	info := &a.idle
-	if !a.showsIdleCapsule() || !a.settings.showsIdleItem(idleItemWeather) || !a.win.IsVisible() || info.reading {
+	showIdle := a.showsIdleCapsule() && a.settings.showsIdleItem(idleItemWeather)
+	showWidget := a.expanded && !a.todos.open && !a.clipboard.open && !a.widgetHidden(widgetWeather)
+	if (!showIdle && !showWidget) || !a.win.IsVisible() || info.reading {
 		return
 	}
 	if !info.cacheLoaded {
@@ -243,10 +245,17 @@ func fetchWttrWeatherCache(ctx context.Context, endpoint, cityKey string) (weath
 		Forecast []struct {
 			Date    string `json:"date"`
 			AvgTemp string `json:"avgtempC"`
+			MaxTemp string `json:"maxtempC"`
+			MinTemp string `json:"mintempC"`
 			Hourly  []struct {
+				Time string `json:"time"`
+				Temp string `json:"tempC"`
 				Code string `json:"weatherCode"`
 			} `json:"hourly"`
 		} `json:"weather"`
+		NearestArea []struct {
+			AreaName []description `json:"areaName"`
+		} `json:"nearest_area"`
 	}
 	if err := json.NewDecoder(io.LimitReader(resp.Body, 128<<10)).Decode(&payload); err != nil {
 		return weatherCache{}, err
@@ -271,8 +280,13 @@ func fetchWttrWeatherCache(ctx context.Context, endpoint, cityKey string) (weath
 	}
 	code, _ := strconv.Atoi(strings.TrimSpace(current.Code))
 	now := time.Now()
+	var cityName string
+	if len(payload.NearestArea) > 0 && len(payload.NearestArea[0].AreaName) > 0 {
+		cityName = strings.TrimSpace(payload.NearestArea[0].AreaName[0].Value)
+	}
 	cache := weatherCache{
 		CityKey:   cityKey,
+		CityName:  cityName,
 		Source:    "wttr.in",
 		UpdatedAt: now,
 		Current: weatherCacheDay{
@@ -283,7 +297,7 @@ func fetchWttrWeatherCache(ctx context.Context, endpoint, cityKey string) (weath
 			Rain:        idleWeatherIcon(code, condition) == weatherRainIcon || code == 386 || code == 389,
 		},
 	}
-	for _, day := range payload.Forecast {
+	for dayIdx, day := range payload.Forecast {
 		dayRain := false
 		dayCode := code
 		for _, hour := range day.Hourly {
@@ -294,18 +308,37 @@ func fetchWttrWeatherCache(ctx context.Context, endpoint, cityKey string) (weath
 			if idleWeatherIcon(hCode, "") == weatherRainIcon || hCode == 386 || hCode == 389 {
 				dayRain = true
 			}
+			if dayIdx < 2 && day.Date != "" {
+				if hVal, err := strconv.Atoi(strings.TrimSpace(hour.Time)); err == nil {
+					if hTemp, tErr := strconv.Atoi(strings.TrimSpace(hour.Temp)); tErr == nil {
+						cache.Hourly = append(cache.Hourly, weatherCacheHour{
+							Time:        fmt.Sprintf("%sT%02d:00", day.Date, hVal/100),
+							Code:        hCode,
+							Temperature: hTemp,
+						})
+					}
+				}
+			}
 		}
-		dayTemp, tErr := strconv.Atoi(strings.TrimSpace(day.AvgTemp))
+		dayTemp, tErr := strconv.Atoi(strings.TrimSpace(day.MaxTemp))
+		if tErr != nil {
+			dayTemp, tErr = strconv.Atoi(strings.TrimSpace(day.AvgTemp))
+		}
 		if tErr != nil {
 			dayTemp = temperature
 		}
-		cache.Days = append(cache.Days, weatherCacheDay{
+		d := weatherCacheDay{
 			Date:        day.Date,
 			Code:        dayCode,
 			Condition:   condition,
 			Temperature: dayTemp,
 			Rain:        dayRain,
-		})
+		}
+		if minTemp, err := strconv.Atoi(strings.TrimSpace(day.MinTemp)); err == nil {
+			d.MinTemp = minTemp
+			d.HasMin = true
+		}
+		cache.Days = append(cache.Days, d)
 	}
 	return cache, nil
 }
