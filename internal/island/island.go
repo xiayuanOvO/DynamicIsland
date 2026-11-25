@@ -56,6 +56,7 @@ type island struct {
 
 	todos              todoComponent
 	clipboard          clipboardComponent
+	widgetDrag         widgetDragState
 	settings           appSettings
 	updates            appUpdates
 	citySearch         weatherCitySearch
@@ -204,7 +205,7 @@ func (a *island) toolsPreviewHeight() int {
 }
 
 func (a *island) overviewHeight() int {
-	return panelHeaderHeight + 20 + a.overviewLeadHeight() + a.toolsPreviewHeight()
+	return panelHeaderHeight + 20 + int(a.panelWidgetLayout().height)
 }
 
 func (a *island) panelHeight() int {
@@ -223,6 +224,7 @@ func (a *island) setExpanded(expanded bool) {
 	}
 	a.expanded = expanded
 	if !expanded {
+		a.widgetDrag.cancel(a)
 		a.todos.open = false
 		a.todos.draft, a.todos.leaving = nil, nil
 		a.clipboard.open, a.clipboard.confirmClear = false, false

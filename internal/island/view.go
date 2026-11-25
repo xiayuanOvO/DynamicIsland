@@ -69,7 +69,7 @@ func (a *island) hover(c *ui.Context, hovered bool) {
 		a.leaveSince = time.Time{}
 		return
 	}
-	if !a.expanded || a.media.scrubbing || a.todos.draft != nil {
+	if !a.expanded || a.media.scrubbing || a.todos.draft != nil || a.widgetDrag.active() {
 		return
 	}
 	now := c.Now()
@@ -227,47 +227,156 @@ func (a *island) body(c *ui.Context, frame islandFrame) {
 	}
 	progress := max(todo, clipboard)
 	overviewOpacity := 1 - animationPhase(progress, 0, panelCardPreviewEnd)
-	leadHeight := a.overviewLeadHeight()
+	grid := a.panelWidgetLayout()
+
 	body := ui.Column(c.Key("body")).Width(panelWidth-2).Shrink(0).Padding(0, panelBodyPadding, 20).
 		Opacity(opacity).Translate(0, 10*(1-opacity)).IgnoreInput(!a.expanded || opacity < 0.80)
 	body.Children(func() {
-		if progress < 1 && leadHeight > 0 {
-			// Keep the battery row and music card whole as their slot shrinks.
-			lead := ui.Column(c.Key("overview-lead")).FillWidth().Shrink(0).
-				Height(float32(leadHeight) * (1 - progress))
-			if overviewOpacity > 0 {
-				lead.ZIndex(1).Opacity(overviewOpacity).
-					IgnoreInput(progress > 0 || a.todos.open || a.clipboard.open).Children(func() {
-					if len(a.battery.readings) > 0 {
-						a.batteryRow(c)
-					}
-					if a.media.track.Title != "" {
-						a.mediaCard(c)
-					}
-				})
+		containerHeight := grid.height
+		if todo > 0 {
+			detailHeight := float32(a.todos.detailHeight())
+			if todo == 1 && frame.open == 1 {
+				detailHeight = frame.height - panelHeaderHeight - 20
+			}
+			containerHeight = grid.height + (detailHeight-grid.height)*todo
+		} else if clipboard > 0 {
+			containerHeight = grid.height + (clipboardPanelHeight-grid.height)*clipboard
+		}
+
+		gridBox := ui.Box(c.Key("widgets-grid")).FillWidth().Height(containerHeight).Shrink(0)
+		gridBox.ObserveInput(func(ev ui.InputEvent) {
+			if ev.Button != 0 {
+				return
+			}
+			switch ev.Kind {
+			case ui.InputPointerDown:
+				if progress == 0 && !a.todos.open && !a.clipboard.open {
+					a.widgetDrag.beginPress(a, grid, ev.X, ev.Y, ev.Time)
+				}
+			case ui.InputPointerUp:
+				a.widgetDrag.endPress(a, ev.Canceled)
+			}
+		})
+		if a.widgetDrag.pressing || a.widgetDrag.dragging {
+			px, py, _ := gridBox.PointerPosition()
+			if remaining := a.widgetDrag.updatePointer(a, px, py, c.Now()); remaining > 0 {
+				c.After(remaining)
+			}
+			grid = a.panelWidgetLayout()
+			if a.widgetDrag.active() {
+				gridBox.Cursor(ui.CursorGrabbing)
+				if containerHeight < grid.height {
+					gridBox.Height(grid.height)
+				}
 			}
 		}
-		tools := ui.Box(c.Key("tools")).FillWidth().Shrink(0)
-		toolsPreview := float32(a.toolsPreviewHeight())
-		showClipboard := a.clipboard.Recording && (clipboard > 0 || todo < panelCardPreviewEnd)
-		clipboardHeight := toolsPreview + (clipboardPanelHeight-toolsPreview)*clipboard
-		if showClipboard {
-			tools.MinHeight(clipboardHeight)
-		}
-		tools.Children(func() {
-			// Counter the shrinking overview slot for the card that is only fading out.
-			todoFade := max(0, clipboard-todo)
-			clipboardFade := max(0, todo-clipboard)
-			if todo > 0 || clipboard < panelCardPreviewEnd {
-				a.todoCard(c, todo, 1-animationPhase(todoFade, 0, panelCardPreviewEnd), frame).
-					Translate(0, float32(leadHeight)*todoFade)
+
+		dragging := a.widgetDrag.active()
+		canConfigure := progress == 0 && !a.todos.open && !a.clipboard.open && !dragging
+
+		gridBox.Children(func() {
+			if dragging {
+				if target, ok := grid.slot(a.widgetDrag.id); ok {
+					ui.Box(c.Key("widget-drop-slot")).Absolute().
+						Left(target.rect.X).Top(target.rect.Y).Size(target.rect.W, target.rect.H).
+						Radius(13).Background(c.Theme().Accent.Alpha(0.10)).
+						Border(1.5, c.Theme().Accent.Alpha(0.45)).IgnoreInput(true)
+				}
 			}
-			if showClipboard {
-				a.clipboardCard(c, clipboard, toolsPreview, clipboardHeight, 1-animationPhase(clipboardFade, 0, panelCardPreviewEnd),
-					a.expanded && opacity >= 0.80).Translate(0, float32(leadHeight)*clipboardFade)
+
+			for _, slot := range grid.slots {
+				isDragged := dragging && a.widgetDrag.id == slot.id
+				dx := a.widgetDrag.pointerX - a.widgetDrag.startX
+				dy := a.widgetDrag.pointerY - a.widgetDrag.startY
+
+				switch slot.id {
+				case widgetBattery, widgetMedia:
+					if progress >= panelCardPreviewEnd {
+						continue
+					}
+					rect := slot.rect
+					if isDragged {
+						rect = a.widgetDrag.originRect
+						rect.X += dx
+						rect.Y += dy
+					}
+					wrapper := ui.Box(c.Key("widget-"+string(slot.id))).Absolute().
+						Left(rect.X).Top(rect.Y).Size(rect.W, rect.H)
+					if canConfigure {
+						id := slot.id
+						wrapper.ContextMenu(func(m *ui.Menu) { a.widgetSizeMenu(m, id) })
+					}
+					if isDragged {
+						wrapper.ZIndex(20).Scale(1.03, 1.03).Opacity(0.95).Radius(16).
+							Border(1.5, c.Theme().Accent.Alpha(0.55))
+					} else {
+						wrapper.Opacity(overviewOpacity).
+							IgnoreInput(progress > 0 || a.todos.open || a.clipboard.open || dragging)
+					}
+					wrapper.Children(func() {
+						if slot.id == widgetBattery {
+							a.batteryWidget(c, slot.size, rect.W, rect.H)
+						} else {
+							a.mediaWidget(c, slot.size, rect.W, rect.H)
+						}
+					})
+
+				case widgetTodo:
+					if !(todo > 0 || clipboard < panelCardPreviewEnd) {
+						continue
+					}
+					todoFade := max(0, clipboard-todo)
+					cardOpacity := 1 - animationPhase(todoFade, 0, panelCardPreviewEnd)
+					left := slot.rect.X * (1 - todo)
+					top := slot.rect.Y * (1 - todo)
+					renderSlot := slot
+					if isDragged {
+						renderSlot.rect = a.widgetDrag.originRect
+						left = a.widgetDrag.originRect.X + dx
+						top = a.widgetDrag.originRect.Y + dy
+					}
+					card := a.todoCardInSlot(c, renderSlot, todo, cardOpacity, frame).
+						Absolute().Left(left).Top(top)
+					if canConfigure {
+						card.ContextMenu(func(m *ui.Menu) { a.widgetSizeMenu(m, widgetTodo) })
+					}
+					if isDragged {
+						card.ZIndex(20).Scale(1.03, 1.03).Opacity(0.95).
+							Border(1.5, c.Theme().Accent.Alpha(0.55))
+					} else if todo > 0 {
+						card.ZIndex(5)
+					}
+
+				case widgetClipboard:
+					if !(a.clipboard.Recording && (clipboard > 0 || todo < panelCardPreviewEnd)) {
+						continue
+					}
+					clipboardFade := max(0, todo-clipboard)
+					cardOpacity := 1 - animationPhase(clipboardFade, 0, panelCardPreviewEnd)
+					left := slot.rect.X * (1 - clipboard)
+					top := slot.rect.Y * (1 - clipboard)
+					renderSlot := slot
+					if isDragged {
+						renderSlot.rect = a.widgetDrag.originRect
+						left = a.widgetDrag.originRect.X + dx
+						top = a.widgetDrag.originRect.Y + dy
+					}
+					card := a.clipboardCardInSlot(c, renderSlot, clipboard, cardOpacity, a.expanded && opacity >= 0.80).
+						Absolute().Left(left).Top(top)
+					if canConfigure {
+						card.ContextMenu(func(m *ui.Menu) { a.widgetSizeMenu(m, widgetClipboard) })
+					}
+					if isDragged {
+						card.ZIndex(20).Scale(1.03, 1.03).Opacity(0.95).
+							Border(1.5, c.Theme().Accent.Alpha(0.55))
+					} else if clipboard > 0 {
+						card.ZIndex(5)
+					}
+				}
 			}
 		})
 	})
+	a.widgetDrag.suppressClick = false
 }
 
 func panelCardSurface(c *ui.Context, progress, previewWidth, height float32) ui.Element {
@@ -311,6 +420,12 @@ func (a *island) menu(m *ui.Menu) {
 }
 
 func (a *island) shortcuts(c *ui.Context) {
+	if a.expanded && a.widgetDrag.active() {
+		if c.Shortcut(0, ui.KeyEscape) {
+			a.widgetDrag.cancel(a)
+		}
+		return
+	}
 	if a.expanded && a.clipboard.open {
 		a.clipboardShortcuts(c)
 		return

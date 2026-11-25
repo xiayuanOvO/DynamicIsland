@@ -99,21 +99,33 @@ func (t *todoComponent) previewHeight() int {
 }
 
 func (a *island) todoCard(c *ui.Context, progress, opacity float32, frame islandFrame) ui.Element {
-	previewHeight := a.toolsPreviewHeight()
+	slot, ok := a.panelWidgetLayout().slot(widgetTodo)
+	if !ok {
+		previewWidth := float32(panelBodyWidth)
+		if a.clipboard.Recording {
+			previewWidth = overviewToolCardWidth
+		}
+		slot = panelWidgetSlot{
+			id:   widgetTodo,
+			size: a.effectiveWidgetSize(widgetTodo),
+			rect: ui.Rect{W: previewWidth, H: float32(a.toolsPreviewHeight())},
+		}
+	}
+	return a.todoCardInSlot(c, slot, progress, opacity, frame)
+}
+
+func (a *island) todoCardInSlot(c *ui.Context, slot panelWidgetSlot, progress, opacity float32, frame islandFrame) ui.Element {
+	previewHeight := slot.rect.H
 	detailHeight := float32(a.todos.detailHeight())
 	if progress == 1 && frame.open == 1 {
 		detailHeight = frame.height - panelHeaderHeight - 20
 	}
-	previewWidth := float32(panelBodyWidth)
-	if a.clipboard.Recording {
-		previewWidth = overviewToolCardWidth
-	}
-	height := float32(previewHeight) + (detailHeight-float32(previewHeight))*progress
-	surface := panelCardSurface(c.Key("todo-surface"), progress, previewWidth, height).
-		AlignSelf(ui.Start).Label("待办卡片").Opacity(opacity).IgnoreInput(a.clipboard.open || opacity < panelCardInputStart)
+	height := previewHeight + (detailHeight-previewHeight)*progress
+	surface := panelCardSurface(c.Key("todo-surface"), progress, slot.rect.W, height).
+		Label("待办卡片").Opacity(opacity).IgnoreInput(a.clipboard.open || opacity < panelCardInputStart)
 	surface.Children(func() {
 		if progress < panelCardPreviewEnd {
-			a.todoPreview(c, float32(previewHeight), 1-animationPhase(progress, 0, panelCardPreviewEnd))
+			a.todoPreview(c, previewHeight, 1-animationPhase(progress, 0, panelCardPreviewEnd))
 		}
 		if progress > panelCardPreviewEnd {
 			ui.Column(c.Key("todo-detail")).Absolute().Top(0).Left(0).Right(0).
@@ -125,10 +137,11 @@ func (a *island) todoCard(c *ui.Context, progress, opacity float32, frame island
 }
 
 func (a *island) todoPreview(c *ui.Context, height, opacity float32) {
+	dragging := a.widgetDrag.active()
 	card := ui.ButtonBase(c.Key("todo-card")).Column().Absolute().Top(0).Left(0).Right(0).
 		Height(height).Radius(13).Cursor(ui.CursorPointer).Label("查看待办事项").
-		Opacity(opacity).IgnoreInput(a.todos.open)
-	if card.Hovered() {
+		Opacity(opacity).IgnoreInput(a.todos.open || dragging)
+	if card.Hovered() && !dragging {
 		card.Background(colorsFor(c.Theme().Dark).glass.Alpha(0.2))
 	}
 	quickAdded := false
@@ -140,7 +153,7 @@ func (a *island) todoPreview(c *ui.Context, height, opacity float32) {
 					ui.Icon(c, todoIcon).Size(14, 14).TextColor(c.Theme().Accent)
 					ui.Text(c, "待办事项").Grow(1).SingleLine().FontSize(11).FontWeight(600).TextColor(c.Theme().TextMuted)
 					if iconButton(c.Key("quick-add-todo"), plusIcon, "新建待办").Size(20, 20).Radius(6).
-						Disabled(a.todos.loadFailed).Clicked() {
+						Disabled(a.todos.loadFailed || dragging).Clicked() && !a.widgetDrag.suppressClick {
 						quickAdded = true
 						a.openNewTodo(c.Now())
 					}
@@ -172,7 +185,7 @@ func (a *island) todoPreview(c *ui.Context, height, opacity float32) {
 				}
 			})
 	})
-	if card.Clicked() && !quickAdded {
+	if card.Clicked() && !quickAdded && !a.widgetDrag.suppressClick && !dragging {
 		a.openTodos()
 	}
 }

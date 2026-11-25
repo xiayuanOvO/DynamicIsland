@@ -93,7 +93,7 @@ func (a *island) refreshClipboardPreview() {
 		history.previewLoaded = false
 		return
 	}
-	entries, _, err := history.store.entryPage("", clipboardEntry{}, clipboardPreviewRows)
+	entries, _, err := history.store.entryPage("", clipboardEntry{}, clipboardLargePreviewRows)
 	if err != nil {
 		log.Printf("read clipboard preview: %v", err)
 		return
