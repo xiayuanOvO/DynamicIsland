@@ -25,15 +25,35 @@ const (
 )
 
 const (
-	widgetRowGap              = batteryRowGap
-	widgetSmallHeight         = 136
-	widgetBatteryLargeHeight  = 184
-	widgetMediaLargeHeight    = 184
-	widgetToolLargeHeight     = 212
+	widgetGridCols            = 4
+	widgetGridGap             = overviewCardGap
+	widgetGridCell            = float32(panelBodyWidth-(widgetGridCols-1)*widgetGridGap) / widgetGridCols
 	widgetLongPressDelay      = 350 * time.Millisecond
 	widgetLongPressMoveLimit  = 6
-	clipboardLargePreviewRows = 6
+	clipboardLargePreviewRows = 10
 )
+
+func widgetGridSpan(size widgetSize) (cols, rows int) {
+	switch size {
+	case widgetSizeSmall:
+		return 2, 2
+	case widgetSizeLarge:
+		return 4, 4
+	default:
+		return 4, 2
+	}
+}
+
+func widgetSpanPx(cells int) float32 {
+	if cells <= 0 {
+		return 0
+	}
+	return float32(cells)*widgetGridCell + float32(cells-1)*widgetGridGap
+}
+
+func widgetCellOffsetPx(index int) float32 {
+	return float32(index) * (widgetGridCell + widgetGridGap)
+}
 
 type panelWidgetSetting struct {
 	ID   panelWidgetID `json:"id"`
@@ -101,9 +121,11 @@ func (s appSettings) panelWidgets() panelWidgetSettings {
 }
 
 type panelWidgetSlot struct {
-	id   panelWidgetID
-	size widgetSize
-	rect ui.Rect
+	id         panelWidgetID
+	size       widgetSize
+	col, row   int
+	cols, rows int
+	rect       ui.Rect
 }
 
 type panelWidgetGrid struct {
@@ -156,45 +178,6 @@ func (a *island) effectiveWidgetSize(id panelWidgetID) widgetSize {
 	}
 }
 
-func (a *island) widgetBaseHeight(id panelWidgetID, size widgetSize) float32 {
-	switch id {
-	case widgetBattery:
-		switch size {
-		case widgetSizeSmall:
-			return widgetSmallHeight
-		case widgetSizeLarge:
-			return widgetBatteryLargeHeight
-		default:
-			return batteryRowHeight
-		}
-	case widgetMedia:
-		switch size {
-		case widgetSizeSmall:
-			return widgetSmallHeight
-		case widgetSizeLarge:
-			return widgetMediaLargeHeight
-		default:
-			return float32(a.settings.cardHeight())
-		}
-	case widgetTodo:
-		switch size {
-		case widgetSizeLarge:
-			return widgetToolLargeHeight
-		default:
-			return float32(a.todos.previewHeight())
-		}
-	case widgetClipboard:
-		switch size {
-		case widgetSizeLarge:
-			return widgetToolLargeHeight
-		default:
-			return float32(a.clipboard.previewHeight())
-		}
-	default:
-		return widgetSmallHeight
-	}
-}
-
 func (a *island) panelWidgetLayout() panelWidgetGrid {
 	widgets := a.settings.panelWidgets()
 	order := make([]panelWidgetID, 0, len(widgets))
@@ -208,55 +191,68 @@ func (a *island) panelWidgetLayout() panelWidgetGrid {
 
 func (a *island) layoutWidgets(order []panelWidgetID) panelWidgetGrid {
 	slots := make([]panelWidgetSlot, 0, len(order))
-	var y float32
-	for i := 0; i < len(order); {
-		id := order[i]
-		size := a.effectiveWidgetSize(id)
-		h := a.widgetBaseHeight(id, size)
-		if size == widgetSizeSmall {
-			if i+1 < len(order) {
-				nextID := order[i+1]
-				nextSize := a.effectiveWidgetSize(nextID)
-				if nextSize == widgetSizeSmall {
-					rowH := max(h, a.widgetBaseHeight(nextID, nextSize))
-					slots = append(slots,
-						panelWidgetSlot{
-							id:   id,
-							size: size,
-							rect: ui.Rect{X: 0, Y: y, W: overviewToolCardWidth, H: rowH},
-						},
-						panelWidgetSlot{
-							id:   nextID,
-							size: nextSize,
-							rect: ui.Rect{X: overviewToolCardWidth + overviewCardGap, Y: y, W: overviewToolCardWidth, H: rowH},
-						},
-					)
-					y += rowH + widgetRowGap
-					i += 2
-					continue
+	var occupied [][widgetGridCols]bool
+	canPlace := func(row, col, cols, rows int) bool {
+		if col < 0 || col+cols > widgetGridCols {
+			return false
+		}
+		for r := row; r < row+rows; r++ {
+			if r >= len(occupied) {
+				continue
+			}
+			for c := col; c < col+cols; c++ {
+				if occupied[r][c] {
+					return false
 				}
 			}
-			slots = append(slots, panelWidgetSlot{
-				id:   id,
-				size: size,
-				rect: ui.Rect{X: 0, Y: y, W: overviewToolCardWidth, H: h},
-			})
-			y += h + widgetRowGap
-			i++
-			continue
+		}
+		return true
+	}
+	mark := func(row, col, cols, rows int) {
+		for len(occupied) < row+rows {
+			occupied = append(occupied, [widgetGridCols]bool{})
+		}
+		for r := row; r < row+rows; r++ {
+			for c := col; c < col+cols; c++ {
+				occupied[r][c] = true
+			}
+		}
+	}
+
+	maxRow := 0
+	for _, id := range order {
+		size := a.effectiveWidgetSize(id)
+		cols, rows := widgetGridSpan(size)
+		placedRow, placedCol := 0, 0
+	findSlot:
+		for row := 0; ; row++ {
+			for col := 0; col <= widgetGridCols-cols; col++ {
+				if canPlace(row, col, cols, rows) {
+					placedRow, placedCol = row, col
+					break findSlot
+				}
+			}
+		}
+		mark(placedRow, placedCol, cols, rows)
+		if endRow := placedRow + rows; endRow > maxRow {
+			maxRow = endRow
 		}
 		slots = append(slots, panelWidgetSlot{
 			id:   id,
 			size: size,
-			rect: ui.Rect{X: 0, Y: y, W: panelBodyWidth, H: h},
+			col:  placedCol,
+			row:  placedRow,
+			cols: cols,
+			rows: rows,
+			rect: ui.Rect{
+				X: widgetCellOffsetPx(placedCol),
+				Y: widgetCellOffsetPx(placedRow),
+				W: widgetSpanPx(cols),
+				H: widgetSpanPx(rows),
+			},
 		})
-		y += h + widgetRowGap
-		i++
 	}
-	if len(slots) > 0 {
-		y -= widgetRowGap
-	}
-	return panelWidgetGrid{slots: slots, height: y}
+	return panelWidgetGrid{slots: slots, height: widgetSpanPx(maxRow)}
 }
 
 func (a *island) setWidgetSize(id panelWidgetID, size widgetSize) {

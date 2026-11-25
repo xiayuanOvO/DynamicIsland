@@ -67,14 +67,21 @@ func TestWidgetLayoutPackingAndSettingsPersistence(t *testing.T) {
 	if bat.rect.Y != med.rect.Y || bat.rect.H != med.rect.H {
 		t.Fatalf("adjacent small widgets should share row Y and height: bat=%+v med=%+v", bat.rect, med.rect)
 	}
-	if bat.rect.X != 0 || bat.rect.W != overviewToolCardWidth || med.rect.X != overviewToolCardWidth+overviewCardGap || med.rect.W != overviewToolCardWidth {
-		t.Fatalf("unexpected small widget columns: bat=%+v med=%+v", bat.rect, med.rect)
+	smallSpan := widgetSpanPx(2)
+	largeSpan := widgetSpanPx(4)
+	if bat.cols != 2 || bat.rows != 2 || med.cols != 2 || med.rows != 2 || todo.cols != 4 || todo.rows != 4 || clip.cols != 4 || clip.rows != 2 {
+		t.Fatalf("unexpected grid spans: bat=%dx%d med=%dx%d todo=%dx%d clip=%dx%d",
+			bat.cols, bat.rows, med.cols, med.rows, todo.cols, todo.rows, clip.cols, clip.rows)
 	}
-	if todo.rect.W != panelBodyWidth || todo.rect.H != widgetToolLargeHeight {
-		t.Fatalf("large todo rect = %+v, want width %d height %d", todo.rect, panelBodyWidth, widgetToolLargeHeight)
+	if bat.rect.X != 0 || bat.rect.W != smallSpan || bat.rect.H != smallSpan ||
+		med.rect.X != smallSpan+widgetGridGap || med.rect.W != smallSpan || med.rect.H != smallSpan {
+		t.Fatalf("unexpected small widget 2x2 rects: bat=%+v med=%+v", bat.rect, med.rect)
 	}
-	if clip.rect.W != panelBodyWidth || clip.rect.Y <= todo.rect.Y {
-		t.Fatalf("medium clipboard should be full width below todo: clip=%+v todo=%+v", clip.rect, todo.rect)
+	if todo.rect.W != largeSpan || todo.rect.H != largeSpan {
+		t.Fatalf("large todo 4x4 rect = %+v, want %.1fx%.1f", todo.rect, largeSpan, largeSpan)
+	}
+	if clip.rect.W != largeSpan || clip.rect.H != smallSpan || clip.rect.Y <= todo.rect.Y {
+		t.Fatalf("medium clipboard 4x2 rect = %+v, want %.1fx%.1f below todo %+v", clip.rect, largeSpan, smallSpan, todo.rect)
 	}
 }
 
@@ -96,9 +103,21 @@ func TestRightClickWidgetResizesSmallMediumLargeAndPersists(t *testing.T) {
 			ui.Box(c).Height(panelHeaderHeight).Shrink(0)
 			a.body(c, a.shownFrame)
 		})
-	}, panelWidth, 640)
+	}, panelWidth, 1200)
 
-	// Right-click battery -> switch to Small (half-width 2x2 ring card).
+	smallSpan := widgetSpanPx(2)
+	largeSpan := widgetSpanPx(4)
+
+	// Default medium battery is 4x2 card with device names & percentages.
+	batMed, ok := view.Find("设备电量")
+	if !ok || math.Abs(float64(batMed.W-largeSpan)) > 0.5 || math.Abs(float64(batMed.H-smallSpan)) > 0.5 {
+		t.Fatalf("medium battery rect = %+v, want %.1fx%.1f", batMed, largeSpan, smallSpan)
+	}
+	if !view.HasText("本机") || !view.HasText("鼠标") || !view.HasText("92%") || !view.HasText("45%") {
+		t.Fatalf("medium battery card should show device names and percentages: %v", view.Texts())
+	}
+
+	// Right-click battery -> switch to Small (2x2 square ring card).
 	if err := view.RightClick("设备电量"); err != nil {
 		t.Fatal(err)
 	}
@@ -110,8 +129,8 @@ func TestRightClickWidgetResizesSmallMediumLargeAndPersists(t *testing.T) {
 		t.Fatal(err)
 	}
 	batRect, ok := view.Find("设备电量")
-	if !ok || math.Abs(float64(batRect.W-overviewToolCardWidth)) > 0.5 || math.Abs(float64(batRect.H-widgetSmallHeight)) > 0.5 {
-		t.Fatalf("small battery rect = %+v, want %dx%d", batRect, overviewToolCardWidth, widgetSmallHeight)
+	if !ok || math.Abs(float64(batRect.W-smallSpan)) > 0.5 || math.Abs(float64(batRect.H-smallSpan)) > 0.5 {
+		t.Fatalf("small battery rect = %+v, want %.1fx%.1f", batRect, smallSpan, smallSpan)
 	}
 
 	// Right-click media -> switch to Small; it should pair side-by-side with small battery!
@@ -123,11 +142,11 @@ func TestRightClickWidgetResizesSmallMediumLargeAndPersists(t *testing.T) {
 	}
 	batRect, _ = view.Find("设备电量")
 	medRect, ok := view.Find("媒体卡片")
-	if !ok || math.Abs(float64(medRect.W-overviewToolCardWidth)) > 0.5 || math.Abs(float64(medRect.Y-batRect.Y)) > 0.5 {
+	if !ok || math.Abs(float64(medRect.W-smallSpan)) > 0.5 || math.Abs(float64(medRect.H-smallSpan)) > 0.5 || math.Abs(float64(medRect.Y-batRect.Y)) > 0.5 {
 		t.Fatalf("small media should sit beside small battery: bat=%+v med=%+v", batRect, medRect)
 	}
 
-	// Right-click battery -> switch to Large (full-width list showing device names).
+	// Right-click battery -> switch to Large (4x4 full-width list showing device names).
 	if err := view.RightClick("设备电量"); err != nil {
 		t.Fatal(err)
 	}
@@ -135,14 +154,14 @@ func TestRightClickWidgetResizesSmallMediumLargeAndPersists(t *testing.T) {
 		t.Fatal(err)
 	}
 	batRect, _ = view.Find("设备电量")
-	if math.Abs(float64(batRect.W-panelBodyWidth)) > 0.5 || math.Abs(float64(batRect.H-widgetBatteryLargeHeight)) > 0.5 {
-		t.Fatalf("large battery rect = %+v, want %dx%d", batRect, panelBodyWidth, widgetBatteryLargeHeight)
+	if math.Abs(float64(batRect.W-largeSpan)) > 0.5 || math.Abs(float64(batRect.H-largeSpan)) > 0.5 {
+		t.Fatalf("large battery rect = %+v, want %.1fx%.1f", batRect, largeSpan, largeSpan)
 	}
 	if !view.HasText("鼠标") {
 		t.Fatalf("large battery widget should show device name: %v", view.Texts())
 	}
 
-	// Right-click clipboard -> switch to Large (full-width, shows >3 entries).
+	// Right-click clipboard -> switch to Large (4x4, shows >3 entries).
 	if err := view.RightClick("剪贴板历史"); err != nil {
 		t.Fatal(err)
 	}
@@ -150,11 +169,11 @@ func TestRightClickWidgetResizesSmallMediumLargeAndPersists(t *testing.T) {
 		t.Fatal(err)
 	}
 	clipRect, ok := view.Find("剪贴板卡片")
-	if !ok || math.Abs(float64(clipRect.W-panelBodyWidth)) > 0.5 || math.Abs(float64(clipRect.H-widgetToolLargeHeight)) > 0.5 {
-		t.Fatalf("large clipboard rect = %+v, want %dx%d", clipRect, panelBodyWidth, widgetToolLargeHeight)
+	if !ok || math.Abs(float64(clipRect.W-largeSpan)) > 0.5 || math.Abs(float64(clipRect.H-largeSpan)) > 0.5 {
+		t.Fatalf("large clipboard rect = %+v, want %.1fx%.1f", clipRect, largeSpan, largeSpan)
 	}
 	if !view.HasText("第四条") || !view.HasText("第六条") {
-		t.Fatalf("large clipboard widget should show up to 6 entries: %v", view.Texts())
+		t.Fatalf("large clipboard widget should show up to 10 entries: %v", view.Texts())
 	}
 
 	// Reload settings from disk to verify persistence.
@@ -242,7 +261,7 @@ func TestLongPressDragCancelWithEscapeAndShortClickStillOpens(t *testing.T) {
 			a.body(c, a.shownFrame)
 		})
 		a.shortcuts(c)
-	}, panelWidth, 400)
+	}, panelWidth, 500)
 
 	batBefore, _ := view.Find("设备电量")
 	todoBefore, _ := view.Find("待办卡片")
