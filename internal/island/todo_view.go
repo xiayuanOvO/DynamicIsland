@@ -2,6 +2,7 @@ package island
 
 import (
 	"crypto/rand"
+	"fmt"
 	"slices"
 	"strings"
 	"time"
@@ -125,7 +126,7 @@ func (a *island) todoCardInSlot(c *ui.Context, slot panelWidgetSlot, progress, o
 		Label("待办卡片").Opacity(opacity).IgnoreInput(a.clipboard.open || opacity < panelCardInputStart)
 	surface.Children(func() {
 		if progress < panelCardPreviewEnd {
-			a.todoPreview(c, previewHeight, 1-animationPhase(progress, 0, panelCardPreviewEnd))
+			a.todoPreviewWithSize(c, previewHeight, 1-animationPhase(progress, 0, panelCardPreviewEnd), slot.size)
 		}
 		if progress > panelCardPreviewEnd {
 			ui.Column(c.Key("todo-detail")).Absolute().Top(0).Left(0).Right(0).
@@ -137,6 +138,10 @@ func (a *island) todoCardInSlot(c *ui.Context, slot panelWidgetSlot, progress, o
 }
 
 func (a *island) todoPreview(c *ui.Context, height, opacity float32) {
+	a.todoPreviewWithSize(c, height, opacity, a.effectiveWidgetSize(widgetTodo))
+}
+
+func (a *island) todoPreviewWithSize(c *ui.Context, height, opacity float32, size widgetSize) {
 	dragging := a.widgetDrag.active()
 	card := ui.ButtonBase(c.Key("todo-card")).Column().Absolute().Top(0).Left(0).Right(0).
 		Height(height).Radius(13).Cursor(ui.CursorPointer).Label("查看待办事项").
@@ -145,25 +150,45 @@ func (a *island) todoPreview(c *ui.Context, height, opacity float32) {
 		card.Background(colorsFor(c.Theme().Dark).glass.Alpha(0.2))
 	}
 	quickAdded := false
-	card.Children(func() {
-		ui.Scroll(c.Key("todo-preview-list")).Fill().Padding(todoPreviewPadding, 10).
-			Children(func() {
-				ui.Row(c.Key("todo-preview-heading")).FillWidth().Height(todoPreviewHeader).Shrink(0).
-					Gap(6).AlignItems(ui.Center).Children(func() {
-					ui.Icon(c, todoIcon).Size(14, 14).TextColor(c.Theme().Accent)
-					ui.Text(c, "待办事项").Grow(1).SingleLine().FontSize(11).FontWeight(600).TextColor(c.Theme().TextMuted)
-					if iconButton(c.Key("quick-add-todo"), plusIcon, "新建待办").Size(20, 20).Radius(6).
-						Disabled(a.todos.loadFailed || dragging).Clicked() && !a.widgetDrag.suppressClick {
-						quickAdded = true
-						a.openNewTodo(c.Now())
-					}
+	pendingCount := 0
+	for _, item := range a.todos.items {
+		if item.Done {
+			break
+		}
+		pendingCount++
+	}
+
+	if size == widgetSizeSmall {
+		card.Padding(8, 10).Gap(4).Children(func() {
+			ui.Row(c.Key("todo-preview-heading")).FillWidth().Height(20).Shrink(0).
+				Gap(5).AlignItems(ui.Center).Children(func() {
+				ui.Icon(c, todoIcon).Size(13, 13).TextColor(c.Theme().Accent)
+				ui.Text(c, "待办事项").SingleLine().FontSize(11).FontWeight(600).TextColor(c.Theme().TextMuted)
+				if pendingCount > 0 {
+					ui.Text(c, fmt.Sprintf("%d", pendingCount)).FontSize(10.5).FontWeight(600).FontFeatures("tnum").
+						TextColor(c.Theme().Accent)
+				}
+				ui.Box(c).Grow(1)
+				if iconButton(c.Key("quick-add-todo"), plusIcon, "新建待办").Size(18, 18).Radius(5).
+					Disabled(a.todos.loadFailed || dragging).Clicked() && !a.widgetDrag.suppressClick {
+					quickAdded = true
+					a.openNewTodo(c.Now())
+				}
+			})
+			ui.Box(c).FillWidth().Height(1).Shrink(0).Background(c.Theme().Text.Alpha(0.08))
+			if pendingCount == 0 {
+				ui.Box(c).FillWidth().Grow(1).Center().Children(func() {
+					ui.Text(c, "暂无待办").FontSize(11.5).TextColor(c.Theme().TextMuted)
 				})
+				return
+			}
+			ui.Scroll(c.Key("todo-preview-list")).FillWidth().Grow(1).MinHeight(0).Children(func() {
 				for _, item := range a.todos.items {
 					if item.Done {
 						break
 					}
-					ui.Row(c.Key(item.ID)).FillWidth().Height(todoPreviewRowHeight).Shrink(0).
-						Gap(7).AlignItems(ui.Center).Children(func() {
+					ui.Row(c.Key(item.ID)).FillWidth().Height(26).Shrink(0).
+						Gap(6).AlignItems(ui.Center).Children(func() {
 						done := item.Done
 						if ui.Checkbox(c.Key("done"), &done, "").Label("完成状态 " + item.Title).Changed() {
 							item.Done = done
@@ -171,20 +196,63 @@ func (a *island) todoPreview(c *ui.Context, height, opacity float32) {
 								c.Toast("已完成，下次：" + formatTodoNextDue(nextDue, c.Now()))
 							}
 						}
-						ui.Column(c).Grow(1).MinWidth(0).Gap(1).Children(func() {
-							ui.Text(c, item.Title).SingleLine().Ellipsis("…").FontSize(12).FontWeight(600).TextColor(c.Theme().Text)
-							if !item.Due.IsZero() {
-								dueColor := c.Theme().TextMuted
-								if item.overdue(c.Now()) {
-									dueColor = colorsFor(c.Theme().Dark).problem
-								}
-								ui.Text(c, item.deadlineLabel(c.Now())).SingleLine().Ellipsis("…").FontSize(9).TextColor(dueColor)
-							}
-						})
+						ui.Text(c, item.Title).Grow(1).MinWidth(0).SingleLine().Ellipsis("…").
+							FontSize(11.5).FontWeight(550).TextColor(c.Theme().Text)
+						if item.overdue(c.Now()) {
+							ui.Box(c).Size(6, 6).Shrink(0).Radius(3).Background(colorsFor(c.Theme().Dark).problem)
+						}
 					})
 				}
 			})
-	})
+		})
+	} else {
+		card.Children(func() {
+			ui.Scroll(c.Key("todo-preview-list")).Fill().Padding(todoPreviewPadding, 10).
+				Children(func() {
+					ui.Row(c.Key("todo-preview-heading")).FillWidth().Height(todoPreviewHeader).Shrink(0).
+						Gap(6).AlignItems(ui.Center).Children(func() {
+						ui.Icon(c, todoIcon).Size(14, 14).TextColor(c.Theme().Accent)
+						ui.Text(c, "待办事项").Grow(1).SingleLine().FontSize(11).FontWeight(600).TextColor(c.Theme().TextMuted)
+						if iconButton(c.Key("quick-add-todo"), plusIcon, "新建待办").Size(20, 20).Radius(6).
+							Disabled(a.todos.loadFailed || dragging).Clicked() && !a.widgetDrag.suppressClick {
+							quickAdded = true
+							a.openNewTodo(c.Now())
+						}
+					})
+					if pendingCount == 0 {
+						ui.Box(c).FillWidth().Height(height - todoPreviewHeader - 2*todoPreviewPadding).Center().Children(func() {
+							ui.Text(c, "暂无待办").FontSize(12).TextColor(c.Theme().TextMuted)
+						})
+						return
+					}
+					for _, item := range a.todos.items {
+						if item.Done {
+							break
+						}
+						ui.Row(c.Key(item.ID)).FillWidth().Height(todoPreviewRowHeight).Shrink(0).
+							Gap(7).AlignItems(ui.Center).Children(func() {
+							done := item.Done
+							if ui.Checkbox(c.Key("done"), &done, "").Label("完成状态 " + item.Title).Changed() {
+								item.Done = done
+								if ok, nextDue := a.changeTodoAt(item, false, c.Now()); ok && !nextDue.IsZero() {
+									c.Toast("已完成，下次：" + formatTodoNextDue(nextDue, c.Now()))
+								}
+							}
+							ui.Column(c).Grow(1).MinWidth(0).Gap(1).Children(func() {
+								ui.Text(c, item.Title).SingleLine().Ellipsis("…").FontSize(12).FontWeight(600).TextColor(c.Theme().Text)
+								if !item.Due.IsZero() {
+									dueColor := c.Theme().TextMuted
+									if item.overdue(c.Now()) {
+										dueColor = colorsFor(c.Theme().Dark).problem
+									}
+									ui.Text(c, item.deadlineLabel(c.Now())).SingleLine().Ellipsis("…").FontSize(9).TextColor(dueColor)
+								}
+							})
+						})
+					}
+				})
+		})
+	}
 	if card.Clicked() && !quickAdded && !a.widgetDrag.suppressClick && !dragging {
 		a.openTodos()
 	}
