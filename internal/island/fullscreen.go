@@ -39,7 +39,6 @@ func (a *island) syncFullscreenVisibility() {
 	if hidden {
 		a.hideWindows()
 	} else if !a.hiddenByUser {
-		a.media.refreshAt = time.Time{}
 		a.win.ShowInactive()
 		a.win.Invalidate()
 	}

@@ -82,3 +82,11 @@ type Command struct {
 	Source   string
 	Position float64
 }
+
+func sleepWakeDetected(prev, now time.Time, expected time.Duration) bool {
+	if prev.IsZero() {
+		return false
+	}
+	const margin = 15 * time.Second
+	return now.Round(0).Sub(prev.Round(0)) > expected+margin || now.Sub(prev) > expected+margin
+}

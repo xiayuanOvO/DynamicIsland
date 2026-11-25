@@ -145,6 +145,10 @@ func (a *island) start() {
 			a.clipboard.store.Close()
 			a.clipboard.store = nil
 		}
+		if a.media.stopWatch != nil {
+			a.media.stopWatch()
+			a.media.stopWatch = nil
+		}
 		a.media.stopWave()
 		close(a.previewJobs)
 		mygo.GlobalShortcut.UnregisterAll()
@@ -162,6 +166,7 @@ func (a *island) start() {
 	}
 	a.createTray()
 	a.syncClipboardRecording()
+	a.watchMedia()
 	a.watchTodoReminders()
 	a.watchFullscreen()
 	a.refreshBattery()
@@ -247,9 +252,6 @@ func (a *island) setExpanded(expanded bool) {
 		a.clipboard.pendingPaste = nil
 	}
 	a.media.scrubbing = false
-	if expanded {
-		a.media.refreshAt = time.Time{}
-	}
 	now := time.Now()
 	a.leaveSince = now
 	if expanded {
